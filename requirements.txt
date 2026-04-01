@@ -1,0 +1,28 @@
+# Web Framework
+fastapi==0.115.0
+uvicorn[standard]==0.30.0
+python-multipart==0.0.9
+
+# Database
+sqlalchemy[asyncio]==2.0.35
+asyncpg==0.29.0
+greenlet==3.1.0
+
+# Configuration
+pydantic==2.9.0
+pydantic-settings==2.5.0
+
+# HTTP Client
+httpx==0.27.0
+
+# Google Gemini AI
+google-generativeai==0.8.0
+
+# Excel Export
+openpyxl==3.1.5
+
+# Redis (for caching)
+redis==5.1.0
+
+# Date handling
+python-dateutil==2.9.0
