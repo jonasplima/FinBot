@@ -1,0 +1,37 @@
+<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="primary" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34d399"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="6" flood-color="#059669" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+  
+  <rect width="200" height="200" rx="48" fill="#0f172a" />
+  
+  <g transform="translate(50, 50)" filter="url(#shadow)">
+    <!-- Bot Head Base -->
+    <rect x="10" y="20" width="80" height="60" rx="16" fill="url(#primary)"/>
+    
+    <!-- Ears -->
+    <rect x="0" y="40" width="10" height="20" rx="4" fill="#34d399"/>
+    <rect x="90" y="40" width="10" height="20" rx="4" fill="#34d399"/>
+    
+    <!-- Antenna -->
+    <path d="M50 20 L50 8" stroke="#34d399" stroke-width="4" stroke-linecap="round"/>
+    <circle cx="50" cy="4" r="4" fill="#34d399"/>
+    
+    <!-- Face Screen -->
+    <rect x="20" y="32" width="60" height="36" rx="8" fill="#020617"/>
+    
+    <!-- Eyes -->
+    <circle cx="36" cy="50" r="5" fill="#34d399" opacity="0.9">
+      <animate attributeName="opacity" values="0.9; 0.2; 0.9" dur="4s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="64" cy="50" r="5" fill="#34d399" opacity="0.9">
+      <animate attributeName="opacity" values="0.9; 0.2; 0.9" dur="4s" repeatCount="indefinite"/>
+    </circle>
+  </g>
+</svg>
