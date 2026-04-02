@@ -135,17 +135,23 @@ class EvolutionService:
             f"/instance/connectionState/{self.instance}",
         )
 
-    async def restart_instance(self) -> dict:
-        """Restart the instance to get a new QR code."""
-        logger.info(f"Restarting instance: {self.instance}")
-        return await self._request(
-            "PUT",
-            f"/instance/restart/{self.instance}",
-        )
+    async def logout_instance(self) -> dict:
+        """Logout the instance to disconnect WhatsApp."""
+        logger.info(f"Logging out instance: {self.instance}")
+        try:
+            return await self._request(
+                "DELETE",
+                f"/instance/logout/{self.instance}",
+            )
+        except Exception as e:
+            logger.warning(f"Logout failed (may not be connected): {e}")
+            return {}
 
     async def get_qrcode(self) -> dict:
         """Get QR code for connecting WhatsApp."""
-        # First, ensure instance exists
+        import asyncio
+
+        # First, check instance state
         try:
             state_result = await self.get_connection_state()
             state = state_result.get("instance", {}).get("state", "")
@@ -157,30 +163,29 @@ class EvolutionService:
                     "message": "WhatsApp is already connected",
                 }
 
-            # If connecting or close, restart to get new QR
-            if state in ("connecting", "close"):
-                logger.info("Restarting instance to get QR code...")
-                await self.restart_instance()
-                # Wait a bit and try connect
-                import asyncio
-                await asyncio.sleep(2)
-
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
                 # Instance doesn't exist, create it
                 logger.info("Instance not found, creating...")
-                create_result = await self.create_instance()
-                logger.info(f"Create result: {create_result}")
+                try:
+                    create_result = await self.create_instance()
+                    logger.info(f"Create result: {create_result}")
 
-                # Check if QR code is in create response
-                if "qrcode" in create_result:
-                    qr_data = create_result.get("qrcode", {})
-                    if "base64" in qr_data:
-                        return {
-                            "status": "waiting_qrcode",
-                            "qrcode": qr_data.get("base64"),
-                            "message": "Scan the QR code with WhatsApp",
-                        }
+                    # Check if QR code is in create response
+                    if "qrcode" in create_result:
+                        qr_data = create_result.get("qrcode", {})
+                        if "base64" in qr_data:
+                            return {
+                                "status": "waiting_qrcode",
+                                "qrcode": qr_data.get("base64"),
+                                "message": "Scan the QR code with WhatsApp",
+                            }
+                except httpx.HTTPStatusError as create_error:
+                    # Instance might already exist (race condition or stale state)
+                    if "already in use" in str(create_error.response.text):
+                        logger.info("Instance already exists, continuing to get QR...")
+                    else:
+                        raise
             else:
                 raise
 
