@@ -1,53 +1,172 @@
-# Próximos Passos e Melhorias (Roadmap)
+# Roadmap FinBot - Próximas Evoluções
 
-Este documento descreve as futuras evoluções mapeadas para o **FinBot**. Cada etapa detalha seu nível de prioridade, complexidade e instruções de alto nível (high level) para implementação.
+Este documento descreve as futuras evoluções do **FinBot**, organizadas em fases de implementação com dependências claras.
 
 ---
 
-## 1. Alertas e Limites de Orçamento (Budgets)
-- **Prioridade:** Alta 🔴
-- **Complexidade:** Média 🟡
-- **Orientações (High Level):**
-  - Permitir que o usuário defina limites mensais de gastos por categoria (ex: "Alimentação: R$ 500").
-  - Criar um gatilho no fluxo de persistência da despesa para calcular o somatório daquele mês.
-  - Integrar um prompt adicional ao Gemini para avaliar o limite e, via Evolution API, enviar alertas proativos caso o usuário atinja 80% ou 100% de sua cota estipulada.
+## Estado Atual (Já Implementado)
 
-## 2. Geração de Relatórios Visuais (Gráficos)
-- **Prioridade:** Alta 🔴
-- **Complexidade:** Média 🟡
-- **Orientações (High Level):**
-  - Adicionar ferramentas de plotagem ao backend abstrato (ex: `matplotlib`, `seaborn` ou `plotly`).
-  - Identificar intenções analíticas do usuário. Quando ele perguntar "mostre meus gastos deste mês", em vez de devolver só o texto, montar um gráfico de pizza (por categoria) ou barras e transformá-lo em bytes.
-  - Adaptar o handler para enviar a imagem pronta e formatada de volta para o chat do WhatsApp.
+Antes de planejar novos recursos, é importante reconhecer o que já existe:
 
-## 3. Gestão de Contas Recorrentes
-- **Prioridade:** Média 🟡
-- **Complexidade:** Média 🟡
-- **Orientações (High Level):**
-  - Criar uma abstração na modelagem (tabela no PostgreSQL) de despesas recorrentes (ex: Netflix, Aluguel, Condomínio), com dias certos de lançamento.
-  - Implementar um job de background cronometrado (como o `APScheduler` ou `Celery`).
-  - O job verifica diariamente as contas que vencem e realiza a inserção do gasto automaticamente, ou envia uma mensagem questionando o bot se a conta já foi paga.
+| Funcionalidade | Status | Arquivo |
+|----------------|--------|---------|
+| Exportação XLSX | ✅ Completo | `app/services/export.py` |
+| Modelo de despesas recorrentes | ✅ Completo | `app/database/models.py` |
+| Serviço de recorrentes | ⚠️ Parcial (falta scheduler) | `app/services/recurring.py` |
+| Suporte multi-usuário | ⚠️ Parcial (estrutura existe) | Campo `user_phone` nos models |
+| Testes unitários | ✅ Completo (95 testes) | `tests/` |
+| Desfazer última ação | ✅ Completo | `app/services/expense.py` |
+| Pipeline CI/CD | ✅ Completo | `.github/workflows/ci.yml` |
 
-## 4. Exportação de Extratos Completos (PDF/Excel)
-- **Prioridade:** Média 🟡
+---
+
+## Fase 1: Fundação e Qualidade (Prioridade Crítica)
+
+### 1.1 Pipeline de CI/CD e Testes ✅
 - **Complexidade:** Baixa 🟢
-- **Orientações (High Level):**
-  - Atender a prompts de extração (ex: "baixe o relatório de abril pra mim").
-  - Integrar bibliotecas como `pandas` para transformar as queries do banco diretamente em um `.xlsx` ou formatar em `.pdf` (com `FPDF`/`ReportLab`).
-  - Interagir diretamente com o endpoint de midia/documentos da Evolution API para enviar a planilha construída no chat.
+- **Valor:** Alto (previne regressões nas próximas fases)
+- **Status:** Implementado
+- **Implementação:**
+  - ✅ 95 testes cobrindo `ExpenseService`, `GeminiService`, `ExportService` e `WebhookHandler`
+  - ✅ Mocks para APIs externas (Gemini, Evolution API)
+  - ✅ GitHub Actions com: `pytest`, `ruff`, `mypy`
+  - ✅ Testes de integração para webhook
+  - ✅ Cobertura de 57% (expense: 81%, export: 99%, gemini: 83%)
+- **Arquivos:**
+  - `.github/workflows/ci.yml` - Pipeline GitHub Actions
+  - `pyproject.toml` - Configurações ruff, mypy, pytest
+  - `tests/conftest.py` - Fixtures compartilhadas
+  - `tests/test_expense.py` - Testes ExpenseService
+  - `tests/test_gemini.py` - Testes GeminiService
+  - `tests/test_export.py` - Testes ExportService
+  - `tests/test_webhook.py` - Testes integração
 
-## 5. Suporte a Multi-Usuários e Segurança de Dados Isolados
-- **Prioridade:** Baixa 🟢
+### 1.2 Desfazer Última Ação ✅
+- **Complexidade:** Baixa 🟢
+- **Valor:** Alto (UX crítica - erros são comuns)
+- **Status:** Implementado
+- **Implementação:**
+  - Hard-delete da última transação (verifica `created_at` no banco)
+  - Comandos: "desfaz", "apaga o último", "cancela o último gasto", "errei, remove"
+  - Limite de tempo: 5 minutos
+  - Arquivos: `app/services/expense.py`, `app/handlers/webhook.py`, `app/services/gemini.py`
+
+---
+
+## Fase 2: Inteligência Financeira (Prioridade Alta)
+
+### 2.1 Alertas e Limites de Orçamento
+- **Complexidade:** Média 🟡
+- **Valor:** Muito Alto (diferencial competitivo)
+- **Orientações:**
+  - **Nova tabela:** `budgets` (user_phone, category_id, monthly_limit, alert_threshold)
+  - **Lógica em Python** (não no Gemini): calcular % consumido após cada gasto
+  - **Gatilhos de alerta:** 50%, 80%, 100% do limite
+  - **Gemini:** apenas formatar mensagem amigável do alerta
+  - **Comando:** "definir limite alimentação 500 reais"
+
+### 2.2 Ativação do Scheduler de Recorrentes
+- **Complexidade:** Baixa 🟢
+- **Valor:** Alto (infraestrutura já existe)
+- **Orientações:**
+  - Integrar `APScheduler` ao FastAPI (job diário às 08:00)
+  - Usar `RecurringService.process_recurring_expenses()` já implementado
+  - Adicionar notificação via Evolution API após processar
+  - Opcional: perguntar "A conta X venceu, já pagou?" ao invés de lançar automaticamente
+
+---
+
+## Fase 3: Visualização e Relatórios (Prioridade Alta)
+
+### 3.1 Gráficos no WhatsApp
+- **Complexidade:** Média 🟡
+- **Valor:** Alto (impacto visual)
+- **Orientações:**
+  - Usar `matplotlib` com backend `Agg` (sem GUI)
+  - Gráficos sugeridos:
+    - Pizza: distribuição por categoria
+    - Barras horizontais: top 5 gastos do mês
+    - Linha: evolução semanal/mensal
+  - Salvar como PNG em buffer, enviar via Evolution API (media message)
+  - Detectar intenção: "mostra gráfico", "quero ver visualmente"
+
+### 3.2 Exportação PDF
+- **Complexidade:** Baixa 🟢
+- **Valor:** Médio (complementa XLSX existente)
+- **Orientações:**
+  - Usar `ReportLab` ou `WeasyPrint`
+  - Reaproveitar dados de `ExportService.export_month()`
+  - Incluir gráfico de pizza no PDF
+  - Comando: "exporta pdf de março"
+
+---
+
+## Fase 4: Funcionalidades Avançadas (Prioridade Média)
+
+### 4.1 Metas de Economia
+- **Complexidade:** Média 🟡
+- **Valor:** Médio-Alto
+- **Orientações:**
+  - **Nova tabela:** `goals` (user_phone, description, target_amount, current_amount, deadline)
+  - Permitir: "quero economizar 1000 reais até dezembro"
+  - Calcular progresso baseado em (entradas - gastos) do período
+  - Enviar motivação semanal: "Você está 40% do caminho!"
+
+### 4.2 Conversão de Moeda
+- **Complexidade:** Baixa 🟢
+- **Valor:** Médio (nicho: viajantes)
+- **Orientações:**
+  - Integrar API gratuita de câmbio (exchangerate-api.com)
+  - Detectar moeda na mensagem: "gastei 50 dólares"
+  - Converter para BRL e armazenar ambos valores
+  - Cache de cotação por 1 hora
+
+---
+
+## Fase 5: Escalabilidade (Prioridade Baixa)
+
+### 5.1 Onboarding Multi-Usuários
 - **Complexidade:** Alta 🔴
-- **Orientações (High Level):**
-  - Quebrar o bloqueio atual baseado na constante `OWNER_PHONE` no `.env`.
-  - Criar uma etapa de onboarding, registrando o número que envia mensagens em uma entidade `User` (Customer) e confirmando termos de uso por WhatsApp.
-  - Modificar todos os relacionamentos no banco para adicionar a segurança das chaves estrangeiras, forçando com que todas as leituras e escritas cruzem com o número identificador na requisição webhook.
+- **Valor:** Alto (mas estrutura já suporta)
+- **Orientações:**
+  - Remover `OWNER_PHONE` do `.env`
+  - Criar tabela `users` com: phone, name, created_at, accepted_terms
+  - Fluxo de primeiro contato: "Olá! Aceita os termos de uso?"
+  - Rate limiting por usuário (evitar abuso)
+  - **Nota:** Modelo atual já usa `user_phone` em todas as queries
 
-## 6. Criação de Rotina de Testes e CI/CD
-- **Prioridade:** Baixa 🟢
-- **Complexidade:** Baixa 🟢
-- **Orientações (High Level):**
-  - Desenvolver testes unitários básicos e de integração para o pipeline de transação (`pytest`).
-  - "Mockar" (simular) respostas do `Google Gemini` e chamadas externas para a `Evolution API`.
-  - Preparar Actions (ex: GitHub Actions) que garantam a saúde da arquitetura impedindo commits defeituosos e organizando linting de código no ambiente (mypy, ruff ou flake8).
+### 5.2 Backup e Restauração
+- **Complexidade:** Média 🟡
+- **Valor:** Médio
+- **Orientações:**
+  - Exportar todos os dados do usuário em JSON
+  - Comando: "exporta meu backup"
+  - Permitir importação (com validação rigorosa)
+  - Útil para migração de número de telefone
+
+---
+
+## Matriz de Priorização
+
+| Item | Valor | Complexidade | Dependências | Score |
+|------|-------|--------------|--------------|-------|
+| ~~CI/CD e Testes~~ | ✅ | 🟢 | Nenhuma | ⭐⭐⭐⭐⭐ |
+| ~~Desfazer Ação~~ | ✅ | 🟢 | Nenhuma | ⭐⭐⭐⭐⭐ |
+| Alertas/Limites | 🔴 | 🟡 | ~~Testes~~ ✅ | ⭐⭐⭐⭐ |
+| Scheduler Recorrentes | 🔴 | 🟢 | Nenhuma | ⭐⭐⭐⭐ |
+| Gráficos | 🔴 | 🟡 | Nenhuma | ⭐⭐⭐⭐ |
+| PDF Export | 🟡 | 🟢 | XLSX (existe) | ⭐⭐⭐ |
+| Metas | 🟡 | 🟡 | Alertas | ⭐⭐⭐ |
+| Conversão Moeda | 🟡 | 🟢 | Nenhuma | ⭐⭐⭐ |
+| Multi-Usuários | 🔴 | 🔴 | ~~Testes, CI~~ ✅ | ⭐⭐ |
+| Backup | 🟡 | 🟡 | Multi-usuários | ⭐⭐ |
+
+---
+
+## Ordem de Implementação Sugerida
+
+1. **Sprint 1:** ~~CI/CD + Testes~~ ✅ + ~~Desfazer Ação~~ ✅
+2. **Sprint 2:** Alertas/Limites + Scheduler Recorrentes ⬅️ **PRÓXIMO**
+3. **Sprint 3:** Gráficos + PDF
+4. **Sprint 4:** Metas + Conversão Moeda
+5. **Sprint 5:** Multi-Usuários + Backup
