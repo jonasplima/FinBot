@@ -4,10 +4,10 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from app.config import get_settings
-from app.database.connection import init_db, async_session
+from app.database.connection import async_session, init_db
 from app.database.seed import seed_all
 
 # Configure logging
@@ -36,6 +36,7 @@ async def lifespan(app: FastAPI):
 
     # Initialize Evolution API instance
     from app.services.evolution import EvolutionService
+
     evolution = EvolutionService()
     try:
         await evolution.setup_instance()
@@ -78,13 +79,14 @@ async def get_qrcode(secret: str = Query(..., description="Admin secret")):
         raise HTTPException(status_code=401, detail="Invalid admin secret")
 
     from app.services.evolution import EvolutionService
+
     evolution = EvolutionService()
 
     try:
         qrcode_data = await evolution.get_qrcode()
 
         status = qrcode_data.get("status", "unknown")
-        message = qrcode_data.get("message", "")
+        _ = qrcode_data.get("message", "")  # Reserved for future use
 
         base_html = """
         <!DOCTYPE html>
@@ -244,7 +246,7 @@ async def get_qrcode(secret: str = Query(..., description="Admin secret")):
         """
 
         if status == "connected":
-            content = f"""
+            content = """
                 <h1>Tudo Certo! 🎉</h1>
                 <p>Seu WhatsApp já foi conectado com sucesso. O <strong>FinBot</strong> já está de olho nas suas mensagens, então é só mandar um "Oi" por lá para começarmos!</p>
                 <p class="footer-text">
@@ -252,11 +254,9 @@ async def get_qrcode(secret: str = Query(..., description="Admin secret")):
                     Conexão estabelecida com segurança
                 </p>
             """
-            return HTMLResponse(content=base_html.format(
-                title="Conectado",
-                refresh_meta="",
-                content=content
-            ))
+            return HTMLResponse(
+                content=base_html.format(title="Conectado", refresh_meta="", content=content)
+            )
 
         qrcode_base64 = qrcode_data.get("qrcode", "")
         if qrcode_base64:
@@ -271,13 +271,15 @@ async def get_qrcode(secret: str = Query(..., description="Admin secret")):
                     A página atualiza sozinha a cada 30 segundos
                 </p>
             """
-            return HTMLResponse(content=base_html.format(
-                title="Conectar",
-                refresh_meta='<meta http-equiv="refresh" content="30">',
-                content=content
-            ))
+            return HTMLResponse(
+                content=base_html.format(
+                    title="Conectar",
+                    refresh_meta='<meta http-equiv="refresh" content="30">',
+                    content=content,
+                )
+            )
 
-        content = f"""
+        content = """
             <h1>Preparando tudo...</h1>
             <p>Estamos gerando o seu QR Code para a conexão segura. Só mais um instantezinho! ⏳</p>
             <div class="loader"></div>
@@ -286,11 +288,13 @@ async def get_qrcode(secret: str = Query(..., description="Admin secret")):
                 Atualizando automaticamente...
             </p>
         """
-        return HTMLResponse(content=base_html.format(
-            title="Aguarde",
-            refresh_meta='<meta http-equiv="refresh" content="5">',
-            content=content
-        ))
+        return HTMLResponse(
+            content=base_html.format(
+                title="Aguarde",
+                refresh_meta='<meta http-equiv="refresh" content="5">',
+                content=content,
+            )
+        )
     except Exception as e:
         logger.error(f"Error getting QR code: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -303,6 +307,7 @@ async def get_status(secret: str = Query(..., description="Admin secret")):
         raise HTTPException(status_code=401, detail="Invalid admin secret")
 
     from app.services.evolution import EvolutionService
+
     evolution = EvolutionService()
 
     try:
@@ -326,6 +331,7 @@ async def evolution_webhook(request: Request):
         logger.info(f"Webhook event: {event}")
 
         from app.handlers.webhook import WebhookHandler
+
         handler = WebhookHandler()
         await handler.handle(body)
 
@@ -340,4 +346,5 @@ async def evolution_webhook(request: Request):
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=settings.port)

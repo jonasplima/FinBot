@@ -1,9 +1,9 @@
 # Services module
-from .gemini import GeminiService
 from .evolution import EvolutionService
 from .expense import ExpenseService
-from .recurring import RecurringService
 from .export import ExportService
+from .gemini import GeminiService
+from .recurring import RecurringService
 
 __all__ = [
     "GeminiService",

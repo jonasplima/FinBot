@@ -1,7 +1,6 @@
 """Validation utilities."""
 
 import re
-from typing import Optional
 
 
 def normalize_phone(phone: str) -> str:
@@ -36,21 +35,13 @@ def is_valid_phone(phone: str) -> bool:
         return False
 
     # Must start with country code
-    if not normalized.startswith("55"):
-        return False
-
-    return True
+    return normalized.startswith("55")
 
 
 def is_phone_allowed(phone: str, allowed_phones: list[str]) -> bool:
     """Check if phone is in allowed list."""
     normalized = normalize_phone(phone)
-
-    for allowed in allowed_phones:
-        if normalize_phone(allowed) == normalized:
-            return True
-
-    return False
+    return any(normalize_phone(allowed) == normalized for allowed in allowed_phones)
 
 
 def sanitize_text(text: str, max_length: int = 500) -> str:

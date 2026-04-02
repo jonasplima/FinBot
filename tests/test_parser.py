@@ -1,14 +1,15 @@
 """Tests for parser utilities."""
 
-import pytest
-from decimal import Decimal
 from datetime import date
+from decimal import Decimal
+
+import pytest
 
 from app.utils.parser import (
+    extract_month_year,
     parse_amount,
     parse_date,
     parse_percentage,
-    extract_month_year,
 )
 
 

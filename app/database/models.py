@@ -1,18 +1,18 @@
 """SQLAlchemy models for FinBot."""
 
-from datetime import datetime, date
-from decimal import Decimal
+from datetime import date, datetime
+
 from sqlalchemy import (
-    Column,
-    Integer,
-    String,
-    Numeric,
+    JSON,
     Boolean,
+    Column,
     Date,
     DateTime,
     ForeignKey,
-    JSON,
     Index,
+    Integer,
+    Numeric,
+    String,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -83,7 +83,7 @@ class Expense(Base):
 
     # Dates
     date = Column(Date, nullable=False, default=date.today)
-    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    created_at = Column(DateTime, nullable=False, default=datetime.now, server_default=func.now())
 
     # Relationships
     category = relationship("Category", back_populates="expenses")
@@ -115,7 +115,7 @@ class PendingConfirmation(Base):
     user_phone = Column(String(20), nullable=False, index=True)
     data = Column(JSON, nullable=False)
     expires_at = Column(DateTime, nullable=False)
-    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    created_at = Column(DateTime, nullable=False, default=datetime.now, server_default=func.now())
 
     def __repr__(self) -> str:
         return f"<PendingConfirmation(id={self.id}, user_phone='{self.user_phone}')>"

@@ -1,21 +1,36 @@
 """Database connection and session management."""
 
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from collections.abc import AsyncGenerator
+
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import declarative_base
-from typing import AsyncGenerator
+from sqlalchemy.pool import StaticPool
 
 from app.config import get_settings
 
 settings = get_settings()
 
-# Create async engine
-engine = create_async_engine(
-    settings.database_url,
-    echo=settings.log_level == "DEBUG",
-    pool_pre_ping=True,
-    pool_size=5,
-    max_overflow=10,
-)
+# Detect if using SQLite (for testing)
+is_sqlite = settings.database_url.startswith("sqlite")
+
+# Create async engine with appropriate settings
+if is_sqlite:
+    # SQLite doesn't support pool_size/max_overflow
+    engine = create_async_engine(
+        settings.database_url,
+        echo=settings.log_level == "DEBUG",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+else:
+    # PostgreSQL and other databases
+    engine = create_async_engine(
+        settings.database_url,
+        echo=settings.log_level == "DEBUG",
+        pool_pre_ping=True,
+        pool_size=5,
+        max_overflow=10,
+    )
 
 # Create async session factory
 async_session = async_sessionmaker(

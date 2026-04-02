@@ -1,6 +1,7 @@
 """Seed database with initial categories and payment methods."""
 
 import logging
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 

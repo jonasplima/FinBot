@@ -3,12 +3,11 @@
 import re
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
-from typing import Optional
 
 from dateutil.relativedelta import relativedelta
 
 
-def parse_amount(text: str) -> Optional[Decimal]:
+def parse_amount(text: str) -> Decimal | None:
     """
     Parse monetary amount from text.
 
@@ -50,7 +49,7 @@ def parse_amount(text: str) -> Optional[Decimal]:
         return None
 
 
-def parse_date(text: str, reference: Optional[date] = None) -> Optional[date]:
+def parse_date(text: str, reference: date | None = None) -> date | None:
     """
     Parse date from text.
 
@@ -77,18 +76,30 @@ def parse_date(text: str, reference: Optional[date] = None) -> Optional[date]:
 
     # Month names
     months = {
-        "janeiro": 1, "jan": 1,
-        "fevereiro": 2, "fev": 2,
-        "marco": 3, "mar": 3,
-        "abril": 4, "abr": 4,
-        "maio": 5, "mai": 5,
-        "junho": 6, "jun": 6,
-        "julho": 7, "jul": 7,
-        "agosto": 8, "ago": 8,
-        "setembro": 9, "set": 9,
-        "outubro": 10, "out": 10,
-        "novembro": 11, "nov": 11,
-        "dezembro": 12, "dez": 12,
+        "janeiro": 1,
+        "jan": 1,
+        "fevereiro": 2,
+        "fev": 2,
+        "marco": 3,
+        "mar": 3,
+        "abril": 4,
+        "abr": 4,
+        "maio": 5,
+        "mai": 5,
+        "junho": 6,
+        "jun": 6,
+        "julho": 7,
+        "jul": 7,
+        "agosto": 8,
+        "ago": 8,
+        "setembro": 9,
+        "set": 9,
+        "outubro": 10,
+        "out": 10,
+        "novembro": 11,
+        "nov": 11,
+        "dezembro": 12,
+        "dez": 12,
     }
 
     # Check if it's just a month name
@@ -129,7 +140,7 @@ def parse_date(text: str, reference: Optional[date] = None) -> Optional[date]:
     return None
 
 
-def parse_percentage(text: str) -> Optional[Decimal]:
+def parse_percentage(text: str) -> Decimal | None:
     """
     Parse percentage from text.
 
@@ -166,7 +177,7 @@ def parse_percentage(text: str) -> Optional[Decimal]:
     return None
 
 
-def extract_month_year(text: str, reference: Optional[date] = None) -> tuple[int, int]:
+def extract_month_year(text: str, reference: date | None = None) -> tuple[int, int]:
     """
     Extract month and year from text for queries.
 
@@ -178,18 +189,30 @@ def extract_month_year(text: str, reference: Optional[date] = None) -> tuple[int
 
     # Month names
     months = {
-        "janeiro": 1, "jan": 1,
-        "fevereiro": 2, "fev": 2,
-        "marco": 3, "mar": 3,
-        "abril": 4, "abr": 4,
-        "maio": 5, "mai": 5,
-        "junho": 6, "jun": 6,
-        "julho": 7, "jul": 7,
-        "agosto": 8, "ago": 8,
-        "setembro": 9, "set": 9,
-        "outubro": 10, "out": 10,
-        "novembro": 11, "nov": 11,
-        "dezembro": 12, "dez": 12,
+        "janeiro": 1,
+        "jan": 1,
+        "fevereiro": 2,
+        "fev": 2,
+        "marco": 3,
+        "mar": 3,
+        "abril": 4,
+        "abr": 4,
+        "maio": 5,
+        "mai": 5,
+        "junho": 6,
+        "jun": 6,
+        "julho": 7,
+        "jul": 7,
+        "agosto": 8,
+        "ago": 8,
+        "setembro": 9,
+        "set": 9,
+        "outubro": 10,
+        "out": 10,
+        "novembro": 11,
+        "nov": 11,
+        "dezembro": 12,
+        "dez": 12,
     }
 
     # Check for "esse mes" / "este mes"

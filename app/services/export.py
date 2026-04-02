@@ -1,17 +1,16 @@
 """Export service for generating XLSX files."""
 
-import io
 import base64
+import io
 import logging
 from datetime import date
-from typing import Optional
 
 from openpyxl import Workbook
-from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services.expense import ExpenseService, MONTH_NAMES
+from app.services.expense import MONTH_NAMES, ExpenseService
 
 logger = logging.getLogger(__name__)
 
@@ -26,8 +25,8 @@ class ExportService:
         self,
         session: AsyncSession,
         phone: str,
-        month: Optional[int] = None,
-        year: Optional[int] = None,
+        month: int | None = None,
+        year: int | None = None,
     ) -> dict:
         """
         Export expenses for a month to XLSX.
@@ -45,9 +44,7 @@ class ExportService:
         month_name = MONTH_NAMES.get(month, str(month))
 
         # Get expenses
-        expenses = await self.expense_service.get_expenses_for_export(
-            session, phone, month, year
-        )
+        expenses = await self.expense_service.get_expenses_for_export(session, phone, month, year)
 
         if not expenses:
             return {
@@ -123,12 +120,8 @@ class ExportService:
         ws.cell(row=summary_row, column=1, value="TOTAL").font = Font(bold=True)
 
         # Calculate totals
-        total_negativo = sum(
-            e["Valor"] for e in expenses if e.get("Tipo") == "Negativo"
-        )
-        total_positivo = sum(
-            e["Valor"] for e in expenses if e.get("Tipo") == "Positivo"
-        )
+        total_negativo = sum(e["Valor"] for e in expenses if e.get("Tipo") == "Negativo")
+        total_positivo = sum(e["Valor"] for e in expenses if e.get("Tipo") == "Positivo")
 
         ws.cell(row=summary_row, column=6, value="Gastos:").font = Font(bold=True)
         ws.cell(row=summary_row, column=7, value=total_negativo).number_format = "R$ #,##0.00"

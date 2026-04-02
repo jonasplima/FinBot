@@ -2,9 +2,8 @@
 
 import logging
 from datetime import date
-from typing import Optional
 
-from sqlalchemy import select, and_, extract
+from sqlalchemy import extract, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.models import Expense

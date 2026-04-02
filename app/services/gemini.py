@@ -1,13 +1,11 @@
 """Google Gemini AI integration service."""
 
+import base64
 import json
 import logging
-import base64
 from datetime import date, datetime, timedelta
-from typing import Optional
 
 import google.generativeai as genai
-from google.api_core import exceptions as google_exceptions
 
 from app.config import get_settings
 
@@ -295,14 +293,15 @@ class GeminiService:
         ]
         return any(indicator in error_str for indicator in quota_indicators)
 
-    def _get_available_model(self, vision_only: bool = False) -> Optional[str]:
+    def _get_available_model(self, vision_only: bool = False) -> str | None:
         """Get the next available model, skipping exhausted ones."""
         model_list = self.vision_models if vision_only else self.models
         now = datetime.now()
 
         # Clean up expired exhausted models
         expired = [
-            model for model, exhausted_at in self._exhausted_models.items()
+            model
+            for model, exhausted_at in self._exhausted_models.items()
             if now - exhausted_at > self._exhausted_timeout
         ]
         for model in expired:
@@ -466,14 +465,46 @@ class GeminiService:
             # Remove punctuation for comparison
             response_clean = response_lower.rstrip("!.,?")
             fast_confirm = (
-                "sim", "s", "yes", "y", "ok", "confirmo", "isso", "pode", "salvar",
-                "correto", "certo", "perfeito", "exato", "isso mesmo", "ta certo",
-                "esta certo", "esta correto", "tá certo", "tudo certo", "pode ser",
-                "confirma", "confirmar", "beleza", "show", "bora", "valeu",
+                "sim",
+                "s",
+                "yes",
+                "y",
+                "ok",
+                "confirmo",
+                "isso",
+                "pode",
+                "salvar",
+                "correto",
+                "certo",
+                "perfeito",
+                "exato",
+                "isso mesmo",
+                "ta certo",
+                "esta certo",
+                "esta correto",
+                "tá certo",
+                "tudo certo",
+                "pode ser",
+                "confirma",
+                "confirmar",
+                "beleza",
+                "show",
+                "bora",
+                "valeu",
             )
             fast_cancel = (
-                "nao", "não", "n", "no", "cancela", "cancelar", "desisto",
-                "esquece", "deixa", "nope", "para", "parar",
+                "nao",
+                "não",
+                "n",
+                "no",
+                "cancela",
+                "cancelar",
+                "desisto",
+                "esquece",
+                "deixa",
+                "nope",
+                "para",
+                "parar",
             )
 
             if response_clean in fast_confirm:
@@ -523,7 +554,9 @@ class GeminiService:
                 status[model] = {
                     "available": False,
                     "exhausted_at": exhausted_at.isoformat(),
-                    "available_in": str(time_remaining) if time_remaining.total_seconds() > 0 else "soon",
+                    "available_in": str(time_remaining)
+                    if time_remaining.total_seconds() > 0
+                    else "soon",
                 }
             else:
                 status[model] = {"available": True}

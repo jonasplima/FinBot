@@ -2,17 +2,16 @@
 
 import logging
 from datetime import datetime, timedelta
-from typing import Optional
 
-from sqlalchemy import select, delete
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.database.connection import async_session
 from app.database.models import PendingConfirmation
 from app.services.evolution import EvolutionService
-from app.services.gemini import GeminiService
 from app.services.expense import ExpenseService
+from app.services.gemini import GeminiService
 from app.utils.validators import is_phone_allowed, normalize_phone
 
 logger = logging.getLogger(__name__)
@@ -69,7 +68,9 @@ class WebhookHandler:
 
         if pending:
             # User is responding to a confirmation
-            logger.info(f"Handling confirmation response for pending type: {pending.data.get('type')}")
+            logger.info(
+                f"Handling confirmation response for pending type: {pending.data.get('type')}"
+            )
             await self.handle_confirmation_response(session, phone, text, pending)
             return
 
@@ -133,7 +134,9 @@ class WebhookHandler:
             )
             # Provide more helpful error message based on error type
             if "timeout" in str(e).lower() or "deadline" in str(e).lower():
-                error_msg = "O servico esta demorando para responder. Tente novamente em alguns segundos."
+                error_msg = (
+                    "O servico esta demorando para responder. Tente novamente em alguns segundos."
+                )
             elif "quota" in str(e).lower() or "rate" in str(e).lower():
                 error_msg = "Muitas requisicoes no momento. Aguarde um minuto e tente novamente."
             else:
@@ -201,7 +204,7 @@ class WebhookHandler:
             description = expense_data.get("description", "")
             category = expense_data.get("category", "")
 
-            msg = f"Identifiquei:\n"
+            msg = "Identifiquei:\n"
             msg += f"- Valor: R$ {amount:.2f}\n"
             msg += f"- Descricao: {description}\n"
             msg += f"- Categoria: {category}\n\n"
@@ -233,7 +236,7 @@ class WebhookHandler:
         is_shared = expense_data.get("is_shared", False)
         shared_percentage = expense_data.get("shared_percentage")
 
-        msg = f"Entendi:\n"
+        msg = "Entendi:\n"
         msg += f"- Valor: R$ {amount:.2f}\n"
         msg += f"- Descricao: {description}\n"
         msg += f"- Categoria: {category}\n"
@@ -274,7 +277,7 @@ class WebhookHandler:
         payment_method = expense_data.get("payment_method", "")
         recurring_day = expense_data.get("recurring_day", 1)
 
-        msg = f"Despesa recorrente:\n"
+        msg = "Despesa recorrente:\n"
         msg += f"- Valor: R$ {amount:.2f}\n"
         msg += f"- Descricao: {description}\n"
         msg += f"- Categoria: {category}\n"
@@ -305,9 +308,7 @@ class WebhookHandler:
         description = expense_data.get("description", "")
 
         # Find and cancel recurring expense
-        result = await self.expense_service.cancel_recurring(
-            session, phone, description
-        )
+        result = await self.expense_service.cancel_recurring(session, phone, description)
 
         if result["success"]:
             await self.evolution.send_text(
@@ -332,9 +333,7 @@ class WebhookHandler:
         month = expense_data.get("month")
         year = expense_data.get("year")
 
-        summary = await self.expense_service.get_monthly_summary(
-            session, phone, month, year
-        )
+        summary = await self.expense_service.get_monthly_summary(session, phone, month, year)
 
         await self.evolution.send_text(phone, summary)
 
@@ -417,15 +416,17 @@ class WebhookHandler:
         expense_summary = self._build_expense_summary(expense_data, pending_type)
 
         # Evaluate response using LLM
-        evaluation = await self.gemini.evaluate_confirmation_response(
-            expense_summary, response
-        )
+        evaluation = await self.gemini.evaluate_confirmation_response(expense_summary, response)
 
         action = evaluation.get("action", "unknown")
         adjustments = evaluation.get("adjustments", {})
 
         # If user was selecting from a list, always show summary again (unless cancel)
-        if awaiting_selection and action not in ("cancel", "list_categories", "list_payment_methods"):
+        if awaiting_selection and action not in (
+            "cancel",
+            "list_categories",
+            "list_payment_methods",
+        ):
             # Treat as adjustment - apply any changes and show summary again
             action = "adjust"
             # If no adjustments detected but user confirmed current value, keep expense_data as is
@@ -440,14 +441,10 @@ class WebhookHandler:
             await session.commit()
 
             if pending_type == "expense":
-                result = await self.expense_service.create_expense(
-                    session, phone, expense_data
-                )
+                result = await self.expense_service.create_expense(session, phone, expense_data)
             elif pending_type == "recurring":
                 expense_data["is_recurring"] = True
-                result = await self.expense_service.create_expense(
-                    session, phone, expense_data
-                )
+                result = await self.expense_service.create_expense(session, phone, expense_data)
             else:
                 result = {"success": False}
 
@@ -477,17 +474,12 @@ class WebhookHandler:
             await session.commit()
 
             # Show updated confirmation
-            await self.handle_register_expense(
-                session, phone, {"data": updated_data}
-            )
+            await self.handle_register_expense(session, phone, {"data": updated_data})
 
         elif action == "list_categories":
             # Send categories list and mark that we're awaiting category selection
             categories_list = await self.expense_service.get_categories_list(session)
-            await self.evolution.send_text(
-                phone,
-                categories_list + "\nQual categoria deseja usar?"
-            )
+            await self.evolution.send_text(phone, categories_list + "\nQual categoria deseja usar?")
             # Update pending to mark we're awaiting category selection
             await session.delete(pending)
             await session.commit()
@@ -498,8 +490,7 @@ class WebhookHandler:
             # Send payment methods list and mark that we're awaiting payment selection
             methods_list = await self.expense_service.get_payment_methods_list(session)
             await self.evolution.send_text(
-                phone,
-                methods_list + "\nQual forma de pagamento deseja usar?"
+                phone, methods_list + "\nQual forma de pagamento deseja usar?"
             )
             # Update pending to mark we're awaiting payment method selection
             await session.delete(pending)
@@ -530,8 +521,9 @@ class WebhookHandler:
         """Handle payment method selection from user."""
         # Clean up pending
         await session.execute(
-            delete(PendingConfirmation)
-            .where(PendingConfirmation.user_phone == normalize_phone(phone))
+            delete(PendingConfirmation).where(
+                PendingConfirmation.user_phone == normalize_phone(phone)
+            )
         )
         await session.commit()
 
@@ -589,9 +581,7 @@ class WebhookHandler:
         expense_data["payment_method"] = payment_method
 
         # Now show confirmation
-        await self.handle_register_expense(
-            session, phone, {"data": expense_data}
-        )
+        await self.handle_register_expense(session, phone, {"data": expense_data})
 
     def _build_expense_summary(self, expense_data: dict, pending_type: str) -> str:
         """Build a human-readable expense summary for LLM context."""
@@ -604,7 +594,9 @@ class WebhookHandler:
         shared_percentage = expense_data.get("shared_percentage")
         recurring_day = expense_data.get("recurring_day")
 
-        summary = f"Tipo: {'Despesa recorrente' if pending_type == 'recurring' else 'Despesa/Entrada'}\n"
+        summary = (
+            f"Tipo: {'Despesa recorrente' if pending_type == 'recurring' else 'Despesa/Entrada'}\n"
+        )
         summary += f"Valor: R$ {amount:.2f}\n"
         summary += f"Descricao: {description}\n"
         summary += f"Categoria: {category}\n"
@@ -641,7 +633,7 @@ class WebhookHandler:
         self,
         session: AsyncSession,
         phone: str,
-    ) -> Optional[PendingConfirmation]:
+    ) -> PendingConfirmation | None:
         """Get pending confirmation for user."""
         normalized_phone = normalize_phone(phone)
 
@@ -664,8 +656,7 @@ class WebhookHandler:
 
         # Delete any existing pending
         await session.execute(
-            delete(PendingConfirmation)
-            .where(PendingConfirmation.user_phone == normalized_phone)
+            delete(PendingConfirmation).where(PendingConfirmation.user_phone == normalized_phone)
         )
 
         # Create new pending

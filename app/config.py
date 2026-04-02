@@ -1,7 +1,8 @@
 """Application configuration from environment variables."""
 
-from pydantic_settings import BaseSettings
 from functools import lru_cache
+
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -42,11 +43,7 @@ class Settings(BaseSettings):
         """Get list of allowed phone numbers."""
         phones = [self.owner_phone]
         if self.allowed_numbers:
-            phones.extend(
-                num.strip()
-                for num in self.allowed_numbers.split(",")
-                if num.strip()
-            )
+            phones.extend(num.strip() for num in self.allowed_numbers.split(",") if num.strip())
         return list(set(phones))
 
 

@@ -1,9 +1,8 @@
 """Evolution API integration service."""
 
-import logging
 import base64
+import logging
 from datetime import datetime, timedelta
-from typing import Optional, Any
 
 import httpx
 
@@ -45,7 +44,7 @@ class EvolutionService:
         self,
         method: str,
         endpoint: str,
-        json: Optional[dict] = None,
+        json: dict | None = None,
         timeout: float = 30.0,
     ) -> dict:
         """Make HTTP request to Evolution API."""
@@ -149,7 +148,6 @@ class EvolutionService:
 
     async def get_qrcode(self) -> dict:
         """Get QR code for connecting WhatsApp."""
-        import asyncio
 
         # First, check instance state
         try:
@@ -264,7 +262,7 @@ class EvolutionService:
         phone: str,
         document_base64: str,
         filename: str,
-        caption: Optional[str] = None,
+        caption: str | None = None,
         mimetype: str = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     ) -> dict:
         """Send document (file) to phone number."""
@@ -288,7 +286,7 @@ class EvolutionService:
             json=data,
         )
 
-    async def download_media(self, message_key: dict) -> Optional[bytes]:
+    async def download_media(self, message_key: dict) -> bytes | None:
         """Download media from a message."""
         try:
             # Build the request in the format expected by Evolution API
@@ -317,7 +315,7 @@ class EvolutionService:
             logger.error(f"Error downloading media: {e}")
             return None
 
-    def extract_message_data(self, webhook_data: dict) -> Optional[dict]:
+    def extract_message_data(self, webhook_data: dict) -> dict | None:
         """Extract relevant data from webhook payload."""
         try:
             event = webhook_data.get("event", "")

@@ -2,18 +2,16 @@
 
 import logging
 import unicodedata
+from calendar import monthrange
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Optional
-from calendar import monthrange
 
-from sqlalchemy import select, update, func, and_, extract
+from sqlalchemy import extract, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.database.models import Expense, Category, PaymentMethod
+from app.database.models import Category, Expense, PaymentMethod
 from app.utils.validators import normalize_phone
-from app.utils.parser import extract_month_year
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +23,7 @@ def remove_accents(text: str) -> str:
     # Normalize to NFD form (decomposed), then filter out combining characters
     normalized = unicodedata.normalize("NFD", text)
     return "".join(c for c in normalized if unicodedata.category(c) != "Mn")
+
 
 # Month names in Portuguese
 MONTH_NAMES = {
@@ -66,7 +65,10 @@ class ExpenseService:
             payment_name = data.get("payment_method", "Pix")
             payment_method = await self._get_payment_method(session, payment_name)
             if not payment_method:
-                return {"success": False, "error": f"Metodo de pagamento '{payment_name}' nao encontrado"}
+                return {
+                    "success": False,
+                    "error": f"Metodo de pagamento '{payment_name}' nao encontrado",
+                }
 
             # Parse amount
             amount = Decimal(str(data.get("amount", 0)))
@@ -305,8 +307,8 @@ class ExpenseService:
         self,
         session: AsyncSession,
         phone: str,
-        month: Optional[int] = None,
-        year: Optional[int] = None,
+        month: int | None = None,
+        year: int | None = None,
     ) -> str:
         """Get monthly expense summary."""
         normalized_phone = normalize_phone(phone)
@@ -392,25 +394,27 @@ class ExpenseService:
         # Convert to list of dicts for export
         export_data = []
         for exp in expenses:
-            export_data.append({
-                "Data": exp.date.strftime("%d/%m/%Y"),
-                "Descricao": exp.description,
-                "Categoria": exp.category.name if exp.category else "",
-                "Forma de Pagamento": exp.payment_method.name if exp.payment_method else "",
-                "Tipo": exp.type,
-                "Parcela": exp.installment_display or "",
-                "Valor": float(exp.amount),
-                "Compartilhada": "Sim" if exp.is_shared else "Nao",
-                "Percentual": float(exp.shared_percentage) / 100 if exp.shared_percentage else "",
-            })
+            export_data.append(
+                {
+                    "Data": exp.date.strftime("%d/%m/%Y"),
+                    "Descricao": exp.description,
+                    "Categoria": exp.category.name if exp.category else "",
+                    "Forma de Pagamento": exp.payment_method.name if exp.payment_method else "",
+                    "Tipo": exp.type,
+                    "Parcela": exp.installment_display or "",
+                    "Valor": float(exp.amount),
+                    "Compartilhada": "Sim" if exp.is_shared else "Nao",
+                    "Percentual": float(exp.shared_percentage) / 100
+                    if exp.shared_percentage
+                    else "",
+                }
+            )
 
         return export_data
 
     async def get_categories_list(self, session: AsyncSession) -> str:
         """Return formatted list of all categories."""
-        result = await session.execute(
-            select(Category).order_by(Category.type, Category.name)
-        )
+        result = await session.execute(select(Category).order_by(Category.type, Category.name))
         categories = result.scalars().all()
 
         gastos = [c.name for c in categories if c.type == "Negativo"]
@@ -428,9 +432,7 @@ class ExpenseService:
 
     async def get_payment_methods_list(self, session: AsyncSession) -> str:
         """Return formatted list of all payment methods."""
-        result = await session.execute(
-            select(PaymentMethod).order_by(PaymentMethod.name)
-        )
+        result = await session.execute(select(PaymentMethod).order_by(PaymentMethod.name))
         methods = result.scalars().all()
 
         msg = "Formas de pagamento disponiveis:\n\n"
@@ -443,7 +445,7 @@ class ExpenseService:
         self,
         session: AsyncSession,
         name: str,
-    ) -> Optional[Category]:
+    ) -> Category | None:
         """Get category by name (case-insensitive, accent-insensitive)."""
         # First try exact match (case-insensitive)
         result = await session.execute(
@@ -469,7 +471,7 @@ class ExpenseService:
         self,
         session: AsyncSession,
         name: str,
-    ) -> Optional[PaymentMethod]:
+    ) -> PaymentMethod | None:
         """Get payment method by name (case-insensitive, accent-insensitive)."""
         # First try exact match (case-insensitive)
         result = await session.execute(
