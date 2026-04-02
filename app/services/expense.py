@@ -9,6 +9,7 @@ from calendar import monthrange
 
 from sqlalchemy import select, update, func, and_, extract
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.database.models import Expense, Category, PaymentMethod
 from app.utils.validators import normalize_phone
@@ -210,6 +211,69 @@ class ExpenseService:
             await session.rollback()
             return {"success": False, "error": str(e)}
 
+    async def undo_last_expense(
+        self,
+        session: AsyncSession,
+        phone: str,
+        time_limit_minutes: int = 5,
+    ) -> dict:
+        """
+        Undo (delete) the last expense created by the user.
+
+        Only allows undoing expenses created within the time limit.
+
+        Args:
+            session: Database session
+            phone: User phone number
+            time_limit_minutes: Maximum age of expense that can be undone (default 5 minutes)
+
+        Returns:
+            Dict with success status and expense details or error message
+        """
+        try:
+            normalized_phone = normalize_phone(phone)
+
+            # Find the most recent expense for this user with eager loading
+            result = await session.execute(
+                select(Expense)
+                .options(selectinload(Expense.category))
+                .where(Expense.user_phone == normalized_phone)
+                .order_by(Expense.created_at.desc())
+                .limit(1)
+            )
+
+            expense = result.scalar_one_or_none()
+
+            if not expense:
+                return {"success": False, "error": "Voce nao tem nenhum gasto registrado."}
+
+            # Check if expense was created within the time limit
+            time_diff = datetime.now() - expense.created_at
+            if time_diff.total_seconds() > (time_limit_minutes * 60):
+                return {
+                    "success": False,
+                    "error": f"Nao e possivel desfazer. O ultimo gasto foi registrado ha mais de {time_limit_minutes} minutos.",
+                }
+
+            # Store expense details for the response message
+            expense_details = {
+                "description": expense.description,
+                "amount": float(expense.amount),
+                "category": expense.category.name if expense.category else "N/A",
+            }
+
+            # Delete the expense
+            await session.delete(expense)
+            await session.commit()
+
+            logger.info(f"Undid expense: {expense.id} for {normalized_phone}")
+            return {"success": True, "expense": expense_details}
+
+        except Exception as e:
+            logger.error(f"Error undoing expense: {e}")
+            await session.rollback()
+            return {"success": False, "error": str(e)}
+
     async def list_recurring(
         self,
         session: AsyncSession,
@@ -253,9 +317,10 @@ class ExpenseService:
         if year is None:
             year = today.year
 
-        # Query expenses for the month
+        # Query expenses for the month with eager loading of category
         result = await session.execute(
             select(Expense)
+            .options(selectinload(Expense.category))
             .where(Expense.user_phone == normalized_phone)
             .where(extract("month", Expense.date) == month)
             .where(extract("year", Expense.date) == year)
@@ -312,6 +377,10 @@ class ExpenseService:
 
         result = await session.execute(
             select(Expense)
+            .options(
+                selectinload(Expense.category),
+                selectinload(Expense.payment_method),
+            )
             .where(Expense.user_phone == normalized_phone)
             .where(extract("month", Expense.date) == month)
             .where(extract("year", Expense.date) == year)
@@ -323,9 +392,6 @@ class ExpenseService:
         # Convert to list of dicts for export
         export_data = []
         for exp in expenses:
-            # Load relationships
-            await session.refresh(exp, ["category", "payment_method"])
-
             export_data.append({
                 "Data": exp.date.strftime("%d/%m/%Y"),
                 "Descricao": exp.description,
@@ -335,10 +401,43 @@ class ExpenseService:
                 "Parcela": exp.installment_display or "",
                 "Valor": float(exp.amount),
                 "Compartilhada": "Sim" if exp.is_shared else "Nao",
-                "Percentual": float(exp.shared_percentage) if exp.shared_percentage else "",
+                "Percentual": float(exp.shared_percentage) / 100 if exp.shared_percentage else "",
             })
 
         return export_data
+
+    async def get_categories_list(self, session: AsyncSession) -> str:
+        """Return formatted list of all categories."""
+        result = await session.execute(
+            select(Category).order_by(Category.type, Category.name)
+        )
+        categories = result.scalars().all()
+
+        gastos = [c.name for c in categories if c.type == "Negativo"]
+        entradas = [c.name for c in categories if c.type == "Positivo"]
+
+        msg = "Categorias disponiveis:\n\n"
+        msg += "GASTOS:\n"
+        for cat in gastos:
+            msg += f"  • {cat}\n"
+        msg += "\nENTRADAS:\n"
+        for cat in entradas:
+            msg += f"  • {cat}\n"
+
+        return msg
+
+    async def get_payment_methods_list(self, session: AsyncSession) -> str:
+        """Return formatted list of all payment methods."""
+        result = await session.execute(
+            select(PaymentMethod).order_by(PaymentMethod.name)
+        )
+        methods = result.scalars().all()
+
+        msg = "Formas de pagamento disponiveis:\n\n"
+        for method in methods:
+            msg += f"  • {method.name}\n"
+
+        return msg
 
     async def _get_category(
         self,
