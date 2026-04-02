@@ -3,10 +3,11 @@
 import json
 import logging
 import base64
+from datetime import date, datetime, timedelta
 from typing import Optional
-from datetime import date
 
 import google.generativeai as genai
+from google.api_core import exceptions as google_exceptions
 
 from app.config import get_settings
 
@@ -15,6 +16,22 @@ settings = get_settings()
 
 # Configure Gemini
 genai.configure(api_key=settings.gemini_api_key)
+
+# Model fallback chain - ordered by priority (best to fallback)
+MODEL_FALLBACK_CHAIN = [
+    "gemini-2.5-flash-lite",
+    "gemini-2.5-flash",
+    "gemma-3-27b-it",
+    "gemma-3-12b-it",
+    "gemma-3-4b-it",
+    "gemma-3-1b-it",
+]
+
+# Models that support vision (image processing)
+VISION_CAPABLE_MODELS = [
+    "gemini-2.5-flash-lite",
+    "gemini-2.5-flash",
+]
 
 
 # System prompt with all categories and payment methods
@@ -72,11 +89,12 @@ Analise a mensagem do usuario e retorne um JSON com a intencao e dados extraidos
 - query_month: consultar resumo do mes
 - export: exportar gastos para planilha
 - list_recurring: listar despesas recorrentes
+- undo_last: desfazer/apagar o ultimo registro
 - unknown: nao entendi a mensagem
 
 ## Formato de resposta (JSON):
 {
-  "intent": "register_expense|register_recurring|cancel_recurring|query_month|export|list_recurring|unknown",
+  "intent": "register_expense|register_recurring|cancel_recurring|query_month|export|list_recurring|undo_last|unknown",
   "data": {
     "description": "descricao do gasto",
     "amount": 0.00,
@@ -119,11 +137,83 @@ Saida: {"intent": "cancel_recurring", "data": {"description": "netflix", "amount
 Entrada: "quanto gastei esse mes?"
 Saida: {"intent": "query_month", "data": {"description": null, "amount": null, "category": null, "payment_method": null, "installments": null, "is_shared": false, "shared_percentage": null, "recurring_day": null, "month": null, "year": null}, "confidence": 0.95}
 
+Entrada: "quais foram minhas despesas esse mes"
+Saida: {"intent": "query_month", "data": {"description": null, "amount": null, "category": null, "payment_method": null, "installments": null, "is_shared": false, "shared_percentage": null, "recurring_day": null, "month": null, "year": null}, "confidence": 0.95}
+
+Entrada: "resumo de gastos"
+Saida: {"intent": "query_month", "data": {"description": null, "amount": null, "category": null, "payment_method": null, "installments": null, "is_shared": false, "shared_percentage": null, "recurring_day": null, "month": null, "year": null}, "confidence": 0.95}
+
+Entrada: "o que eu gastei esse mes"
+Saida: {"intent": "query_month", "data": {"description": null, "amount": null, "category": null, "payment_method": null, "installments": null, "is_shared": false, "shared_percentage": null, "recurring_day": null, "month": null, "year": null}, "confidence": 0.95}
+
+Entrada: "me mostra meus gastos"
+Saida: {"intent": "query_month", "data": {"description": null, "amount": null, "category": null, "payment_method": null, "installments": null, "is_shared": false, "shared_percentage": null, "recurring_day": null, "month": null, "year": null}, "confidence": 0.95}
+
 Entrada: "exportar meus gastos de marco"
 Saida: {"intent": "export", "data": {"description": null, "amount": null, "category": null, "payment_method": null, "installments": null, "is_shared": false, "shared_percentage": null, "recurring_day": null, "month": 3, "year": null}, "confidence": 0.95}
 
 Entrada: "gastei 200 reais no mercado dividido 60% meu"
 Saida: {"intent": "register_expense", "data": {"description": "mercado", "amount": 200.00, "category": "Mercado", "payment_method": "Pix", "installments": null, "is_shared": true, "shared_percentage": 60.0, "recurring_day": null, "month": null, "year": null}, "confidence": 0.9}
+
+Entrada: "desfaz"
+Saida: {"intent": "undo_last", "data": {}, "confidence": 0.95}
+
+Entrada: "apaga o ultimo"
+Saida: {"intent": "undo_last", "data": {}, "confidence": 0.95}
+
+Entrada: "cancela o ultimo gasto"
+Saida: {"intent": "undo_last", "data": {}, "confidence": 0.95}
+
+Entrada: "errei, remove"
+Saida: {"intent": "undo_last", "data": {}, "confidence": 0.9}
+
+Responda APENAS com o JSON, sem texto adicional.
+"""
+
+CONFIRMATION_PROMPT = """Avalie a resposta do usuario a uma confirmacao de despesa/entrada.
+
+## Contexto da despesa pendente:
+{expense_summary}
+
+## Resposta do usuario:
+{user_response}
+
+## Sua tarefa:
+Classifique a intencao da resposta do usuario:
+
+1. "confirm" - usuario confirma que esta correto
+   Exemplos: sim, s, ok, isso, pode salvar, ta certo, isso mesmo, confirma, perfeito, exato, correto, certo, beleza, show, bora, valeu, tudo certo, pode ser, confirmar, esta correto, esta certo
+
+2. "cancel" - usuario quer cancelar/desistir
+   Exemplos: nao, n, cancela, esquece, deixa pra la, nao quero mais, desisto
+
+3. "adjust" - usuario quer ajustar/corrigir algum campo
+   Exemplos: muda pra 60 reais, na verdade foi no cartao, era lazer nao alimentacao, descricao errada
+
+4. "list_categories" - usuario quer ver categorias disponiveis
+   Exemplos: quais categorias, lista categorias, categorias disponiveis, que categorias tem
+
+5. "list_payment_methods" - usuario quer ver formas de pagamento
+   Exemplos: quais formas de pagamento, metodos de pagamento, como posso pagar
+
+## Formato de resposta (JSON):
+{{
+  "action": "confirm|cancel|adjust|list_categories|list_payment_methods",
+  "adjustments": {{
+    "amount": null ou novo valor numerico,
+    "description": null ou nova descricao,
+    "category": null ou nova categoria (usar nome exato da lista),
+    "payment_method": null ou novo metodo (usar nome exato)
+  }},
+  "confidence": 0.0 a 1.0
+}}
+
+## Categorias validas para ajuste:
+Gastos: Alimentacao, Assinatura, Imprevistos, Despesa Fixa, Educacao, Emprestimo, Lazer, Mercado, Moradia, Outros, Parcelamento de Fatura, Presente, Saude e Beleza, Servicos, Transferencia, Transporte, Vestuario, Viagem, Reserva de Emergencia, Investimento
+Entradas: Salario - Adiantamento, Salario, Salario - 13o, Reembolso - Aluguel + Condominio, Bonus, PLR, VR (Flash), VR (Flash - Auxilio), Outros (entrada)
+
+## Metodos de pagamento validos:
+Cartao de Credito, Cartao de Debito, Dinheiro, VR, Pix
 
 Responda APENAS com o JSON, sem texto adicional.
 """
@@ -180,12 +270,113 @@ Responda APENAS com o JSON.
 
 
 class GeminiService:
-    """Service for interacting with Google Gemini AI."""
+    """Service for interacting with Google Gemini AI with automatic model fallback."""
+
+    # Class-level tracking of exhausted models (shared across instances)
+    _exhausted_models: dict[str, datetime] = {}
+    _exhausted_timeout = timedelta(hours=1)  # Retry exhausted models after 1 hour
 
     def __init__(self):
-        # Use gemini-2.5-flash-lite for text and vision (supports both)
-        self.model = genai.GenerativeModel("gemini-2.5-flash-lite")
-        self.vision_model = genai.GenerativeModel("gemini-2.5-flash-lite")
+        self.models = MODEL_FALLBACK_CHAIN
+        self.vision_models = VISION_CAPABLE_MODELS
+        self._current_model_index = 0
+        self._current_vision_model_index = 0
+
+    def _is_quota_error(self, error: Exception) -> bool:
+        """Check if the error is a quota/rate limit error."""
+        error_str = str(error).lower()
+        quota_indicators = [
+            "quota",
+            "rate limit",
+            "resource exhausted",
+            "429",
+            "too many requests",
+            "resourceexhausted",
+        ]
+        return any(indicator in error_str for indicator in quota_indicators)
+
+    def _get_available_model(self, vision_only: bool = False) -> Optional[str]:
+        """Get the next available model, skipping exhausted ones."""
+        model_list = self.vision_models if vision_only else self.models
+        now = datetime.now()
+
+        # Clean up expired exhausted models
+        expired = [
+            model for model, exhausted_at in self._exhausted_models.items()
+            if now - exhausted_at > self._exhausted_timeout
+        ]
+        for model in expired:
+            del self._exhausted_models[model]
+            logger.info(f"Model {model} is available again after timeout")
+
+        # Find first available model
+        for model in model_list:
+            if model not in self._exhausted_models:
+                return model
+
+        # All models exhausted - try the first one anyway (might have reset)
+        logger.warning("All models exhausted, trying first model in chain")
+        return model_list[0] if model_list else None
+
+    def _mark_model_exhausted(self, model_name: str) -> None:
+        """Mark a model as exhausted."""
+        self._exhausted_models[model_name] = datetime.now()
+        logger.warning(f"Model {model_name} marked as exhausted (quota exceeded)")
+
+    async def _generate_with_fallback(
+        self,
+        contents: list,
+        generation_config: genai.GenerationConfig,
+        vision_only: bool = False,
+    ) -> str:
+        """
+        Generate content with automatic model fallback on quota errors.
+
+        Args:
+            contents: Content to send to the model
+            generation_config: Generation configuration
+            vision_only: If True, only use vision-capable models
+
+        Returns:
+            Generated text response
+
+        Raises:
+            Exception: If all models fail
+        """
+        model_list = self.vision_models if vision_only else self.models
+        last_error = None
+
+        for model_name in model_list:
+            # Skip exhausted models
+            if model_name in self._exhausted_models:
+                continue
+
+            try:
+                model = genai.GenerativeModel(model_name)
+                logger.debug(f"Trying model: {model_name}")
+
+                response = model.generate_content(
+                    contents,
+                    generation_config=generation_config,
+                )
+
+                logger.info(f"Successfully used model: {model_name}")
+                return response.text
+
+            except Exception as e:
+                last_error = e
+                if self._is_quota_error(e):
+                    self._mark_model_exhausted(model_name)
+                    logger.warning(f"Quota exceeded for {model_name}, trying next model")
+                    continue
+                else:
+                    # Non-quota error, re-raise
+                    raise
+
+        # All models failed
+        if last_error:
+            raise last_error
+        raise Exception("No models available")
 
     async def process_message(self, text: str) -> dict:
         """Process text message and extract intent/data."""
@@ -194,8 +385,8 @@ class GeminiService:
             today = date.today()
             context = f"Data atual: {today.strftime('%d/%m/%Y')}\n\nMensagem do usuario: {text}"
 
-            response = self.model.generate_content(
-                [SYSTEM_PROMPT, context],
+            response_text = await self._generate_with_fallback(
+                contents=[SYSTEM_PROMPT, context],
                 generation_config=genai.GenerationConfig(
                     response_mime_type="application/json",
                     temperature=0.1,
@@ -203,7 +394,7 @@ class GeminiService:
             )
 
             # Parse JSON response
-            result = json.loads(response.text)
+            result = json.loads(response_text)
             logger.debug(f"Gemini response: {result}")
 
             return result
@@ -236,15 +427,17 @@ class GeminiService:
             if additional_text:
                 prompt += f"\n\nTexto adicional do usuario: {additional_text}"
 
-            response = self.vision_model.generate_content(
-                [prompt, image_part],
+            # Use vision-only models for image processing
+            response_text = await self._generate_with_fallback(
+                contents=[prompt, image_part],
                 generation_config=genai.GenerationConfig(
                     response_mime_type="application/json",
                     temperature=0.1,
                 ),
+                vision_only=True,
             )
 
-            result = json.loads(response.text)
+            result = json.loads(response_text)
             logger.debug(f"Gemini vision response: {result}")
 
             return result
@@ -255,3 +448,83 @@ class GeminiService:
         except Exception as e:
             logger.error(f"Gemini vision error: {e}")
             return {"success": False, "error": str(e)}
+
+    async def evaluate_confirmation_response(
+        self,
+        expense_summary: str,
+        user_response: str,
+    ) -> dict:
+        """
+        Evaluate user response to expense confirmation.
+
+        Returns dict with action (confirm/cancel/adjust/list_categories/list_payment_methods)
+        and any adjustments requested.
+        """
+        try:
+            # Check for common fast responses first (avoid LLM call for simple cases)
+            response_lower = user_response.lower().strip()
+            # Remove punctuation for comparison
+            response_clean = response_lower.rstrip("!.,?")
+            fast_confirm = (
+                "sim", "s", "yes", "y", "ok", "confirmo", "isso", "pode", "salvar",
+                "correto", "certo", "perfeito", "exato", "isso mesmo", "ta certo",
+                "esta certo", "esta correto", "tá certo", "tudo certo", "pode ser",
+                "confirma", "confirmar", "beleza", "show", "bora", "valeu",
+            )
+            fast_cancel = (
+                "nao", "não", "n", "no", "cancela", "cancelar", "desisto",
+                "esquece", "deixa", "nope", "para", "parar",
+            )
+
+            if response_clean in fast_confirm:
+                logger.info(f"Fast-path confirmation: '{response_clean}'")
+                return {"action": "confirm", "adjustments": {}, "confidence": 1.0}
+            if response_clean in fast_cancel:
+                logger.info(f"Fast-path cancellation: '{response_clean}'")
+                return {"action": "cancel", "adjustments": {}, "confidence": 1.0}
+
+            # Use LLM for more complex responses
+            logger.info(f"Using LLM for confirmation evaluation: '{user_response}'")
+            prompt = CONFIRMATION_PROMPT.format(
+                expense_summary=expense_summary,
+                user_response=user_response,
+            )
+
+            response_text = await self._generate_with_fallback(
+                contents=[prompt],
+                generation_config=genai.GenerationConfig(
+                    response_mime_type="application/json",
+                    temperature=0.1,
+                ),
+            )
+
+            logger.debug(f"Gemini confirmation raw response: {response_text}")
+            result = json.loads(response_text)
+            logger.info(f"Gemini confirmation evaluation: action={result.get('action')}")
+
+            return result
+
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse Gemini confirmation response: {e}")
+            # Default to asking for clarification
+            return {"action": "unknown", "adjustments": {}, "confidence": 0}
+        except Exception as e:
+            logger.error(f"Gemini confirmation error: {e}")
+            return {"action": "unknown", "adjustments": {}, "confidence": 0}
+
+    def get_model_status(self) -> dict:
+        """Get current status of all models (for debugging/monitoring)."""
+        now = datetime.now()
+        status = {}
+        for model in self.models:
+            if model in self._exhausted_models:
+                exhausted_at = self._exhausted_models[model]
+                time_remaining = self._exhausted_timeout - (now - exhausted_at)
+                status[model] = {
+                    "available": False,
+                    "exhausted_at": exhausted_at.isoformat(),
+                    "available_in": str(time_remaining) if time_remaining.total_seconds() > 0 else "soon",
+                }
+            else:
+                status[model] = {"available": True}
+        return status
