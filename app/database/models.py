@@ -145,9 +145,7 @@ class Budget(Base):
     alerts = relationship("BudgetAlert", back_populates="budget", cascade="all, delete-orphan")
 
     # Indexes
-    __table_args__ = (
-        Index("ix_budgets_user_category", "user_phone", "category_id"),
-    )
+    __table_args__ = (Index("ix_budgets_user_category", "user_phone", "category_id"),)
 
     def __repr__(self) -> str:
         return f"<Budget(id={self.id}, user_phone='{self.user_phone}', limit={self.monthly_limit})>"
@@ -170,7 +168,14 @@ class BudgetAlert(Base):
 
     # Indexes to quickly check if alert was already sent
     __table_args__ = (
-        Index("ix_budget_alerts_unique", "budget_id", "threshold_percent", "month", "year", unique=True),
+        Index(
+            "ix_budget_alerts_unique",
+            "budget_id",
+            "threshold_percent",
+            "month",
+            "year",
+            unique=True,
+        ),
     )
 
     def __repr__(self) -> str:

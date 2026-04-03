@@ -167,9 +167,7 @@ class TestSchedulerService:
         assert "*Total:* R$ 77.80" in message
         assert "Responda *sim* ou *nao*" in message
 
-    async def test_save_recurring_pending(
-        self, scheduler_service, seeded_session, test_phone
-    ):
+    async def test_save_recurring_pending(self, scheduler_service, seeded_session, test_phone):
         """Test saving pending confirmation for recurring expenses."""
         expenses = [
             {
@@ -184,15 +182,11 @@ class TestSchedulerService:
         ]
         total = 55.90
 
-        await scheduler_service._save_recurring_pending(
-            seeded_session, test_phone, expenses, total
-        )
+        await scheduler_service._save_recurring_pending(seeded_session, test_phone, expenses, total)
 
         # Check that pending was created
         result = await seeded_session.execute(
-            select(PendingConfirmation).where(
-                PendingConfirmation.user_phone == test_phone
-            )
+            select(PendingConfirmation).where(PendingConfirmation.user_phone == test_phone)
         )
         pending = result.scalar_one_or_none()
 
@@ -208,9 +202,7 @@ class TestSchedulerService:
         """Test sending confirmation request to user."""
         expenses = [recurring_expense_today]
 
-        await scheduler_service._send_recurring_confirmation(
-            seeded_session, test_phone, expenses
-        )
+        await scheduler_service._send_recurring_confirmation(seeded_session, test_phone, expenses)
 
         # Check that message was sent
         scheduler_service.evolution.send_text.assert_called_once()
@@ -220,9 +212,7 @@ class TestSchedulerService:
 
         # Check that pending was created
         result = await seeded_session.execute(
-            select(PendingConfirmation).where(
-                PendingConfirmation.user_phone == test_phone
-            )
+            select(PendingConfirmation).where(PendingConfirmation.user_phone == test_phone)
         )
         pending = result.scalar_one_or_none()
         assert pending is not None
@@ -231,11 +221,10 @@ class TestSchedulerService:
         self, scheduler_service, seeded_session, recurring_expense_today
     ):
         """Test manual trigger of recurring job."""
-        with patch.object(
-            scheduler_service, "_get_todays_recurring_by_user"
-        ) as mock_get, patch.object(
-            scheduler_service, "_send_recurring_confirmation"
-        ) as mock_send:
+        with (
+            patch.object(scheduler_service, "_get_todays_recurring_by_user") as mock_get,
+            patch.object(scheduler_service, "_send_recurring_confirmation") as mock_send,
+        ):
             mock_get.return_value = {"5511999999999": [recurring_expense_today]}
             mock_send.return_value = None
 
@@ -258,8 +247,9 @@ class TestSchedulerServiceStartStop:
         mock_settings.scheduler_hour = 8
         mock_settings.scheduler_minute = 0
 
-        with patch("app.services.scheduler.settings", mock_settings), patch(
-            "app.services.scheduler.EvolutionService"
+        with (
+            patch("app.services.scheduler.settings", mock_settings),
+            patch("app.services.scheduler.EvolutionService"),
         ):
             service = SchedulerService()
             service.start()
@@ -276,8 +266,9 @@ class TestSchedulerServiceStartStop:
         mock_settings = MagicMock()
         mock_settings.scheduler_enabled = False
 
-        with patch("app.services.scheduler.settings", mock_settings), patch(
-            "app.services.scheduler.EvolutionService"
+        with (
+            patch("app.services.scheduler.settings", mock_settings),
+            patch("app.services.scheduler.EvolutionService"),
         ):
             service = SchedulerService()
             service.start()
@@ -294,8 +285,9 @@ class TestSchedulerServiceStartStop:
         mock_settings.scheduler_hour = 8
         mock_settings.scheduler_minute = 0
 
-        with patch("app.services.scheduler.settings", mock_settings), patch(
-            "app.services.scheduler.EvolutionService"
+        with (
+            patch("app.services.scheduler.settings", mock_settings),
+            patch("app.services.scheduler.EvolutionService"),
         ):
             service = SchedulerService()
             service.start()

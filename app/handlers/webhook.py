@@ -866,12 +866,32 @@ class WebhookHandler:
         # Evaluate response - simple yes/no check
         response_lower = response.lower().strip().rstrip("!.,?")
         positive_responses = (
-            "sim", "s", "yes", "y", "ok", "pode", "paguei", "ja paguei",
-            "já paguei", "isso", "confirma", "confirmo", "beleza", "show",
+            "sim",
+            "s",
+            "yes",
+            "y",
+            "ok",
+            "pode",
+            "paguei",
+            "ja paguei",
+            "já paguei",
+            "isso",
+            "confirma",
+            "confirmo",
+            "beleza",
+            "show",
         )
         negative_responses = (
-            "nao", "não", "n", "no", "ainda nao", "ainda não", "cancela",
-            "ignora", "pula", "depois",
+            "nao",
+            "não",
+            "n",
+            "no",
+            "ainda nao",
+            "ainda não",
+            "cancela",
+            "ignora",
+            "pula",
+            "depois",
         )
 
         # Clean up pending
@@ -937,7 +957,9 @@ class WebhookHandler:
             if action == "confirm":
                 # Re-call with "sim" to create expenses
                 await self._handle_recurring_confirmation(
-                    session, phone, "sim",
+                    session,
+                    phone,
+                    "sim",
                     {"expenses": expenses, "total": total, "type": "recurring_confirmation"},
                 )
             elif action == "cancel":

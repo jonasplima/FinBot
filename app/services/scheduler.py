@@ -83,9 +83,7 @@ class SchedulerService:
                 for phone, expenses in user_expenses.items():
                     await self._send_recurring_confirmation(session, phone, expenses)
 
-                logger.info(
-                    f"Sent recurring confirmations to {len(user_expenses)} user(s)"
-                )
+                logger.info(f"Sent recurring confirmations to {len(user_expenses)} user(s)")
 
         except Exception as e:
             logger.error(f"Error in recurring expenses job: {e}", exc_info=True)
@@ -132,7 +130,7 @@ class SchedulerService:
                 continue
 
             # Add to user's list
-            phone = recurring.user_phone
+            phone = str(recurring.user_phone)
             if phone not in user_expenses:
                 user_expenses[phone] = []
             user_expenses[phone].append(recurring)
@@ -155,15 +153,17 @@ class SchedulerService:
         for exp in expenses:
             amount = float(exp.amount)
             total += amount
-            expense_list.append({
-                "id": exp.id,
-                "description": exp.description,
-                "amount": amount,
-                "category": exp.category.name if exp.category else "Outros",
-                "payment_method": exp.payment_method.name if exp.payment_method else "Pix",
-                "category_id": exp.category_id,
-                "payment_method_id": exp.payment_method_id,
-            })
+            expense_list.append(
+                {
+                    "id": exp.id,
+                    "description": exp.description,
+                    "amount": amount,
+                    "category": exp.category.name if exp.category else "Outros",
+                    "payment_method": exp.payment_method.name if exp.payment_method else "Pix",
+                    "category_id": exp.category_id,
+                    "payment_method_id": exp.payment_method_id,
+                }
+            )
 
         # Format message
         message = self._format_confirmation_message(expense_list, total)
@@ -202,9 +202,7 @@ class SchedulerService:
 
         # Delete any existing pending for this user
         await session.execute(
-            delete(PendingConfirmation).where(
-                PendingConfirmation.user_phone == phone
-            )
+            delete(PendingConfirmation).where(PendingConfirmation.user_phone == phone)
         )
 
         # Create new pending confirmation

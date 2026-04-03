@@ -33,9 +33,7 @@ class TestBudgetService:
         assert result["limit"] == 500.00
 
         # Verify budget was saved
-        budget = await seeded_session.execute(
-            select(Budget).where(Budget.user_phone == test_phone)
-        )
+        budget = await seeded_session.execute(select(Budget).where(Budget.user_phone == test_phone))
         budget = budget.scalar_one()
         assert budget.monthly_limit == Decimal("500.00")
         assert budget.is_active is True
@@ -111,9 +109,7 @@ class TestBudgetService:
         assert result["success"] is True
 
         # Verify budget is deactivated
-        budget = await seeded_session.execute(
-            select(Budget).where(Budget.user_phone == test_phone)
-        )
+        budget = await seeded_session.execute(select(Budget).where(Budget.user_phone == test_phone))
         budget = budget.scalar_one()
         assert budget.is_active is False
 
@@ -187,9 +183,7 @@ class TestBudgetService:
             seeded_session, test_phone, "Alimentacao", Decimal("500.00")
         )
 
-        result = await budget_service.check_budget_status(
-            seeded_session, test_phone, "Alimentacao"
-        )
+        result = await budget_service.check_budget_status(seeded_session, test_phone, "Alimentacao")
 
         assert result["success"] is True
         assert result["category"] == "Alimentacao"
@@ -201,9 +195,7 @@ class TestBudgetService:
     @pytest.mark.anyio
     async def test_check_budget_status_no_budget(self, seeded_session, budget_service, test_phone):
         """Test checking budget status when no budget exists."""
-        result = await budget_service.check_budget_status(
-            seeded_session, test_phone, "Alimentacao"
-        )
+        result = await budget_service.check_budget_status(seeded_session, test_phone, "Alimentacao")
 
         assert result["success"] is False
         assert "nao definido" in result["error"]
@@ -244,9 +236,7 @@ class TestBudgetService:
         await seeded_session.commit()
 
         # Check alerts
-        alerts = await budget_service.check_and_send_alerts(
-            seeded_session, test_phone, category.id
-        )
+        alerts = await budget_service.check_and_send_alerts(seeded_session, test_phone, category.id)
 
         assert len(alerts) == 1
         assert alerts[0]["threshold"] == 50
@@ -289,9 +279,7 @@ class TestBudgetService:
         await seeded_session.commit()
 
         # Check alerts
-        alerts = await budget_service.check_and_send_alerts(
-            seeded_session, test_phone, category.id
-        )
+        alerts = await budget_service.check_and_send_alerts(seeded_session, test_phone, category.id)
 
         # Should trigger 50%, 80%, and 100% alerts
         assert len(alerts) == 3

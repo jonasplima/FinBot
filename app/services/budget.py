@@ -63,9 +63,7 @@ class BudgetService:
                 category_id = category.id
 
             # Check if budget already exists for this user/category
-            existing = await self._get_existing_budget(
-                session, normalized_phone, category_id
-            )
+            existing = await self._get_existing_budget(session, normalized_phone, category_id)
             if existing:
                 # Update existing budget
                 existing.monthly_limit = monthly_limit
@@ -138,9 +136,7 @@ class BudgetService:
                 category_id = category.id
 
             # Find existing budget
-            budget = await self._get_existing_budget(
-                session, normalized_phone, category_id
-            )
+            budget = await self._get_existing_budget(session, normalized_phone, category_id)
             if not budget:
                 return {
                     "success": False,
@@ -193,7 +189,11 @@ class BudgetService:
             budgets = result.scalars().all()
 
             if not budgets:
-                return {"success": True, "budgets": [], "message": "Voce nao tem orcamentos definidos."}
+                return {
+                    "success": True,
+                    "budgets": [],
+                    "message": "Voce nao tem orcamentos definidos.",
+                }
 
             # Build budget status list
             budget_list = []
@@ -205,14 +205,16 @@ class BudgetService:
                 percentage = (spent / limit * 100) if limit > 0 else Decimal("0")
                 remaining = limit - spent
 
-                budget_list.append({
-                    "id": budget.id,
-                    "category": budget.category.name if budget.category else "Geral",
-                    "limit": float(limit),
-                    "spent": float(spent),
-                    "remaining": float(remaining),
-                    "percentage": float(percentage),
-                })
+                budget_list.append(
+                    {
+                        "id": budget.id,
+                        "category": budget.category.name if budget.category else "Geral",
+                        "limit": float(limit),
+                        "spent": float(spent),
+                        "remaining": float(remaining),
+                        "percentage": float(percentage),
+                    }
+                )
 
             return {"success": True, "budgets": budget_list}
 
@@ -255,9 +257,7 @@ class BudgetService:
                 category_id = category.id
 
             # Get budget
-            budget = await self._get_existing_budget(
-                session, normalized_phone, category_id
-            )
+            budget = await self._get_existing_budget(session, normalized_phone, category_id)
 
             if not budget:
                 return {
@@ -325,9 +325,7 @@ class BudgetService:
                     budgets_to_check.append(specific_budget)
 
             # Check general budget (all categories)
-            general_budget = await self._get_existing_budget(
-                session, normalized_phone, None
-            )
+            general_budget = await self._get_existing_budget(session, normalized_phone, None)
             if general_budget:
                 budgets_to_check.append(general_budget)
 
@@ -358,14 +356,16 @@ class BudgetService:
                             session.add(alert)
 
                             category_name = budget.category.name if budget.category else "Geral"
-                            alerts_to_send.append({
-                                "threshold": threshold,
-                                "category": category_name,
-                                "spent": float(spent),
-                                "limit": float(limit),
-                                "percentage": percentage,
-                                "exceeded": percentage >= 100,
-                            })
+                            alerts_to_send.append(
+                                {
+                                    "threshold": threshold,
+                                    "category": category_name,
+                                    "spent": float(spent),
+                                    "limit": float(limit),
+                                    "percentage": percentage,
+                                    "exceeded": percentage >= 100,
+                                }
+                            )
 
             if alerts_to_send:
                 await session.commit()
