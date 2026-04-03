@@ -49,6 +49,7 @@ class Category(TestBase):
     name = Column(String(100), nullable=False, unique=True)
     type = Column(String(10), nullable=False)
     expenses = relationship("Expense", back_populates="category")
+    budgets = relationship("Budget", back_populates="category")
 
 
 class PaymentMethod(TestBase):
@@ -103,6 +104,38 @@ class PendingConfirmation(TestBase):
     data = Column(JSON, nullable=False)
     expires_at = Column(DateTime, nullable=False)
     created_at = Column(DateTime, nullable=False, default=datetime.now)
+
+
+class Budget(TestBase):
+    """Test Budget model."""
+
+    __tablename__ = "budgets"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_phone = Column(String(20), nullable=False, index=True)
+    category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
+    monthly_limit = Column(Numeric(12, 2), nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.now)
+    updated_at = Column(DateTime, nullable=True)
+
+    category = relationship("Category", back_populates="budgets")
+    alerts = relationship("BudgetAlert", back_populates="budget", cascade="all, delete-orphan")
+
+
+class BudgetAlert(TestBase):
+    """Test BudgetAlert model."""
+
+    __tablename__ = "budget_alerts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    budget_id = Column(Integer, ForeignKey("budgets.id"), nullable=False)
+    threshold_percent = Column(Integer, nullable=False)
+    month = Column(Integer, nullable=False)
+    year = Column(Integer, nullable=False)
+    sent_at = Column(DateTime, nullable=False, default=datetime.now)
+
+    budget = relationship("Budget", back_populates="alerts")
 
 
 @pytest.fixture

@@ -88,11 +88,15 @@ Analise a mensagem do usuario e retorne um JSON com a intencao e dados extraidos
 - export: exportar gastos para planilha
 - list_recurring: listar despesas recorrentes
 - undo_last: desfazer/apagar o ultimo registro
+- set_budget: definir limite de orcamento para uma categoria
+- check_budget: verificar status do orcamento
+- list_budgets: listar todos os orcamentos
+- remove_budget: remover orcamento de uma categoria
 - unknown: nao entendi a mensagem
 
 ## Formato de resposta (JSON):
 {
-  "intent": "register_expense|register_recurring|cancel_recurring|query_month|export|list_recurring|undo_last|unknown",
+  "intent": "register_expense|register_recurring|cancel_recurring|query_month|export|list_recurring|undo_last|set_budget|check_budget|list_budgets|remove_budget|unknown",
   "data": {
     "description": "descricao do gasto",
     "amount": 0.00,
@@ -103,7 +107,8 @@ Analise a mensagem do usuario e retorne um JSON com a intencao e dados extraidos
     "shared_percentage": null ou percentual do usuario,
     "recurring_day": null ou dia do mes (1-31),
     "month": null ou numero do mes (1-12),
-    "year": null ou ano (ex: 2024)
+    "year": null ou ano (ex: 2024),
+    "budget_limit": null ou limite de orcamento (para set_budget)
   },
   "confidence": 0.0 a 1.0
 }
@@ -117,6 +122,8 @@ Analise a mensagem do usuario e retorne um JSON com a intencao e dados extraidos
 6. Se nao conseguir identificar algo, use null
 7. Inferir categoria quando nao especificada (ex: "almoco" -> Alimentacao)
 8. Inferir metodo de pagamento pelo contexto (ex: "no pix" -> Pix)
+9. Para orcamentos: extraia categoria e limite (budget_limit) em reais
+10. Frases como "definir limite", "orcamento de X reais", "limite de X para Y" indicam set_budget
 
 ## Exemplos:
 
@@ -164,6 +171,33 @@ Saida: {"intent": "undo_last", "data": {}, "confidence": 0.95}
 
 Entrada: "errei, remove"
 Saida: {"intent": "undo_last", "data": {}, "confidence": 0.9}
+
+Entrada: "definir limite alimentacao 500 reais"
+Saida: {"intent": "set_budget", "data": {"category": "Alimentacao", "budget_limit": 500.00}, "confidence": 0.95}
+
+Entrada: "quero um orcamento de 1000 para lazer"
+Saida: {"intent": "set_budget", "data": {"category": "Lazer", "budget_limit": 1000.00}, "confidence": 0.95}
+
+Entrada: "limite de 2000 reais pra mercado"
+Saida: {"intent": "set_budget", "data": {"category": "Mercado", "budget_limit": 2000.00}, "confidence": 0.95}
+
+Entrada: "quanto tenho de orcamento?"
+Saida: {"intent": "list_budgets", "data": {}, "confidence": 0.95}
+
+Entrada: "como esta meu orcamento de alimentacao"
+Saida: {"intent": "check_budget", "data": {"category": "Alimentacao"}, "confidence": 0.95}
+
+Entrada: "quais sao meus orcamentos"
+Saida: {"intent": "list_budgets", "data": {}, "confidence": 0.95}
+
+Entrada: "meus limites de gasto"
+Saida: {"intent": "list_budgets", "data": {}, "confidence": 0.95}
+
+Entrada: "remover orcamento de lazer"
+Saida: {"intent": "remove_budget", "data": {"category": "Lazer"}, "confidence": 0.95}
+
+Entrada: "tirar limite de alimentacao"
+Saida: {"intent": "remove_budget", "data": {"category": "Alimentacao"}, "confidence": 0.95}
 
 Responda APENAS com o JSON, sem texto adicional.
 """
@@ -561,3 +595,45 @@ class GeminiService:
             else:
                 status[model] = {"available": True}
         return status
+
+    def format_budget_alert(self, alert: dict) -> str:
+        """
+        Format a budget alert message in a friendly way.
+
+        Args:
+            alert: Dict with threshold, category, spent, limit, percentage, exceeded
+
+        Returns:
+            Formatted alert message
+        """
+        threshold = alert["threshold"]
+        category = alert["category"]
+        spent = alert["spent"]
+        limit = alert["limit"]
+        percentage = alert["percentage"]
+        exceeded = alert.get("exceeded", False)
+
+        if exceeded:
+            excess = spent - limit
+            return (
+                f"🚨 *Limite atingido!*\n\n"
+                f"Voce excedeu o orcamento de *{category}* em R$ {excess:.2f}.\n"
+                f"Limite: R$ {limit:.2f}\n"
+                f"Gasto: R$ {spent:.2f} ({percentage:.0f}%)"
+            )
+        elif threshold == 80:
+            return (
+                f"⚠️ *Cuidado!*\n\n"
+                f"Voce ja gastou *{percentage:.0f}%* do orcamento de *{category}*.\n"
+                f"Limite: R$ {limit:.2f}\n"
+                f"Gasto: R$ {spent:.2f}\n"
+                f"Restante: R$ {(limit - spent):.2f}"
+            )
+        else:  # 50%
+            return (
+                f"📊 *Aviso de orcamento*\n\n"
+                f"Voce ja gastou *{percentage:.0f}%* do orcamento de *{category}*.\n"
+                f"Limite: R$ {limit:.2f}\n"
+                f"Gasto: R$ {spent:.2f}\n"
+                f"Restante: R$ {(limit - spent):.2f}"
+            )

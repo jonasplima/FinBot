@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.database.connection import async_session
 from app.database.models import PendingConfirmation
+from app.services.budget import BudgetService
 from app.services.evolution import EvolutionService
 from app.services.expense import ExpenseService
 from app.services.gemini import GeminiService
@@ -25,6 +26,7 @@ class WebhookHandler:
         self.evolution = EvolutionService()
         self.gemini = GeminiService()
         self.expense_service = ExpenseService()
+        self.budget_service = BudgetService()
 
     async def handle(self, webhook_data: dict) -> None:
         """Process incoming webhook event."""
@@ -114,6 +116,14 @@ class WebhookHandler:
                 await self.handle_list_recurring(session, phone)
             elif intent == "undo_last":
                 await self.handle_undo_last(session, phone)
+            elif intent == "set_budget":
+                await self.handle_set_budget(session, phone, result)
+            elif intent == "check_budget":
+                await self.handle_check_budget(session, phone, result)
+            elif intent == "list_budgets":
+                await self.handle_list_budgets(session, phone)
+            elif intent == "remove_budget":
+                await self.handle_remove_budget(session, phone, result)
             else:
                 # Unknown intent - ask for clarification
                 await self.evolution.send_text(
@@ -124,7 +134,9 @@ class WebhookHandler:
                     "- Cancelar recorrente: 'cancelar netflix'\n"
                     "- Ver resumo: 'quanto gastei esse mes?'\n"
                     "- Exportar: 'exportar meus gastos de marco'\n"
-                    "- Desfazer: 'desfaz' ou 'apaga o ultimo'",
+                    "- Desfazer: 'desfaz' ou 'apaga o ultimo'\n"
+                    "- Definir orcamento: 'definir limite alimentacao 500 reais'\n"
+                    "- Ver orcamentos: 'meus limites de gasto'",
                 )
 
         except Exception as e:
@@ -392,6 +404,141 @@ class WebhookHandler:
         else:
             await self.evolution.send_text(phone, result["error"])
 
+    async def handle_set_budget(
+        self,
+        session: AsyncSession,
+        phone: str,
+        data: dict,
+    ) -> None:
+        """Handle setting a budget limit for a category."""
+        from decimal import Decimal
+
+        budget_data = data.get("data", {})
+        category = budget_data.get("category")
+        budget_limit = budget_data.get("budget_limit")
+
+        if not budget_limit:
+            await self.evolution.send_text(
+                phone,
+                "Por favor, informe o valor do limite. Exemplo: 'definir limite alimentacao 500 reais'",
+            )
+            return
+
+        result = await self.budget_service.create_budget(
+            session, phone, category, Decimal(str(budget_limit))
+        )
+
+        if result["success"]:
+            category_name = result.get("category") or "Geral"
+            limit_value = result.get("limit", 0)
+            action = "atualizado" if result.get("updated") else "criado"
+
+            msg = (
+                f"Orcamento {action}!\n\n"
+                f"Categoria: {category_name}\n"
+                f"Limite: R$ {limit_value:.2f}\n\n"
+                f"Voce sera alertado em 50%, 80% e 100% do limite."
+            )
+            await self.evolution.send_text(phone, msg)
+        else:
+            await self.evolution.send_text(phone, result["error"])
+
+    async def handle_check_budget(
+        self,
+        session: AsyncSession,
+        phone: str,
+        data: dict,
+    ) -> None:
+        """Handle checking budget status for a category."""
+        budget_data = data.get("data", {})
+        category = budget_data.get("category")
+
+        result = await self.budget_service.check_budget_status(session, phone, category)
+
+        if result["success"]:
+            category_name = result.get("category", "Geral")
+            limit_value = result.get("limit", 0)
+            spent = result.get("spent", 0)
+            remaining = result.get("remaining", 0)
+            percentage = result.get("percentage", 0)
+
+            if remaining >= 0:
+                status_emoji = "✅" if percentage < 50 else "⚠️" if percentage < 80 else "🚨"
+            else:
+                status_emoji = "🚨"
+
+            msg = (
+                f"{status_emoji} Orcamento de {category_name}\n\n"
+                f"Limite: R$ {limit_value:.2f}\n"
+                f"Gasto: R$ {spent:.2f} ({percentage:.0f}%)\n"
+                f"Restante: R$ {remaining:.2f}"
+            )
+            await self.evolution.send_text(phone, msg)
+        else:
+            await self.evolution.send_text(phone, result["error"])
+
+    async def handle_list_budgets(
+        self,
+        session: AsyncSession,
+        phone: str,
+    ) -> None:
+        """Handle listing all active budgets."""
+        result = await self.budget_service.list_budgets(session, phone)
+
+        if not result["success"]:
+            await self.evolution.send_text(phone, result.get("error", "Erro ao listar orcamentos."))
+            return
+
+        budgets = result.get("budgets", [])
+
+        if not budgets:
+            await self.evolution.send_text(
+                phone,
+                "Voce nao tem orcamentos definidos.\n\n"
+                "Para criar um, diga: 'definir limite alimentacao 500 reais'",
+            )
+            return
+
+        msg = "Seus orcamentos:\n\n"
+        for budget in budgets:
+            percentage = budget["percentage"]
+            if percentage < 50:
+                status_emoji = "✅"
+            elif percentage < 80:
+                status_emoji = "⚠️"
+            else:
+                status_emoji = "🚨"
+
+            msg += (
+                f"{status_emoji} *{budget['category']}*\n"
+                f"   Limite: R$ {budget['limit']:.2f}\n"
+                f"   Gasto: R$ {budget['spent']:.2f} ({percentage:.0f}%)\n"
+                f"   Restante: R$ {budget['remaining']:.2f}\n\n"
+            )
+
+        await self.evolution.send_text(phone, msg)
+
+    async def handle_remove_budget(
+        self,
+        session: AsyncSession,
+        phone: str,
+        data: dict,
+    ) -> None:
+        """Handle removing a budget."""
+        budget_data = data.get("data", {})
+        category = budget_data.get("category")
+
+        result = await self.budget_service.remove_budget(session, phone, category)
+
+        if result["success"]:
+            category_name = result.get("category") or "Geral"
+            await self.evolution.send_text(
+                phone,
+                f"Orcamento de {category_name} removido com sucesso.",
+            )
+        else:
+            await self.evolution.send_text(phone, result["error"])
+
     async def handle_confirmation_response(
         self,
         session: AsyncSession,
@@ -450,6 +597,18 @@ class WebhookHandler:
 
             if result.get("success"):
                 await self.evolution.send_text(phone, "Registrado com sucesso!")
+
+                # Check for budget alerts (only for expenses, not income)
+                if expense_data.get("category"):
+                    category_id = await self._get_category_id(session, expense_data["category"])
+                    if category_id:
+                        alerts = await self.budget_service.check_and_send_alerts(
+                            session, phone, category_id
+                        )
+                        # Send alert messages
+                        for alert in alerts:
+                            alert_msg = self.gemini.format_budget_alert(alert)
+                            await self.evolution.send_text(phone, alert_msg)
             else:
                 await self.evolution.send_text(
                     phone,
@@ -667,3 +826,19 @@ class WebhookHandler:
         )
         session.add(pending)
         await session.commit()
+
+    async def _get_category_id(
+        self,
+        session: AsyncSession,
+        category_name: str,
+    ) -> int | None:
+        """Get category ID by name."""
+        from sqlalchemy import func
+
+        from app.database.models import Category
+
+        result = await session.execute(
+            select(Category.id).where(func.lower(Category.name) == category_name.lower())
+        )
+        category_id = result.scalar_one_or_none()
+        return category_id

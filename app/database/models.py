@@ -31,6 +31,7 @@ class Category(Base):
 
     # Relationships
     expenses = relationship("Expense", back_populates="category")
+    budgets = relationship("Budget", back_populates="category")
 
     def __repr__(self) -> str:
         return f"<Category(id={self.id}, name='{self.name}', type='{self.type}')>"
@@ -124,3 +125,53 @@ class PendingConfirmation(Base):
     def is_expired(self) -> bool:
         """Check if confirmation has expired."""
         return datetime.now() > self.expires_at
+
+
+class Budget(Base):
+    """Monthly budget limit per category."""
+
+    __tablename__ = "budgets"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_phone = Column(String(20), nullable=False, index=True)
+    category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
+    monthly_limit = Column(Numeric(12, 2), nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.now, server_default=func.now())
+    updated_at = Column(DateTime, nullable=True, onupdate=datetime.now)
+
+    # Relationships
+    category = relationship("Category", back_populates="budgets")
+    alerts = relationship("BudgetAlert", back_populates="budget", cascade="all, delete-orphan")
+
+    # Indexes
+    __table_args__ = (
+        Index("ix_budgets_user_category", "user_phone", "category_id"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<Budget(id={self.id}, user_phone='{self.user_phone}', limit={self.monthly_limit})>"
+
+
+class BudgetAlert(Base):
+    """Track sent budget alerts to avoid duplicates."""
+
+    __tablename__ = "budget_alerts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    budget_id = Column(Integer, ForeignKey("budgets.id"), nullable=False)
+    threshold_percent = Column(Integer, nullable=False)  # 50, 80, or 100
+    month = Column(Integer, nullable=False)
+    year = Column(Integer, nullable=False)
+    sent_at = Column(DateTime, nullable=False, default=datetime.now, server_default=func.now())
+
+    # Relationships
+    budget = relationship("Budget", back_populates="alerts")
+
+    # Indexes to quickly check if alert was already sent
+    __table_args__ = (
+        Index("ix_budget_alerts_unique", "budget_id", "threshold_percent", "month", "year", unique=True),
+    )
+
+    def __repr__(self) -> str:
+        return f"<BudgetAlert(budget_id={self.budget_id}, threshold={self.threshold_percent}%, {self.month}/{self.year})>"

@@ -14,9 +14,10 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
 | Modelo de despesas recorrentes | ✅ Completo | `app/database/models.py` |
 | Serviço de recorrentes | ⚠️ Parcial (falta scheduler) | `app/services/recurring.py` |
 | Suporte multi-usuário | ⚠️ Parcial (estrutura existe) | Campo `user_phone` nos models |
-| Testes unitários | ✅ Completo (95 testes) | `tests/` |
+| Testes unitários | ✅ Completo (112 testes) | `tests/` |
 | Desfazer última ação | ✅ Completo | `app/services/expense.py` |
 | Pipeline CI/CD | ✅ Completo | `.github/workflows/ci.yml` |
+| Alertas e Limites de Orçamento | ✅ Completo | `app/services/budget.py` |
 
 ---
 
@@ -27,7 +28,7 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
 - **Valor:** Alto (previne regressões nas próximas fases)
 - **Status:** Implementado
 - **Implementação:**
-  - ✅ 95 testes cobrindo `ExpenseService`, `GeminiService`, `ExportService` e `WebhookHandler`
+  - ✅ 112 testes cobrindo `ExpenseService`, `GeminiService`, `ExportService`, `WebhookHandler` e `BudgetService`
   - ✅ Mocks para APIs externas (Gemini, Evolution API)
   - ✅ GitHub Actions com: `pytest`, `ruff`, `mypy`
   - ✅ Testes de integração para webhook
@@ -55,15 +56,28 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
 
 ## Fase 2: Inteligência Financeira (Prioridade Alta)
 
-### 2.1 Alertas e Limites de Orçamento
+### 2.1 Alertas e Limites de Orçamento ✅
 - **Complexidade:** Média 🟡
 - **Valor:** Muito Alto (diferencial competitivo)
-- **Orientações:**
-  - **Nova tabela:** `budgets` (user_phone, category_id, monthly_limit, alert_threshold)
-  - **Lógica em Python** (não no Gemini): calcular % consumido após cada gasto
-  - **Gatilhos de alerta:** 50%, 80%, 100% do limite
-  - **Gemini:** apenas formatar mensagem amigável do alerta
-  - **Comando:** "definir limite alimentação 500 reais"
+- **Status:** Implementado
+- **Implementação:**
+  - ✅ Novas tabelas: `budgets` e `budget_alerts` para rastrear alertas enviados
+  - ✅ `BudgetService` com: create, remove, list, check_status, check_and_send_alerts
+  - ✅ Gatilhos de alerta em 50%, 80%, 100% do limite (sem duplicatas no mesmo mês)
+  - ✅ Alertas automáticos após confirmação de gasto
+  - ✅ Integração com Gemini para novos intents: set_budget, check_budget, list_budgets, remove_budget
+  - ✅ 17 testes específicos para funcionalidade de orçamento
+- **Comandos:**
+  - "definir limite alimentação 500 reais" → cria/atualiza orçamento
+  - "quanto tenho de orçamento?" → lista todos os orçamentos
+  - "como está meu orçamento de alimentação" → status específico
+  - "remover orçamento de lazer" → desativa orçamento
+- **Arquivos:**
+  - `app/database/models.py` - Models Budget e BudgetAlert
+  - `app/services/budget.py` - BudgetService completo
+  - `app/services/gemini.py` - Novos intents e format_budget_alert()
+  - `app/handlers/webhook.py` - Handlers de orçamento e integração com alertas
+  - `tests/test_budget.py` - Testes unitários
 
 ### 2.2 Ativação do Scheduler de Recorrentes
 - **Complexidade:** Baixa 🟢
@@ -152,11 +166,11 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
 |------|-------|--------------|--------------|-------|
 | ~~CI/CD e Testes~~ | ✅ | 🟢 | Nenhuma | ⭐⭐⭐⭐⭐ |
 | ~~Desfazer Ação~~ | ✅ | 🟢 | Nenhuma | ⭐⭐⭐⭐⭐ |
-| Alertas/Limites | 🔴 | 🟡 | ~~Testes~~ ✅ | ⭐⭐⭐⭐ |
+| ~~Alertas/Limites~~ | ✅ | 🟡 | ~~Testes~~ ✅ | ⭐⭐⭐⭐ |
 | Scheduler Recorrentes | 🔴 | 🟢 | Nenhuma | ⭐⭐⭐⭐ |
 | Gráficos | 🔴 | 🟡 | Nenhuma | ⭐⭐⭐⭐ |
 | PDF Export | 🟡 | 🟢 | XLSX (existe) | ⭐⭐⭐ |
-| Metas | 🟡 | 🟡 | Alertas | ⭐⭐⭐ |
+| Metas | 🟡 | 🟡 | ~~Alertas~~ ✅ | ⭐⭐⭐ |
 | Conversão Moeda | 🟡 | 🟢 | Nenhuma | ⭐⭐⭐ |
 | Multi-Usuários | 🔴 | 🔴 | ~~Testes, CI~~ ✅ | ⭐⭐ |
 | Backup | 🟡 | 🟡 | Multi-usuários | ⭐⭐ |
@@ -166,7 +180,7 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
 ## Ordem de Implementação Sugerida
 
 1. **Sprint 1:** ~~CI/CD + Testes~~ ✅ + ~~Desfazer Ação~~ ✅
-2. **Sprint 2:** Alertas/Limites + Scheduler Recorrentes ⬅️ **PRÓXIMO**
+2. **Sprint 2:** ~~Alertas/Limites~~ ✅ + Scheduler Recorrentes ⬅️ **PRÓXIMO**
 3. **Sprint 3:** Gráficos + PDF
 4. **Sprint 4:** Metas + Conversão Moeda
 5. **Sprint 5:** Multi-Usuários + Backup
