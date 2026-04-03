@@ -33,6 +33,12 @@ class Settings(BaseSettings):
     # Security
     admin_secret: str
 
+    # Scheduler
+    scheduler_enabled: bool = True
+    scheduler_timezone: str = "America/Sao_Paulo"
+    scheduler_hour: int = 8
+    scheduler_minute: int = 0
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

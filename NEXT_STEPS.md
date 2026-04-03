@@ -12,9 +12,10 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
 |----------------|--------|---------|
 | Exportação XLSX | ✅ Completo | `app/services/export.py` |
 | Modelo de despesas recorrentes | ✅ Completo | `app/database/models.py` |
-| Serviço de recorrentes | ⚠️ Parcial (falta scheduler) | `app/services/recurring.py` |
+| Serviço de recorrentes | ✅ Completo | `app/services/recurring.py` |
+| Scheduler de recorrentes | ✅ Completo | `app/services/scheduler.py` |
 | Suporte multi-usuário | ⚠️ Parcial (estrutura existe) | Campo `user_phone` nos models |
-| Testes unitários | ✅ Completo (112 testes) | `tests/` |
+| Testes unitários | ✅ Completo (124 testes) | `tests/` |
 | Desfazer última ação | ✅ Completo | `app/services/expense.py` |
 | Pipeline CI/CD | ✅ Completo | `.github/workflows/ci.yml` |
 | Alertas e Limites de Orçamento | ✅ Completo | `app/services/budget.py` |
@@ -79,14 +80,28 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
   - `app/handlers/webhook.py` - Handlers de orçamento e integração com alertas
   - `tests/test_budget.py` - Testes unitários
 
-### 2.2 Ativação do Scheduler de Recorrentes
+### 2.2 Ativação do Scheduler de Recorrentes ✅
 - **Complexidade:** Baixa 🟢
 - **Valor:** Alto (infraestrutura já existe)
-- **Orientações:**
-  - Integrar `APScheduler` ao FastAPI (job diário às 08:00)
-  - Usar `RecurringService.process_recurring_expenses()` já implementado
-  - Adicionar notificação via Evolution API após processar
-  - Opcional: perguntar "A conta X venceu, já pagou?" ao invés de lançar automaticamente
+- **Status:** Implementado
+- **Implementação:**
+  - ✅ `APScheduler` integrado ao FastAPI (job diário configurável)
+  - ✅ `SchedulerService` com: start, shutdown, process_recurring_job
+  - ✅ Modo de confirmação: pergunta ao usuário antes de lançar
+  - ✅ Mensagem: "Despesas recorrentes de hoje: ... Já pagou? Responda sim ou não"
+  - ✅ Handler de confirmação no webhook para processar respostas
+  - ✅ Integração com alertas de orçamento após lançar despesas
+  - ✅ 12 testes específicos para funcionalidade de scheduler
+- **Configurações (`.env`):**
+  - `SCHEDULER_ENABLED=true` - Habilita/desabilita
+  - `SCHEDULER_TIMEZONE=America/Sao_Paulo` - Fuso horário
+  - `SCHEDULER_HOUR=8` / `SCHEDULER_MINUTE=0` - Horário do job
+- **Arquivos:**
+  - `app/services/scheduler.py` - SchedulerService completo
+  - `app/handlers/webhook.py` - Handler _handle_recurring_confirmation
+  - `app/main.py` - Integração no lifespan (start/shutdown)
+  - `app/config.py` - Configurações do scheduler
+  - `tests/test_scheduler.py` - Testes unitários
 
 ---
 
@@ -167,7 +182,7 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
 | ~~CI/CD e Testes~~ | ✅ | 🟢 | Nenhuma | ⭐⭐⭐⭐⭐ |
 | ~~Desfazer Ação~~ | ✅ | 🟢 | Nenhuma | ⭐⭐⭐⭐⭐ |
 | ~~Alertas/Limites~~ | ✅ | 🟡 | ~~Testes~~ ✅ | ⭐⭐⭐⭐ |
-| Scheduler Recorrentes | 🔴 | 🟢 | Nenhuma | ⭐⭐⭐⭐ |
+| ~~Scheduler Recorrentes~~ | ✅ | 🟢 | Nenhuma | ⭐⭐⭐⭐ |
 | Gráficos | 🔴 | 🟡 | Nenhuma | ⭐⭐⭐⭐ |
 | PDF Export | 🟡 | 🟢 | XLSX (existe) | ⭐⭐⭐ |
 | Metas | 🟡 | 🟡 | ~~Alertas~~ ✅ | ⭐⭐⭐ |
@@ -180,7 +195,7 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
 ## Ordem de Implementação Sugerida
 
 1. **Sprint 1:** ~~CI/CD + Testes~~ ✅ + ~~Desfazer Ação~~ ✅
-2. **Sprint 2:** ~~Alertas/Limites~~ ✅ + Scheduler Recorrentes ⬅️ **PRÓXIMO**
-3. **Sprint 3:** Gráficos + PDF
+2. **Sprint 2:** ~~Alertas/Limites~~ ✅ + ~~Scheduler Recorrentes~~ ✅
+3. **Sprint 3:** Gráficos + PDF ⬅️ **PRÓXIMO**
 4. **Sprint 4:** Metas + Conversão Moeda
 5. **Sprint 5:** Multi-Usuários + Backup

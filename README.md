@@ -1,9 +1,10 @@
 <div align="center">
   <img src="assets/logo.svg" alt="FinBot Logo" width="150" height="150">
   <h1>FinBot</h1>
-  <p><b>Assistente Financeiro Inteligente Integrado ao WhatsApp</b></p>
-  
-  [![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)](#)
+  <p><b>Assistente Financeiro Inteligente via WhatsApp</b></p>
+
+  [![CI](https://github.com/jonasplima/FinBot/actions/workflows/ci.yml/badge.svg)](https://github.com/jonasplima/FinBot/actions/workflows/ci.yml)
+  [![Python](https://img.shields.io/badge/Python_3.12-3776AB?style=for-the-badge&logo=python&logoColor=white)](#)
   [![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](#)
   [![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)](#)
   [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-316192?style=for-the-badge&logo=postgresql&logoColor=white)](#)
@@ -12,94 +13,250 @@
 
 <br/>
 
-O **FinBot** é um assistente financeiro pessoal automatizado que opera diretamente no WhatsApp. Desenvolvido para simplificar a gestão de despesas, o projeto permite que os usuários registrem seus gastos ou receitas através de mensagens de texto ou áudio de forma natural. 
+O **FinBot** é um assistente financeiro pessoal que opera diretamente no WhatsApp. Registre gastos, receitas e controle seu orçamento através de mensagens de texto naturais ou fotos de notas fiscais.
 
-Através da integração da **Evolution API** com a inteligência artificial do **Google Gemini**, o FinBot é capaz de interpretar o contexto das conversas e organizar todas as suas informações financeiras de maneira eficiente e autônoma. Diferente das planilhas tradicionais ou aplicativos complexos, a interação ocorre exatamente onde você já se comunica no seu dia a dia.
-
----
-
-## 🌟 Principais Funcionalidades
-
-- **Processamento em Linguagem Natural:** Envie mensagens como faria com qualquer contato. O modelo do Google Gemini interpreta o contexto, categoriza a despesa e extrai os valores automaticamente.
-- **Conexão Simplificada:** Interface web intuitiva para conexão do celular via QR Code (`/admin/qrcode`), oferecendo a mesma experiência do WhatsApp Web.
-- **Segurança e Privacidade:** O assistente foi configurado para responder exclusivamente ao número de telefone do administrador (`OWNER_PHONE`) e aos números previamente configurados na sua estrutura de permissões. 
-- **Desempenho Assíncrono:** Utilizando `asyncio` e FastAPI, o processamento e a comunicação com as APIs externas ocorrem de forma paralela, ágil e sem interrupções.
-- **Persistência Confiável:** Armazenamento estruturado das interações e finanças em um banco de dados relacional PostgreSQL, somado à utilização do Redis como controle de cache em memória.
-- **Exportação de Dados:** Possibilidade de geração de relatórios simples e visualização contábil (suporte à exportação para Excel via bibliotecas Python nativas).
+Através da integração da **Evolution API** com o **Google Gemini**, o FinBot interpreta suas mensagens, categoriza despesas automaticamente e mantém seu controle financeiro organizado.
 
 ---
 
-## 🛠️ Arquitetura e Tecnologias
+## Funcionalidades
 
-A infraestrutura do FinBot foi construída visando estabilidade, flexibilidade, facilidade de implantação e segurança. 
+### Registro de Despesas
+- **Linguagem natural**: "gastei 50 reais no almoço no pix"
+- **Parcelamento**: "comprei um tênis de 300 reais em 3x no cartão"
+- **Despesas compartilhadas**: "mercado 200 reais dividido 60% meu"
+- **Leitura de notas fiscais**: envie uma foto e o FinBot extrai os dados
 
-- **FastAPI (Python):** Framework sólido responsável pela alta performance no roteamento e gerenciamento dos webhooks.
-- **Evolution API:** Interface robusta para interagir nativamente com a camada de mensagens da Meta (WhatsApp).
-- **Google Gemini AI:** Modelo fundacional em nuvem encarregado da interpretação cognitiva, raciocínio lógico e classificação das entradas textuais não formatadas.
-- **PostgreSQL e Redis:** Banco de dados relacional e banco de chave-valor base da persistência e controle de estado transacional.
-- **Docker e Docker Compose:** Plataforma total de containerização do seu projeto. Garante que os microsserviços (API, Banco de dados, WhatsApp) estejam imutáveis e prontos para escalar.
+### Despesas Recorrentes
+- **Cadastro**: "netflix 55 reais todo mês dia 15"
+- **Scheduler automático**: às 08:00 pergunta se você já pagou as contas do dia
+- **Confirmação**: responda "sim" para lançar ou "não" para ignorar
+
+### Orçamentos e Alertas
+- **Definir limite**: "definir limite alimentação 500 reais"
+- **Alertas automáticos**: notificações em 50%, 80% e 100% do limite
+- **Consultar status**: "como está meu orçamento de alimentação?"
+
+### Consultas e Exportação
+- **Resumo mensal**: "quanto gastei esse mês?"
+- **Exportar Excel**: "exportar meus gastos de março"
+- **Desfazer**: "desfaz" ou "apaga o último"
 
 ---
 
-## 🚀 Como Executar Localmente
+## Comandos Disponíveis
 
-### 1. Pré-requisitos
-Certifique-se de ter o [Docker](https://www.docker.com/) e a extensão do [Docker Compose](https://docs.docker.com/compose/) devidamente instalados e operacionais no seu ambiente.
+| Comando | Exemplo |
+|---------|---------|
+| Registrar gasto | "gastei 45 reais no almoço no pix" |
+| Gasto parcelado | "comprei TV de 2000 em 10x no cartão" |
+| Gasto compartilhado | "mercado 300 reais dividido 50%" |
+| Despesa recorrente | "spotify 21.90 todo mês dia 5" |
+| Cancelar recorrente | "cancelar spotify" |
+| Listar recorrentes | "minhas despesas recorrentes" |
+| Resumo do mês | "quanto gastei esse mês?" |
+| Exportar Excel | "exportar março" |
+| Desfazer último | "desfaz" ou "apaga o último" |
+| Definir orçamento | "limite de 500 para alimentação" |
+| Ver orçamentos | "meus limites de gasto" |
+| Status orçamento | "como está meu orçamento?" |
+| Remover orçamento | "remover limite de lazer" |
 
-### 2. Configuração Básica do Repositório
-Realize a clonagem do projeto para um diretório local e navegue até ele:
+---
+
+## Arquitetura
+
+```
+┌─────────────┐     ┌──────────────┐     ┌─────────────┐
+│  WhatsApp   │────▶│ Evolution API │────▶│   FinBot    │
+│   (User)    │◀────│   (Webhook)   │◀────│  (FastAPI)  │
+└─────────────┘     └──────────────┘     └──────┬──────┘
+                                                │
+                    ┌───────────────────────────┼───────────────────────────┐
+                    │                           │                           │
+              ┌─────▼─────┐             ┌───────▼───────┐           ┌───────▼───────┐
+              │ PostgreSQL │             │ Google Gemini │           │     Redis     │
+              │    (DB)    │             │     (AI)      │           │    (Cache)    │
+              └───────────┘             └───────────────┘           └───────────────┘
+```
+
+### Tecnologias
+
+- **FastAPI** - Framework web assíncrono de alta performance
+- **Evolution API** - Integração nativa com WhatsApp
+- **Google Gemini** - IA para interpretação de mensagens e imagens
+- **PostgreSQL** - Banco de dados relacional
+- **Redis** - Cache e controle de estado
+- **APScheduler** - Agendamento de tarefas (despesas recorrentes)
+- **Docker** - Containerização completa
+
+---
+
+## Instalação
+
+### Pré-requisitos
+
+- [Docker](https://www.docker.com/) e [Docker Compose](https://docs.docker.com/compose/)
+- Conta no [Google AI Studio](https://aistudio.google.com/) para chave da API Gemini
+
+### 1. Clone o repositório
+
 ```bash
 git clone https://github.com/jonasplima/FinBot.git
 cd FinBot
 ```
 
-A partir do diretório raiz, crie o arquivo definitivo de variáveis de ambiente baseando-se no modelo de propriedades que preparamos:
+### 2. Configure as variáveis de ambiente
+
 ```bash
 cp .env.example .env
 ```
 
-Configure cautelosamente as credenciais no escopo do arquivo `.env`:
-- `EVOLUTION_API_KEY`: Uma chave alfanumérica customizada por você para a autenticação segura do webhook.
-- `OWNER_PHONE`: O seu telefone de operação principal (insira em formato internacional contínuo, sem formatação. Ex: `5511999999999`).
-- `GEMINI_API_KEY`: Sua chave privada do [Google AI Studio](https://aistudio.google.com/apikey).
-- `ADMIN_SECRET`: Chave secreta de proteção aos módulos remotos e painel do QR Code.
+Edite o arquivo `.env`:
 
-### 3. Orquestração e Inicialização
-Com as chaves e propriedades devidamente validadas, emita o comando de orquestração geral para os contêineres e a base de dados:
+```env
+# Obrigatórios
+OWNER_PHONE=5511999999999        # Seu número (formato internacional)
+GEMINI_API_KEY=sua_chave_gemini  # Do Google AI Studio
+ADMIN_SECRET=senha_segura        # Para acessar /admin/qrcode
+EVOLUTION_API_KEY=chave_aleatoria # Gere com: openssl rand -hex 32
+
+# Opcionais
+ALLOWED_NUMBERS=5511988888888    # Números adicionais (separados por vírgula)
+SCHEDULER_ENABLED=true           # Ativar scheduler de recorrentes
+SCHEDULER_HOUR=8                 # Hora do lembrete diário
+```
+
+### 3. Inicie os containers
+
 ```bash
 docker-compose up -d
 ```
-Este comando realizará o download e a compilação isolada das instâncias do FinBot, do agente local da Evolution API, do PostgreSQL e da extensão de cache.
 
-### 4. Autenticação e Sincronização
-Para vincular de fato a sua conta e conectar o aparelho em uso, acesse o painel seguro pelo navegador web:
-```
-http://localhost:3003/admin/qrcode?secret=SUA_SENHA_ADMIN_SECRETA
-```
-*(Não esqueça de substituir a `SUA_SENHA_ADMIN_SECRETA` pelo valor literal configurado na credencial do `.env`)*
+### 4. Conecte o WhatsApp
 
-Basta escanear o QR Code exibido na tela, semelhante ao processo de autenticação padrão desktop/web. Feita a leitura rápida, envie seu primeiro registro financeiro no WhatsApp, em texto livre, para que o robô faça seu trabalho.
+Acesse no navegador:
+```
+http://localhost:3003/admin/qrcode?secret=SUA_SENHA_ADMIN
+```
+
+Escaneie o QR Code com o WhatsApp (como no WhatsApp Web).
+
+### 5. Teste
+
+Envie uma mensagem para o número conectado:
+```
+gastei 10 reais no café
+```
 
 ---
 
-## 📁 Organização de Diretórios Estruturais
+## Desenvolvimento
 
-Abaixo está o layout das pastas e dependências, em respeito ao paradigma de arquitetura limpa:
+### Estrutura do Projeto
 
-```text
+```
 FinBot/
-├── app/                  # Código-fonte e diretórios primários da API
-│   ├── database/         # Controles de inicialização, sessões com DB e migrations
-│   ├── handlers/         # Processamento de fluxos dinâmicos dos webhooks
-│   ├── services/         # Integrações HTTP com serviços (Evolution e Gemini)
-│   ├── utils/            # Ferramentas independentes, tipagens e processadores utilitários
-│   ├── config.py         # Arquitetura de mapeamento do Pydantic atrelada ao '.env'
-│   └── main.py           # Entrypoint da aplicação e roteamento principal (App FastAPI)
-├── docker-compose.yml    # Manifesto formalizando dependências dos Nodes, Redes e Imagens
-├── Dockerfile            # Construção, Build OS e isolamento Python Runtime
-├── init-db.sh            # Script Shell inicializando o PostgreSQL na primeira subida
-└── .env.example          # Esqueletos das configurações de ambiente necessárias
+├── app/
+│   ├── database/        # Models, conexão e seeds
+│   ├── handlers/        # Webhook handlers
+│   ├── services/        # Serviços (Gemini, Evolution, Budget, etc)
+│   ├── utils/           # Utilitários e validadores
+│   ├── config.py        # Configurações (Pydantic Settings)
+│   └── main.py          # Aplicação FastAPI
+├── tests/               # Testes unitários (124 testes)
+├── .github/workflows/   # CI/CD (GitHub Actions)
+├── docker-compose.yml
+├── Dockerfile
+├── requirements.txt
+└── .env.example
 ```
 
-**Nota sobre Segurança de Acessos:** 
-A integridade dos endpoints administrativos (em especial o módulo de apresentação e geração de QR code) é garantida localmente pela injeção da query param `secret`. Qualquer tráfego suspeito será imediatamente rejeitado pela rota principal com os status `HTTPException: 401 | Unauthorized` caso essas chaves de conferência apresentem inconformidades com suas devidas variáveis de ambiente nativas.
+### Executar Testes
+
+```bash
+# Instalar dependências de desenvolvimento
+pip install -r requirements.txt
+pip install pytest pytest-asyncio pytest-cov aiosqlite
+
+# Rodar todos os testes
+pytest tests/ -v
+
+# Com cobertura
+pytest tests/ --cov=app --cov-report=term-missing
+```
+
+### Linting e Type Checking
+
+```bash
+# Lint
+ruff check .
+
+# Formatação
+ruff format .
+
+# Type checking
+mypy app/
+```
+
+---
+
+## Configurações do Scheduler
+
+O scheduler de despesas recorrentes pode ser configurado via variáveis de ambiente:
+
+| Variável | Default | Descrição |
+|----------|---------|-----------|
+| `SCHEDULER_ENABLED` | `true` | Ativar/desativar o scheduler |
+| `SCHEDULER_TIMEZONE` | `America/Sao_Paulo` | Fuso horário |
+| `SCHEDULER_HOUR` | `8` | Hora do lembrete (0-23) |
+| `SCHEDULER_MINUTE` | `0` | Minuto do lembrete (0-59) |
+
+---
+
+## Categorias Disponíveis
+
+### Gastos (Negativo)
+Alimentação, Assinatura, Imprevistos, Despesa Fixa, Educação, Empréstimo, Lazer, Mercado, Moradia, Outros, Parcelamento de Fatura, Presente, Saúde e Beleza, Serviços, Transferência, Transporte, Vestuário, Viagem, Reserva de Emergência, Investimento
+
+### Entradas (Positivo)
+Salário, Salário - Adiantamento, Salário - 13º, Reembolso, Bônus, PLR, VR (Flash), Outros
+
+### Meios de Pagamento
+Cartão de Crédito, Cartão de Débito, Pix, Dinheiro, VR
+
+---
+
+## Roadmap
+
+Veja o arquivo [NEXT_STEPS.md](NEXT_STEPS.md) para o roadmap completo.
+
+### Concluído
+- [x] Registro de despesas via linguagem natural
+- [x] Leitura de notas fiscais (imagem)
+- [x] Despesas parceladas e compartilhadas
+- [x] Despesas recorrentes com scheduler
+- [x] Alertas e limites de orçamento
+- [x] Exportação para Excel
+- [x] Desfazer última ação
+- [x] Pipeline CI/CD
+- [x] 124 testes unitários
+
+### Próximos
+- [ ] Gráficos no WhatsApp
+- [ ] Exportação PDF
+- [ ] Metas de economia
+- [ ] Conversão de moeda
+- [ ] Multi-usuários
+
+---
+
+## Licença
+
+Este projeto é privado e de uso pessoal.
+
+---
+
+<div align="center">
+  <sub>Desenvolvido com FastAPI + Google Gemini</sub>
+</div>

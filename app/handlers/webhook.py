@@ -559,6 +559,11 @@ class WebhookHandler:
             )
             return
 
+        # Handle recurring expense confirmation
+        if pending_type == "recurring_confirmation":
+            await self._handle_recurring_confirmation(session, phone, response, pending_data)
+            return
+
         # Build expense summary for LLM context
         expense_summary = self._build_expense_summary(expense_data, pending_type)
 
@@ -842,3 +847,116 @@ class WebhookHandler:
         )
         category_id = result.scalar_one_or_none()
         return category_id
+
+    async def _handle_recurring_confirmation(
+        self,
+        session: AsyncSession,
+        phone: str,
+        response: str,
+        pending_data: dict,
+    ) -> None:
+        """Handle user response to recurring expense confirmation."""
+        from datetime import date
+
+        from app.database.models import Expense
+
+        expenses = pending_data.get("expenses", [])
+        total = pending_data.get("total", 0)
+
+        # Evaluate response - simple yes/no check
+        response_lower = response.lower().strip().rstrip("!.,?")
+        positive_responses = (
+            "sim", "s", "yes", "y", "ok", "pode", "paguei", "ja paguei",
+            "já paguei", "isso", "confirma", "confirmo", "beleza", "show",
+        )
+        negative_responses = (
+            "nao", "não", "n", "no", "ainda nao", "ainda não", "cancela",
+            "ignora", "pula", "depois",
+        )
+
+        # Clean up pending
+        await session.execute(
+            delete(PendingConfirmation).where(
+                PendingConfirmation.user_phone == normalize_phone(phone)
+            )
+        )
+        await session.commit()
+
+        if response_lower in positive_responses:
+            # Create all expenses from recurring
+            created_count = 0
+            today = date.today()
+
+            for exp_data in expenses:
+                new_expense = Expense(
+                    user_phone=normalize_phone(phone),
+                    description=exp_data["description"],
+                    amount=exp_data["amount"],
+                    category_id=exp_data["category_id"],
+                    payment_method_id=exp_data["payment_method_id"],
+                    type="Negativo",
+                    is_recurring=False,
+                    date=today,
+                )
+                session.add(new_expense)
+                created_count += 1
+
+            await session.commit()
+
+            # Send confirmation message
+            await self.evolution.send_text(
+                phone,
+                f"Lancadas {created_count} despesa(s) recorrente(s) (R$ {total:.2f})",
+            )
+
+            # Check for budget alerts for each expense
+            for exp_data in expenses:
+                category_id = exp_data.get("category_id")
+                if category_id:
+                    alerts = await self.budget_service.check_and_send_alerts(
+                        session, phone, category_id
+                    )
+                    for alert in alerts:
+                        alert_msg = self.gemini.format_budget_alert(alert)
+                        await self.evolution.send_text(phone, alert_msg)
+
+        elif response_lower in negative_responses:
+            await self.evolution.send_text(
+                phone,
+                "Despesas recorrentes ignoradas por hoje.",
+            )
+        else:
+            # Unknown response - try LLM evaluation
+            evaluation = await self.gemini.evaluate_confirmation_response(
+                f"Confirmacao de {len(expenses)} despesa(s) recorrente(s) no valor de R$ {total:.2f}",
+                response,
+            )
+
+            action = evaluation.get("action", "unknown")
+
+            if action == "confirm":
+                # Re-call with "sim" to create expenses
+                await self._handle_recurring_confirmation(
+                    session, phone, "sim",
+                    {"expenses": expenses, "total": total, "type": "recurring_confirmation"},
+                )
+            elif action == "cancel":
+                await self.evolution.send_text(
+                    phone,
+                    "Despesas recorrentes ignoradas por hoje.",
+                )
+            else:
+                await self.evolution.send_text(
+                    phone,
+                    "Nao entendi. Responda *sim* para lancar as despesas ou *nao* para ignorar hoje.",
+                )
+                # Re-save pending for another try
+                await self.save_pending_confirmation(
+                    session,
+                    phone,
+                    {
+                        "type": "recurring_confirmation",
+                        "expenses": expenses,
+                        "total": total,
+                    },
+                )

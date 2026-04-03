@@ -44,12 +44,19 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Could not setup Evolution instance: {e}")
 
+    # Start scheduler for recurring expenses
+    from app.services.scheduler import get_scheduler_service
+
+    scheduler = get_scheduler_service()
+    scheduler.start()
+
     logger.info("FinBot started successfully!")
 
     yield
 
     # Shutdown
     logger.info("Shutting down FinBot...")
+    scheduler.shutdown()
 
 
 # Create FastAPI app
