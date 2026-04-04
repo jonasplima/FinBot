@@ -412,6 +412,132 @@ class ExpenseService:
 
         return export_data
 
+    async def get_expenses_by_category(
+        self,
+        session: AsyncSession,
+        phone: str,
+        month: int | None = None,
+        year: int | None = None,
+    ) -> list[dict]:
+        """
+        Get expenses grouped by category for chart generation.
+
+        Returns list of dicts with 'category' and 'amount' keys,
+        sorted by amount descending.
+        """
+        normalized_phone = normalize_phone(phone)
+        today = date.today()
+
+        if month is None:
+            month = today.month
+        if year is None:
+            year = today.year
+
+        # Query expenses for the month with eager loading of category
+        result = await session.execute(
+            select(Expense)
+            .options(selectinload(Expense.category))
+            .where(Expense.user_phone == normalized_phone)
+            .where(Expense.type == "Negativo")
+            .where(extract("month", Expense.date) == month)
+            .where(extract("year", Expense.date) == year)
+        )
+
+        expenses = result.scalars().all()
+
+        # Group by category
+        by_category: dict[str, Decimal] = {}
+        for exp in expenses:
+            cat_name = exp.category.name if exp.category else "Outros"
+            by_category[cat_name] = by_category.get(cat_name, Decimal("0")) + exp.amount
+
+        # Convert to list of dicts sorted by amount
+        return [
+            {"category": cat, "amount": amount}
+            for cat, amount in sorted(by_category.items(), key=lambda x: x[1], reverse=True)
+        ]
+
+    async def get_top_expenses(
+        self,
+        session: AsyncSession,
+        phone: str,
+        month: int | None = None,
+        year: int | None = None,
+        limit: int = 10,
+    ) -> list[dict]:
+        """
+        Get top expenses for bar chart generation.
+
+        Returns list of dicts with 'description' and 'amount' keys,
+        sorted by amount descending, limited to top N.
+        """
+        normalized_phone = normalize_phone(phone)
+        today = date.today()
+
+        if month is None:
+            month = today.month
+        if year is None:
+            year = today.year
+
+        # Query expenses for the month ordered by amount
+        result = await session.execute(
+            select(Expense)
+            .where(Expense.user_phone == normalized_phone)
+            .where(Expense.type == "Negativo")
+            .where(extract("month", Expense.date) == month)
+            .where(extract("year", Expense.date) == year)
+            .order_by(Expense.amount.desc())
+            .limit(limit)
+        )
+
+        expenses = result.scalars().all()
+
+        return [{"description": exp.description, "amount": exp.amount} for exp in expenses]
+
+    async def get_daily_totals(
+        self,
+        session: AsyncSession,
+        phone: str,
+        month: int | None = None,
+        year: int | None = None,
+    ) -> list[dict]:
+        """
+        Get daily expense totals for line chart generation.
+
+        Returns list of dicts with 'date' (formatted as 'DD/MM') and 'amount' keys,
+        sorted by date ascending.
+        """
+        normalized_phone = normalize_phone(phone)
+        today = date.today()
+
+        if month is None:
+            month = today.month
+        if year is None:
+            year = today.year
+
+        # Query expenses for the month
+        result = await session.execute(
+            select(Expense)
+            .where(Expense.user_phone == normalized_phone)
+            .where(Expense.type == "Negativo")
+            .where(extract("month", Expense.date) == month)
+            .where(extract("year", Expense.date) == year)
+            .order_by(Expense.date)
+        )
+
+        expenses = result.scalars().all()
+
+        # Group by date
+        by_date: dict[date, Decimal] = {}
+        for exp in expenses:
+            by_date[exp.date] = by_date.get(exp.date, Decimal("0")) + exp.amount
+
+        # Convert to list of dicts with formatted dates
+        return [
+            {"date": d.strftime("%d/%m"), "amount": amount}
+            for d, amount in sorted(by_date.items())
+        ]
+
     async def get_categories_list(self, session: AsyncSession) -> str:
         """Return formatted list of all categories."""
         result = await session.execute(select(Category).order_by(Category.type, Category.name))

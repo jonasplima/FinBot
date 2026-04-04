@@ -92,11 +92,12 @@ Analise a mensagem do usuario e retorne um JSON com a intencao e dados extraidos
 - check_budget: verificar status do orcamento
 - list_budgets: listar todos os orcamentos
 - remove_budget: remover orcamento de uma categoria
+- show_chart: mostrar grafico dos gastos (pizza, barras ou linha)
 - unknown: nao entendi a mensagem
 
 ## Formato de resposta (JSON):
 {
-  "intent": "register_expense|register_recurring|cancel_recurring|query_month|export|list_recurring|undo_last|set_budget|check_budget|list_budgets|remove_budget|unknown",
+  "intent": "register_expense|register_recurring|cancel_recurring|query_month|export|list_recurring|undo_last|set_budget|check_budget|list_budgets|remove_budget|show_chart|unknown",
   "data": {
     "description": "descricao do gasto",
     "amount": 0.00,
@@ -108,7 +109,8 @@ Analise a mensagem do usuario e retorne um JSON com a intencao e dados extraidos
     "recurring_day": null ou dia do mes (1-31),
     "month": null ou numero do mes (1-12),
     "year": null ou ano (ex: 2024),
-    "budget_limit": null ou limite de orcamento (para set_budget)
+    "budget_limit": null ou limite de orcamento (para set_budget),
+    "chart_type": null ou "pie" ou "bars" ou "line" (para show_chart)
   },
   "confidence": 0.0 a 1.0
 }
@@ -124,6 +126,7 @@ Analise a mensagem do usuario e retorne um JSON com a intencao e dados extraidos
 8. Inferir metodo de pagamento pelo contexto (ex: "no pix" -> Pix)
 9. Para orcamentos: extraia categoria e limite (budget_limit) em reais
 10. Frases como "definir limite", "orcamento de X reais", "limite de X para Y" indicam set_budget
+11. Para graficos: "grafico", "visualmente", "evolucao" indicam show_chart. Tipos: pie (pizza), bars (barras), line (linha/evolucao)
 
 ## Exemplos:
 
@@ -198,6 +201,27 @@ Saida: {"intent": "remove_budget", "data": {"category": "Lazer"}, "confidence": 
 
 Entrada: "tirar limite de alimentacao"
 Saida: {"intent": "remove_budget", "data": {"category": "Alimentacao"}, "confidence": 0.95}
+
+Entrada: "mostra grafico de pizza"
+Saida: {"intent": "show_chart", "data": {"chart_type": "pie", "month": null, "year": null}, "confidence": 0.95}
+
+Entrada: "quero ver visualmente meus gastos"
+Saida: {"intent": "show_chart", "data": {"chart_type": "pie", "month": null, "year": null}, "confidence": 0.95}
+
+Entrada: "grafico dos maiores gastos"
+Saida: {"intent": "show_chart", "data": {"chart_type": "bars", "month": null, "year": null}, "confidence": 0.95}
+
+Entrada: "mostra grafico de barras"
+Saida: {"intent": "show_chart", "data": {"chart_type": "bars", "month": null, "year": null}, "confidence": 0.95}
+
+Entrada: "evolucao dos gastos"
+Saida: {"intent": "show_chart", "data": {"chart_type": "line", "month": null, "year": null}, "confidence": 0.95}
+
+Entrada: "grafico de linha dos gastos"
+Saida: {"intent": "show_chart", "data": {"chart_type": "line", "month": null, "year": null}, "confidence": 0.95}
+
+Entrada: "mostra meus gastos em grafico de marco"
+Saida: {"intent": "show_chart", "data": {"chart_type": "pie", "month": 3, "year": null}, "confidence": 0.95}
 
 Responda APENAS com o JSON, sem texto adicional.
 """

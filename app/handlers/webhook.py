@@ -10,6 +10,7 @@ from app.config import get_settings
 from app.database.connection import async_session
 from app.database.models import PendingConfirmation
 from app.services.budget import BudgetService
+from app.services.chart import ChartService
 from app.services.evolution import EvolutionService
 from app.services.expense import ExpenseService
 from app.services.gemini import GeminiService
@@ -27,6 +28,7 @@ class WebhookHandler:
         self.gemini = GeminiService()
         self.expense_service = ExpenseService()
         self.budget_service = BudgetService()
+        self.chart_service = ChartService()
 
     async def handle(self, webhook_data: dict) -> None:
         """Process incoming webhook event."""
@@ -124,6 +126,8 @@ class WebhookHandler:
                 await self.handle_list_budgets(session, phone)
             elif intent == "remove_budget":
                 await self.handle_remove_budget(session, phone, result)
+            elif intent == "show_chart":
+                await self.handle_show_chart(session, phone, result)
             else:
                 # Unknown intent - ask for clarification
                 await self.evolution.send_text(
@@ -136,7 +140,8 @@ class WebhookHandler:
                     "- Exportar: 'exportar meus gastos de marco'\n"
                     "- Desfazer: 'desfaz' ou 'apaga o ultimo'\n"
                     "- Definir orcamento: 'definir limite alimentacao 500 reais'\n"
-                    "- Ver orcamentos: 'meus limites de gasto'",
+                    "- Ver orcamentos: 'meus limites de gasto'\n"
+                    "- Ver grafico: 'mostra grafico de pizza'",
                 )
 
         except Exception as e:
@@ -538,6 +543,103 @@ class WebhookHandler:
             )
         else:
             await self.evolution.send_text(phone, result["error"])
+
+    async def handle_show_chart(
+        self,
+        session: AsyncSession,
+        phone: str,
+        data: dict,
+    ) -> None:
+        """Handle chart generation request."""
+        from datetime import date
+
+        from app.services.expense import MONTH_NAMES
+
+        chart_data = data.get("data", {})
+        chart_type = chart_data.get("chart_type", "pie")
+        month = chart_data.get("month")
+        year = chart_data.get("year")
+
+        # Default to current month/year if not specified
+        today = date.today()
+        if month is None:
+            month = today.month
+        if year is None:
+            year = today.year
+
+        try:
+            # Get data based on chart type
+            if chart_type == "pie":
+                expenses_data = await self.expense_service.get_expenses_by_category(
+                    session, phone, month, year
+                )
+                if not expenses_data:
+                    await self.evolution.send_text(
+                        phone,
+                        f"Sem gastos registrados em {MONTH_NAMES[month]} de {year} para gerar grafico.",
+                    )
+                    return
+
+                title = f"Gastos por Categoria - {MONTH_NAMES[month]}/{year}"
+                chart_bytes = self.chart_service.generate_pie_chart(expenses_data, title)
+
+            elif chart_type == "bars":
+                expenses_data = await self.expense_service.get_top_expenses(
+                    session, phone, month, year, limit=10
+                )
+                if not expenses_data:
+                    await self.evolution.send_text(
+                        phone,
+                        f"Sem gastos registrados em {MONTH_NAMES[month]} de {year} para gerar grafico.",
+                    )
+                    return
+
+                title = f"Maiores Gastos - {MONTH_NAMES[month]}/{year}"
+                chart_bytes = self.chart_service.generate_bar_chart(expenses_data, title)
+
+            elif chart_type == "line":
+                expenses_data = await self.expense_service.get_daily_totals(
+                    session, phone, month, year
+                )
+                if not expenses_data:
+                    await self.evolution.send_text(
+                        phone,
+                        f"Sem gastos registrados em {MONTH_NAMES[month]} de {year} para gerar grafico.",
+                    )
+                    return
+
+                title = f"Evolucao dos Gastos - {MONTH_NAMES[month]}/{year}"
+                chart_bytes = self.chart_service.generate_line_chart(expenses_data, title)
+
+            else:
+                # Default to pie chart
+                expenses_data = await self.expense_service.get_expenses_by_category(
+                    session, phone, month, year
+                )
+                if not expenses_data:
+                    await self.evolution.send_text(
+                        phone,
+                        f"Sem gastos registrados em {MONTH_NAMES[month]} de {year} para gerar grafico.",
+                    )
+                    return
+
+                title = f"Gastos por Categoria - {MONTH_NAMES[month]}/{year}"
+                chart_bytes = self.chart_service.generate_pie_chart(expenses_data, title)
+
+            # Send the chart image
+            await self.evolution.send_image(
+                phone,
+                chart_bytes,
+                filename=f"grafico_{chart_type}_{month}_{year}.png",
+                caption=title,
+            )
+
+        except Exception as e:
+            logger.error(f"Error generating chart: {e}", exc_info=True)
+            await self.evolution.send_text(
+                phone,
+                "Erro ao gerar grafico. Tente novamente.",
+            )
 
     async def handle_confirmation_response(
         self,

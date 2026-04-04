@@ -15,7 +15,8 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
 | Serviço de recorrentes | ✅ Completo | `app/services/recurring.py` |
 | Scheduler de recorrentes | ✅ Completo | `app/services/scheduler.py` |
 | Suporte multi-usuário | ⚠️ Parcial (estrutura existe) | Campo `user_phone` nos models |
-| Testes unitários | ✅ Completo (124 testes) | `tests/` |
+| Testes unitários | ✅ Completo (148 testes) | `tests/` |
+| Gráficos no WhatsApp | ✅ Completo | `app/services/chart.py` |
 | Desfazer última ação | ✅ Completo | `app/services/expense.py` |
 | Pipeline CI/CD | ✅ Completo | `.github/workflows/ci.yml` |
 | Alertas e Limites de Orçamento | ✅ Completo | `app/services/budget.py` |
@@ -107,17 +108,31 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
 
 ## Fase 3: Visualização e Relatórios (Prioridade Alta)
 
-### 3.1 Gráficos no WhatsApp
+### 3.1 Gráficos no WhatsApp ✅
 - **Complexidade:** Média 🟡
 - **Valor:** Alto (impacto visual)
-- **Orientações:**
-  - Usar `matplotlib` com backend `Agg` (sem GUI)
-  - Gráficos sugeridos:
+- **Status:** Implementado
+- **Implementação:**
+  - ✅ `matplotlib` com backend `Agg` (sem GUI)
+  - ✅ `ChartService` com 3 tipos de gráficos:
     - Pizza: distribuição por categoria
-    - Barras horizontais: top 5 gastos do mês
-    - Linha: evolução semanal/mensal
-  - Salvar como PNG em buffer, enviar via Evolution API (media message)
-  - Detectar intenção: "mostra gráfico", "quero ver visualmente"
+    - Barras horizontais: top 10 gastos do mês
+    - Linha: evolução diária com acumulado
+  - ✅ Envio via Evolution API (media message com PNG)
+  - ✅ Novo intent `show_chart` no GeminiService
+  - ✅ 24 testes unitários para ChartService
+- **Comandos:**
+  - "mostra gráfico de pizza" → distribuição por categoria
+  - "gráfico de barras" → maiores gastos
+  - "evolução dos gastos" → gráfico de linha
+  - "gráfico de março" → gráficos de mês específico
+- **Arquivos:**
+  - `app/services/chart.py` - ChartService completo
+  - `app/services/evolution.py` - método send_image()
+  - `app/services/expense.py` - métodos get_expenses_by_category, get_top_expenses, get_daily_totals
+  - `app/services/gemini.py` - intent show_chart
+  - `app/handlers/webhook.py` - handler handle_show_chart
+  - `tests/test_chart.py` - testes unitários
 
 ### 3.2 Exportação PDF
 - **Complexidade:** Baixa 🟢
@@ -183,7 +198,7 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
 | ~~Desfazer Ação~~ | ✅ | 🟢 | Nenhuma | ⭐⭐⭐⭐⭐ |
 | ~~Alertas/Limites~~ | ✅ | 🟡 | ~~Testes~~ ✅ | ⭐⭐⭐⭐ |
 | ~~Scheduler Recorrentes~~ | ✅ | 🟢 | Nenhuma | ⭐⭐⭐⭐ |
-| Gráficos | 🔴 | 🟡 | Nenhuma | ⭐⭐⭐⭐ |
+| ~~Gráficos~~ | ✅ | 🟡 | Nenhuma | ⭐⭐⭐⭐ |
 | PDF Export | 🟡 | 🟢 | XLSX (existe) | ⭐⭐⭐ |
 | Metas | 🟡 | 🟡 | ~~Alertas~~ ✅ | ⭐⭐⭐ |
 | Conversão Moeda | 🟡 | 🟢 | Nenhuma | ⭐⭐⭐ |
@@ -196,6 +211,6 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
 
 1. **Sprint 1:** ~~CI/CD + Testes~~ ✅ + ~~Desfazer Ação~~ ✅
 2. **Sprint 2:** ~~Alertas/Limites~~ ✅ + ~~Scheduler Recorrentes~~ ✅
-3. **Sprint 3:** Gráficos + PDF ⬅️ **PRÓXIMO**
+3. **Sprint 3:** ~~Gráficos~~ ✅ + PDF ⬅️ **PRÓXIMO**
 4. **Sprint 4:** Metas + Conversão Moeda
 5. **Sprint 5:** Multi-Usuários + Backup

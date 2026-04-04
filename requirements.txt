@@ -29,3 +29,6 @@ python-dateutil==2.9.0
 
 # Scheduling
 APScheduler==3.10.4
+
+# Charts
+matplotlib==3.9.0

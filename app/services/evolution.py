@@ -286,6 +286,37 @@ class EvolutionService:
             json=data,
         )
 
+    async def send_image(
+        self,
+        phone: str,
+        image_bytes: bytes,
+        filename: str = "chart.png",
+        caption: str | None = None,
+    ) -> dict:
+        """Send image to phone number via WhatsApp."""
+        if not phone.endswith("@s.whatsapp.net"):
+            phone = f"{phone}@s.whatsapp.net"
+
+        # Encode image to base64
+        image_base64 = base64.b64encode(image_bytes).decode("utf-8")
+
+        data = {
+            "number": phone,
+            "media": image_base64,
+            "fileName": filename,
+            "mediatype": "image",
+            "mimetype": "image/png",
+        }
+
+        if caption:
+            data["caption"] = caption
+
+        return await self._request(
+            "POST",
+            f"/message/sendMedia/{self.instance}",
+            json=data,
+        )
+
     async def download_media(self, message_key: dict) -> bytes | None:
         """Download media from a message."""
         try:
