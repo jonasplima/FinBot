@@ -612,7 +612,7 @@ class CurrencyService:
         if result.get("wise_real_value"):
             wise_value = result["wise_real_value"]
             wise_rate = result.get("wise_effective_rate", Decimal("0"))
-            msg += f"\n\nValor real Wise (com IOF e taxas):\n"
+            msg += "\n\nValor real Wise (com IOF e taxas):\n"
             msg += f"= BRL {wise_value:.2f}\n"
             msg += f"Taxa efetiva: 1 {original_currency} = {wise_rate:.4f} BRL"
 

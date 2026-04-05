@@ -5,6 +5,7 @@ import unicodedata
 from calendar import monthrange
 from datetime import date, datetime
 from decimal import Decimal
+from typing import cast
 
 from sqlalchemy import extract, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -534,7 +535,8 @@ class ExpenseService:
         # Group by date
         by_date: dict[date, Decimal] = {}
         for exp in expenses:
-            by_date[exp.date] = by_date.get(exp.date, Decimal("0")) + exp.amount
+            exp_date = cast(date, exp.date)
+            by_date[exp_date] = by_date.get(exp_date, Decimal("0")) + exp.amount
 
         # Convert to list of dicts with formatted dates
         return [

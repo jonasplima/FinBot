@@ -2,11 +2,11 @@
 
 from datetime import datetime, timedelta
 from decimal import Decimal
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from tests.conftest import ExchangeRate
+from tests.conftest import ExchangeRate, Expense
 
 
 class TestCurrencyService:
@@ -461,7 +461,6 @@ class TestCurrencyServiceIntegration:
 
             # Verify expense was created with currency data
             from sqlalchemy import select
-            from tests.conftest import Expense
 
             expense = await seeded_session.execute(
                 select(Expense).where(Expense.id == result["expense_id"])
