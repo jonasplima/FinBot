@@ -170,10 +170,7 @@ class TestChartService:
 
     def test_generate_line_chart_many_days(self, chart_service):
         """Test line chart with many days (tests x-axis rotation)."""
-        data = [
-            {"date": f"{i:02d}/04", "amount": Decimal(str(i * 10))}
-            for i in range(1, 25)
-        ]
+        data = [{"date": f"{i:02d}/04", "amount": Decimal(str(i * 10))} for i in range(1, 25)]
         result = chart_service.generate_line_chart(data)
 
         assert isinstance(result, bytes)
@@ -249,8 +246,7 @@ class TestChartService:
     def test_pie_chart_many_categories(self, chart_service):
         """Test pie chart with many categories uses all colors."""
         data = [
-            {"category": f"Categoria {i}", "amount": Decimal(str(100 - i * 5))}
-            for i in range(12)
+            {"category": f"Categoria {i}", "amount": Decimal(str(100 - i * 5))} for i in range(12)
         ]
         result = chart_service.generate_pie_chart(data)
 

@@ -17,9 +17,23 @@ settings = get_settings()
 
 # Supported currencies with their common names in Portuguese
 SUPPORTED_CURRENCIES = {
-    "USD": {"name": "Dolar Americano", "symbols": ["dolar", "dolares", "dollar", "dollars", "usd", "$"]},
+    "USD": {
+        "name": "Dolar Americano",
+        "symbols": ["dolar", "dolares", "dollar", "dollars", "usd", "$"],
+    },
     "EUR": {"name": "Euro", "symbols": ["euro", "euros", "eur"]},
-    "GBP": {"name": "Libra Esterlina", "symbols": ["libra", "libras", "libra esterlina", "libras esterlinas", "gbp", "pound", "pounds"]},
+    "GBP": {
+        "name": "Libra Esterlina",
+        "symbols": [
+            "libra",
+            "libras",
+            "libra esterlina",
+            "libras esterlinas",
+            "gbp",
+            "pound",
+            "pounds",
+        ],
+    },
     "ARS": {"name": "Peso Argentino", "symbols": ["peso argentino", "pesos argentinos", "ars"]},
     "JPY": {"name": "Iene", "symbols": ["iene", "ienes", "yen", "jpy"]},
     "CAD": {"name": "Dolar Canadense", "symbols": ["dolar canadense", "cad"]},
@@ -342,7 +356,9 @@ class CurrencyService:
                     db_rate = await self._get_db_rate(session, from_currency)
 
                 if db_rate:
-                    logger.warning(f"Using database fallback rate for {from_currency}: {db_rate['rate']}")
+                    logger.warning(
+                        f"Using database fallback rate for {from_currency}: {db_rate['rate']}"
+                    )
                     return {
                         "success": True,
                         "rate": db_rate["rate"],
@@ -556,8 +572,11 @@ class CurrencyService:
             "original_currency": from_currency,
             "converted_amount": final_amount,
             "target_currency": to_currency,
-            "exchange_rate": (final_amount / amount).quantize(Decimal("0.0001")) if amount > 0 else Decimal("0"),
-            "is_fallback": to_brl.get("is_fallback", False) or target_rate_result.get("is_fallback", False),
+            "exchange_rate": (final_amount / amount).quantize(Decimal("0.0001"))
+            if amount > 0
+            else Decimal("0"),
+            "is_fallback": to_brl.get("is_fallback", False)
+            or target_rate_result.get("is_fallback", False),
         }
 
     def detect_currency(self, text: str) -> str | None:

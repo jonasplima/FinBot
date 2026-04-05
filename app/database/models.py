@@ -214,7 +214,9 @@ class Goal(Base):
     )
 
     def __repr__(self) -> str:
-        return f"<Goal(id={self.id}, description='{self.description}', target={self.target_amount})>"
+        return (
+            f"<Goal(id={self.id}, description='{self.description}', target={self.target_amount})>"
+        )
 
 
 class GoalUpdate(Base):

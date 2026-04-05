@@ -72,9 +72,7 @@ class TestCurrencyService:
     @pytest.mark.anyio
     async def test_convert_currency_same_currency(self, currency_service):
         """Test converting same currency returns same amount."""
-        result = await currency_service.convert_currency(
-            Decimal("100"), "USD", "USD"
-        )
+        result = await currency_service.convert_currency(Decimal("100"), "USD", "USD")
 
         assert result["success"] is True
         assert result["converted_amount"] == Decimal("100")
@@ -377,9 +375,7 @@ class TestCurrencyServiceDatabase:
     @pytest.mark.anyio
     async def test_save_db_rate_new(self, currency_service, db_session):
         """Test saving new rate to database."""
-        await currency_service._save_db_rate(
-            db_session, "EUR", Decimal("6.00"), "wise"
-        )
+        await currency_service._save_db_rate(db_session, "EUR", Decimal("6.00"), "wise")
 
         result = await currency_service._get_db_rate(db_session, "EUR")
 
@@ -400,9 +396,7 @@ class TestCurrencyServiceDatabase:
         await db_session.commit()
 
         # Update rate
-        await currency_service._save_db_rate(
-            db_session, "GBP", Decimal("7.50"), "wise"
-        )
+        await currency_service._save_db_rate(db_session, "GBP", Decimal("7.50"), "wise")
 
         result = await currency_service._get_db_rate(db_session, "GBP")
 
@@ -453,9 +447,7 @@ class TestCurrencyServiceIntegration:
                 "exchange_rate": float(conversion["exchange_rate"]),
             }
 
-            result = await expense_service.create_expense(
-                seeded_session, test_phone, expense_data
-            )
+            result = await expense_service.create_expense(seeded_session, test_phone, expense_data)
 
             assert result["success"] is True
 

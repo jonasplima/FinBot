@@ -105,8 +105,12 @@ class ExpenseService:
                 date=date.today(),
                 # Currency conversion fields
                 original_currency=data.get("original_currency"),
-                original_amount=Decimal(str(data["original_amount"])) if data.get("original_amount") else None,
-                exchange_rate=Decimal(str(data["exchange_rate"])) if data.get("exchange_rate") else None,
+                original_amount=Decimal(str(data["original_amount"]))
+                if data.get("original_amount")
+                else None,
+                exchange_rate=Decimal(str(data["exchange_rate"]))
+                if data.get("exchange_rate")
+                else None,
             )
 
             session.add(expense)
@@ -540,8 +544,7 @@ class ExpenseService:
 
         # Convert to list of dicts with formatted dates
         return [
-            {"date": d.strftime("%d/%m"), "amount": amount}
-            for d, amount in sorted(by_date.items())
+            {"date": d.strftime("%d/%m"), "amount": amount} for d, amount in sorted(by_date.items())
         ]
 
     async def get_categories_list(self, session: AsyncSession) -> str:

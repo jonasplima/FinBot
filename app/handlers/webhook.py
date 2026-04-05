@@ -911,8 +911,7 @@ class WebhookHandler:
         if not amount:
             await self.evolution.send_text(
                 phone,
-                "Por favor, informe o valor a converter.\n"
-                "Exemplo: 'quanto e 100 dolares em reais'",
+                "Por favor, informe o valor a converter.\nExemplo: 'quanto e 100 dolares em reais'",
             )
             return
 

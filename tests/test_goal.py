@@ -37,9 +37,7 @@ class TestGoalService:
         assert result["target_amount"] == 5000.00
 
         # Verify goal was saved
-        goal = await seeded_session.execute(
-            select(Goal).where(Goal.user_phone == test_phone)
-        )
+        goal = await seeded_session.execute(select(Goal).where(Goal.user_phone == test_phone))
         goal = goal.scalar_one()
         assert goal.target_amount == Decimal("5000.00")
         assert goal.is_active is True
@@ -74,9 +72,7 @@ class TestGoalService:
         assert "Ja existe uma meta" in result["error"]
 
     @pytest.mark.anyio
-    async def test_create_goal_past_deadline(
-        self, seeded_session, goal_service, test_phone
-    ):
+    async def test_create_goal_past_deadline(self, seeded_session, goal_service, test_phone):
         """Test that past deadlines are rejected."""
         past_deadline = date.today() - timedelta(days=1)
 
@@ -92,9 +88,7 @@ class TestGoalService:
         assert "data futura" in result["error"]
 
     @pytest.mark.anyio
-    async def test_create_goal_zero_amount(
-        self, seeded_session, goal_service, test_phone
-    ):
+    async def test_create_goal_zero_amount(self, seeded_session, goal_service, test_phone):
         """Test that zero target amount is rejected."""
         deadline = date.today() + timedelta(days=90)
 
@@ -119,9 +113,7 @@ class TestGoalService:
         assert "nao tem metas" in result["message"]
 
     @pytest.mark.anyio
-    async def test_list_goals_with_goals(
-        self, seeded_session, goal_service, test_phone
-    ):
+    async def test_list_goals_with_goals(self, seeded_session, goal_service, test_phone):
         """Test listing goals with existing goals."""
         deadline1 = date.today() + timedelta(days=90)
         deadline2 = date.today() + timedelta(days=180)
@@ -144,9 +136,7 @@ class TestGoalService:
         assert result["goals"][1]["description"] == "Carro"
 
     @pytest.mark.anyio
-    async def test_check_goal_progress(
-        self, seeded_session, goal_service, test_phone
-    ):
+    async def test_check_goal_progress(self, seeded_session, goal_service, test_phone):
         """Test checking specific goal progress."""
         deadline = date.today() + timedelta(days=90)
 
@@ -156,9 +146,7 @@ class TestGoalService:
         )
 
         # Check progress
-        result = await goal_service.check_goal_progress(
-            seeded_session, test_phone, "Viagem"
-        )
+        result = await goal_service.check_goal_progress(seeded_session, test_phone, "Viagem")
 
         assert result["success"] is True
         progress = result["progress"]
@@ -167,21 +155,15 @@ class TestGoalService:
         assert progress["percentage"] == 0.0
 
     @pytest.mark.anyio
-    async def test_check_goal_progress_not_found(
-        self, seeded_session, goal_service, test_phone
-    ):
+    async def test_check_goal_progress_not_found(self, seeded_session, goal_service, test_phone):
         """Test checking progress for non-existent goal."""
-        result = await goal_service.check_goal_progress(
-            seeded_session, test_phone, "NonExistent"
-        )
+        result = await goal_service.check_goal_progress(seeded_session, test_phone, "NonExistent")
 
         assert result["success"] is False
         assert "nao encontrada" in result["error"]
 
     @pytest.mark.anyio
-    async def test_check_goal_progress_no_goals(
-        self, seeded_session, goal_service, test_phone
-    ):
+    async def test_check_goal_progress_no_goals(self, seeded_session, goal_service, test_phone):
         """Test checking progress when no goals exist."""
         result = await goal_service.check_goal_progress(seeded_session, test_phone)
 
@@ -244,9 +226,7 @@ class TestGoalService:
         await seeded_session.commit()
 
         # Check progress (net savings = 1500 - 1000 = 500, which is 50% of 1000)
-        result = await goal_service.check_goal_progress(
-            seeded_session, test_phone, "Viagem"
-        )
+        result = await goal_service.check_goal_progress(seeded_session, test_phone, "Viagem")
 
         assert result["success"] is True
         progress = result["progress"]
@@ -282,9 +262,7 @@ class TestGoalService:
         assert update.update_type == "deposit"
 
     @pytest.mark.anyio
-    async def test_add_to_goal_not_found(
-        self, seeded_session, goal_service, test_phone
-    ):
+    async def test_add_to_goal_not_found(self, seeded_session, goal_service, test_phone):
         """Test adding to non-existent goal."""
         result = await goal_service.add_to_goal(
             seeded_session, test_phone, "NonExistent", Decimal("100.00")
@@ -294,9 +272,7 @@ class TestGoalService:
         assert "nao encontrada" in result["error"]
 
     @pytest.mark.anyio
-    async def test_add_to_goal_zero_amount(
-        self, seeded_session, goal_service, test_phone
-    ):
+    async def test_add_to_goal_zero_amount(self, seeded_session, goal_service, test_phone):
         """Test that zero deposit is rejected."""
         deadline = date.today() + timedelta(days=90)
 
@@ -327,28 +303,20 @@ class TestGoalService:
         assert result["success"] is True
 
         # Verify goal is deactivated
-        goal = await seeded_session.execute(
-            select(Goal).where(Goal.user_phone == test_phone)
-        )
+        goal = await seeded_session.execute(select(Goal).where(Goal.user_phone == test_phone))
         goal = goal.scalar_one()
         assert goal.is_active is False
 
     @pytest.mark.anyio
-    async def test_remove_goal_not_found(
-        self, seeded_session, goal_service, test_phone
-    ):
+    async def test_remove_goal_not_found(self, seeded_session, goal_service, test_phone):
         """Test removing non-existent goal."""
-        result = await goal_service.remove_goal(
-            seeded_session, test_phone, "NonExistent"
-        )
+        result = await goal_service.remove_goal(seeded_session, test_phone, "NonExistent")
 
         assert result["success"] is False
         assert "nao encontrada" in result["error"]
 
     @pytest.mark.anyio
-    async def test_goal_achieved_automatically(
-        self, seeded_session, goal_service, test_phone
-    ):
+    async def test_goal_achieved_automatically(self, seeded_session, goal_service, test_phone):
         """Test that goal is marked as achieved when 100% reached via deposit."""
         deadline = date.today() + timedelta(days=90)
 
@@ -367,16 +335,12 @@ class TestGoalService:
         assert result["progress"]["is_achieved"] is True
 
         # Verify goal is marked as achieved in database
-        goal = await seeded_session.execute(
-            select(Goal).where(Goal.user_phone == test_phone)
-        )
+        goal = await seeded_session.execute(select(Goal).where(Goal.user_phone == test_phone))
         goal = goal.scalar_one()
         assert goal.is_achieved is True
 
     @pytest.mark.anyio
-    async def test_get_weekly_motivation(
-        self, seeded_session, goal_service, test_phone
-    ):
+    async def test_get_weekly_motivation(self, seeded_session, goal_service, test_phone):
         """Test getting weekly motivation data."""
         deadline1 = date.today() + timedelta(days=90)
         deadline2 = date.today() + timedelta(days=180)
@@ -390,18 +354,14 @@ class TestGoalService:
         )
 
         # Get motivations
-        motivations = await goal_service.get_weekly_motivation(
-            seeded_session, test_phone
-        )
+        motivations = await goal_service.get_weekly_motivation(seeded_session, test_phone)
 
         assert len(motivations) == 2
         assert motivations[0]["description"] == "Viagem"
         assert motivations[1]["description"] == "Carro"
 
     @pytest.mark.anyio
-    async def test_get_users_with_active_goals(
-        self, seeded_session, goal_service, test_phone
-    ):
+    async def test_get_users_with_active_goals(self, seeded_session, goal_service, test_phone):
         """Test getting users with active goals."""
         deadline = date.today() + timedelta(days=90)
 
@@ -429,17 +389,13 @@ class TestGoalService:
         )
 
         # Check with uppercase
-        result = await goal_service.check_goal_progress(
-            seeded_session, test_phone, "VIAGEM"
-        )
+        result = await goal_service.check_goal_progress(seeded_session, test_phone, "VIAGEM")
 
         assert result["success"] is True
         assert result["progress"]["description"] == "viagem"
 
     @pytest.mark.anyio
-    async def test_progress_with_negative_savings(
-        self, seeded_session, goal_service, test_phone
-    ):
+    async def test_progress_with_negative_savings(self, seeded_session, goal_service, test_phone):
         """Test that negative savings show as 0% progress."""
         deadline = date.today() + timedelta(days=90)
 
@@ -474,9 +430,7 @@ class TestGoalService:
         await seeded_session.commit()
 
         # Check progress
-        result = await goal_service.check_goal_progress(
-            seeded_session, test_phone, "Viagem"
-        )
+        result = await goal_service.check_goal_progress(seeded_session, test_phone, "Viagem")
 
         assert result["success"] is True
         progress = result["progress"]

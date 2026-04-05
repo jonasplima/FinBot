@@ -354,9 +354,7 @@ class GoalService:
             total_progress = Decimal("0")
 
         percentage = (
-            (total_progress / goal.target_amount * 100)
-            if goal.target_amount > 0
-            else Decimal("0")
+            (total_progress / goal.target_amount * 100) if goal.target_amount > 0 else Decimal("0")
         )
 
         # Days calculation
