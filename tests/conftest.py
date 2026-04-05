@@ -138,6 +138,41 @@ class BudgetAlert(TestBase):
     budget = relationship("Budget", back_populates="alerts")
 
 
+class Goal(TestBase):
+    """Test Goal model."""
+
+    __tablename__ = "goals"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_phone = Column(String(20), nullable=False, index=True)
+    description = Column(String(200), nullable=False)
+    target_amount = Column(Numeric(12, 2), nullable=False)
+    current_amount = Column(Numeric(12, 2), default=0, nullable=False)
+    deadline = Column(Date, nullable=False)
+    start_date = Column(Date, nullable=False, default=date.today)
+    is_active = Column(Boolean, default=True, nullable=False)
+    is_achieved = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.now)
+    updated_at = Column(DateTime, nullable=True)
+
+    updates = relationship("GoalUpdate", back_populates="goal", cascade="all, delete-orphan")
+
+
+class GoalUpdate(TestBase):
+    """Test GoalUpdate model."""
+
+    __tablename__ = "goal_updates"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    goal_id = Column(Integer, ForeignKey("goals.id"), nullable=False)
+    previous_amount = Column(Numeric(12, 2), nullable=False)
+    new_amount = Column(Numeric(12, 2), nullable=False)
+    update_type = Column(String(20), nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.now)
+
+    goal = relationship("Goal", back_populates="updates")
+
+
 @pytest.fixture
 def anyio_backend():
     """Use asyncio for async tests."""

@@ -14,6 +14,7 @@ from app.services.chart import ChartService
 from app.services.evolution import EvolutionService
 from app.services.expense import ExpenseService
 from app.services.gemini import GeminiService
+from app.services.goal import GoalService
 from app.utils.validators import is_phone_allowed, normalize_phone
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,7 @@ class WebhookHandler:
         self.expense_service = ExpenseService()
         self.budget_service = BudgetService()
         self.chart_service = ChartService()
+        self.goal_service = GoalService()
 
     async def handle(self, webhook_data: dict) -> None:
         """Process incoming webhook event."""
@@ -128,6 +130,16 @@ class WebhookHandler:
                 await self.handle_remove_budget(session, phone, result)
             elif intent == "show_chart":
                 await self.handle_show_chart(session, phone, result)
+            elif intent == "create_goal":
+                await self.handle_create_goal(session, phone, result)
+            elif intent == "check_goal":
+                await self.handle_check_goal(session, phone, result)
+            elif intent == "list_goals":
+                await self.handle_list_goals(session, phone)
+            elif intent == "remove_goal":
+                await self.handle_remove_goal(session, phone, result)
+            elif intent == "add_to_goal":
+                await self.handle_add_to_goal(session, phone, result)
             else:
                 # Unknown intent - ask for clarification
                 await self.evolution.send_text(
@@ -141,7 +153,9 @@ class WebhookHandler:
                     "- Desfazer: 'desfaz' ou 'apaga o ultimo'\n"
                     "- Definir orcamento: 'definir limite alimentacao 500 reais'\n"
                     "- Ver orcamentos: 'meus limites de gasto'\n"
-                    "- Ver grafico: 'mostra grafico de pizza'",
+                    "- Ver grafico: 'mostra grafico de pizza'\n"
+                    "- Criar meta: 'quero economizar 1000 reais ate dezembro'\n"
+                    "- Ver metas: 'minhas metas'",
                 )
 
         except Exception as e:
@@ -641,6 +655,209 @@ class WebhookHandler:
                 "Erro ao gerar grafico. Tente novamente.",
             )
 
+    async def handle_create_goal(
+        self,
+        session: AsyncSession,
+        phone: str,
+        data: dict,
+    ) -> None:
+        """Handle goal creation request with confirmation."""
+        from datetime import datetime
+
+        goal_data = data.get("data", {})
+        description = goal_data.get("goal_description")
+        amount = goal_data.get("goal_amount")
+        deadline_str = goal_data.get("goal_deadline")
+
+        # Validate required fields
+        if not description or not amount or not deadline_str:
+            await self.evolution.send_text(
+                phone,
+                "Por favor, informe a descricao, valor e prazo da meta.\n"
+                "Exemplo: 'quero economizar 1000 reais ate dezembro'",
+            )
+            return
+
+        # Parse deadline
+        try:
+            deadline = datetime.strptime(deadline_str, "%Y-%m-%d").date()
+        except ValueError:
+            await self.evolution.send_text(
+                phone,
+                "Data invalida. Tente novamente com uma data valida.",
+            )
+            return
+
+        # Show confirmation
+        msg = (
+            f"🎯 *Confirme sua meta:*\n\n"
+            f"Descricao: {description}\n"
+            f"Valor: R$ {amount:.2f}\n"
+            f"Prazo: {deadline.strftime('%d/%m/%Y')}\n\n"
+            f"Esta correto? Responda *sim* para confirmar ou ajuste os dados."
+        )
+
+        # Save pending confirmation
+        await self.save_pending_confirmation(
+            session,
+            phone,
+            {
+                "type": "goal_confirmation",
+                "goal_data": {
+                    "description": description,
+                    "target_amount": float(amount),
+                    "deadline": deadline_str,
+                },
+            },
+        )
+
+        await self.evolution.send_text(phone, msg)
+
+    async def handle_check_goal(
+        self,
+        session: AsyncSession,
+        phone: str,
+        data: dict,
+    ) -> None:
+        """Handle goal progress check request."""
+        goal_data = data.get("data", {})
+        description = goal_data.get("goal_description")
+
+        result = await self.goal_service.check_goal_progress(session, phone, description)
+
+        if result["success"]:
+            progress = result["progress"]
+            msg = self.gemini.format_goal_motivation(progress)
+            await self.evolution.send_text(phone, msg)
+        else:
+            await self.evolution.send_text(phone, result["error"])
+
+    async def handle_list_goals(
+        self,
+        session: AsyncSession,
+        phone: str,
+    ) -> None:
+        """Handle listing all goals."""
+        result = await self.goal_service.list_goals(session, phone)
+
+        if not result["success"]:
+            await self.evolution.send_text(phone, result.get("error", "Erro ao listar metas."))
+            return
+
+        goals = result.get("goals", [])
+
+        if not goals:
+            await self.evolution.send_text(
+                phone,
+                "Voce nao tem metas ativas.\n\n"
+                "Para criar uma, diga: 'quero economizar 1000 reais ate dezembro'",
+            )
+            return
+
+        msg = "📋 *Suas metas de economia:*\n\n"
+        for goal in goals:
+            percentage = goal["percentage"]
+            if percentage >= 75:
+                emoji = "🌟"
+            elif percentage >= 50:
+                emoji = "💪"
+            elif percentage >= 25:
+                emoji = "📊"
+            else:
+                emoji = "🎯"
+
+            msg += (
+                f"{emoji} *{goal['description']}*\n"
+                f"   Progresso: {percentage:.0f}%\n"
+                f"   Meta: R$ {goal['target_amount']:.2f}\n"
+                f"   Economizado: R$ {goal['current_progress']:.2f}\n"
+                f"   Prazo: {goal['deadline']}\n\n"
+            )
+
+        await self.evolution.send_text(phone, msg)
+
+    async def handle_remove_goal(
+        self,
+        session: AsyncSession,
+        phone: str,
+        data: dict,
+    ) -> None:
+        """Handle goal removal request."""
+        goal_data = data.get("data", {})
+        description = goal_data.get("goal_description")
+
+        if not description:
+            await self.evolution.send_text(
+                phone,
+                "Qual meta voce deseja remover?",
+            )
+            return
+
+        result = await self.goal_service.remove_goal(session, phone, description)
+
+        if result["success"]:
+            await self.evolution.send_text(
+                phone,
+                f"Meta '{description}' removida com sucesso.",
+            )
+        else:
+            await self.evolution.send_text(phone, result["error"])
+
+    async def handle_add_to_goal(
+        self,
+        session: AsyncSession,
+        phone: str,
+        data: dict,
+    ) -> None:
+        """Handle manual deposit to goal."""
+        from decimal import Decimal
+
+        goal_data = data.get("data", {})
+        description = goal_data.get("goal_description")
+        deposit = goal_data.get("goal_deposit")
+
+        if not deposit:
+            await self.evolution.send_text(
+                phone,
+                "Por favor, informe o valor a depositar.\n"
+                "Exemplo: 'depositar 200 reais na meta de viagem'",
+            )
+            return
+
+        # If no description, get first active goal
+        if not description:
+            list_result = await self.goal_service.list_goals(session, phone)
+            if list_result["success"] and list_result.get("goals"):
+                description = list_result["goals"][0]["description"]
+            else:
+                await self.evolution.send_text(
+                    phone,
+                    "Voce nao tem metas ativas. Crie uma primeiro.",
+                )
+                return
+
+        result = await self.goal_service.add_to_goal(
+            session, phone, description, Decimal(str(deposit))
+        )
+
+        if result["success"]:
+            progress = result["progress"]
+            msg = (
+                f"💰 *Deposito registrado!*\n\n"
+                f"Valor: R$ {deposit:.2f}\n"
+                f"Meta: {description}\n\n"
+                f"Novo progresso: {progress['percentage']:.0f}%\n"
+                f"Total economizado: R$ {progress['current_progress']:.2f}"
+            )
+
+            # Check if goal was achieved
+            if progress.get("is_achieved"):
+                msg += "\n\n🎉 *Parabens! Voce atingiu sua meta!*"
+
+            await self.evolution.send_text(phone, msg)
+        else:
+            await self.evolution.send_text(phone, result["error"])
+
     async def handle_confirmation_response(
         self,
         session: AsyncSession,
@@ -664,6 +881,11 @@ class WebhookHandler:
         # Handle recurring expense confirmation
         if pending_type == "recurring_confirmation":
             await self._handle_recurring_confirmation(session, phone, response, pending_data)
+            return
+
+        # Handle goal confirmation
+        if pending_type == "goal_confirmation":
+            await self._handle_goal_confirmation(session, phone, response, pending_data)
             return
 
         # Build expense summary for LLM context
@@ -1082,5 +1304,122 @@ class WebhookHandler:
                         "type": "recurring_confirmation",
                         "expenses": expenses,
                         "total": total,
+                    },
+                )
+
+    async def _handle_goal_confirmation(
+        self,
+        session: AsyncSession,
+        phone: str,
+        response: str,
+        pending_data: dict,
+    ) -> None:
+        """Handle user response to goal creation confirmation."""
+        from datetime import datetime
+        from decimal import Decimal
+
+        goal_data = pending_data.get("goal_data", {})
+
+        # Evaluate response - simple yes/no check
+        response_lower = response.lower().strip().rstrip("!.,?")
+        positive_responses = (
+            "sim",
+            "s",
+            "yes",
+            "y",
+            "ok",
+            "pode",
+            "isso",
+            "confirma",
+            "confirmo",
+            "beleza",
+            "show",
+            "correto",
+            "certo",
+        )
+        negative_responses = (
+            "nao",
+            "não",
+            "n",
+            "no",
+            "cancela",
+            "cancelar",
+            "desisto",
+        )
+
+        # Clean up pending
+        await session.execute(
+            delete(PendingConfirmation).where(
+                PendingConfirmation.user_phone == normalize_phone(phone)
+            )
+        )
+        await session.commit()
+
+        if response_lower in positive_responses:
+            # Create the goal
+            deadline = datetime.strptime(goal_data["deadline"], "%Y-%m-%d").date()
+
+            result = await self.goal_service.create_goal(
+                session,
+                phone,
+                goal_data["description"],
+                Decimal(str(goal_data["target_amount"])),
+                deadline,
+            )
+
+            if result["success"]:
+                msg = (
+                    f"✅ *Meta criada com sucesso!*\n\n"
+                    f"Descricao: {result['description']}\n"
+                    f"Valor: R$ {result['target_amount']:.2f}\n"
+                    f"Prazo: {result['deadline']}\n\n"
+                    f"Voce sera atualizado semanalmente sobre seu progresso!"
+                )
+                await self.evolution.send_text(phone, msg)
+            else:
+                await self.evolution.send_text(phone, result["error"])
+
+        elif response_lower in negative_responses:
+            await self.evolution.send_text(
+                phone,
+                "Meta cancelada. Quando quiser criar uma meta, e so me dizer!",
+            )
+
+        else:
+            # Unknown response - try LLM evaluation
+            summary = (
+                f"Criacao de meta: {goal_data.get('description')}, "
+                f"R$ {goal_data.get('target_amount')}, "
+                f"prazo {goal_data.get('deadline')}"
+            )
+            evaluation = await self.gemini.evaluate_confirmation_response(summary, response)
+
+            action = evaluation.get("action", "unknown")
+
+            if action == "confirm":
+                # Re-call with "sim" to create goal
+                await self._handle_goal_confirmation(
+                    session,
+                    phone,
+                    "sim",
+                    {"type": "goal_confirmation", "goal_data": goal_data},
+                )
+            elif action == "cancel":
+                await self.evolution.send_text(
+                    phone,
+                    "Meta cancelada. Quando quiser criar uma meta, e so me dizer!",
+                )
+            else:
+                await self.evolution.send_text(
+                    phone,
+                    "Nao entendi. Responda *sim* para criar a meta ou *nao* para cancelar.",
+                )
+                # Re-save pending for another try
+                await self.save_pending_confirmation(
+                    session,
+                    phone,
+                    {
+                        "type": "goal_confirmation",
+                        "goal_data": goal_data,
                     },
                 )

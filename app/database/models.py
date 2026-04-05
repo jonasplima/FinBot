@@ -180,3 +180,52 @@ class BudgetAlert(Base):
 
     def __repr__(self) -> str:
         return f"<BudgetAlert(budget_id={self.budget_id}, threshold={self.threshold_percent}%, {self.month}/{self.year})>"
+
+
+class Goal(Base):
+    """Savings goal for a user."""
+
+    __tablename__ = "goals"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_phone = Column(String(20), nullable=False, index=True)
+    description = Column(String(200), nullable=False)
+    target_amount = Column(Numeric(12, 2), nullable=False)
+    current_amount = Column(Numeric(12, 2), default=0, nullable=False)  # Manual deposits
+    deadline = Column(Date, nullable=False)
+    start_date = Column(Date, nullable=False, default=date.today)
+    is_active = Column(Boolean, default=True, nullable=False)
+    is_achieved = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.now, server_default=func.now())
+    updated_at = Column(DateTime, nullable=True, onupdate=datetime.now)
+
+    # Relationships
+    updates = relationship("GoalUpdate", back_populates="goal", cascade="all, delete-orphan")
+
+    # Indexes for query performance
+    __table_args__ = (
+        Index("ix_goals_user_active", "user_phone", "is_active"),
+        Index("ix_goals_deadline", "deadline"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<Goal(id={self.id}, description='{self.description}', target={self.target_amount})>"
+
+
+class GoalUpdate(Base):
+    """Track goal progress updates for history and motivation tracking."""
+
+    __tablename__ = "goal_updates"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    goal_id = Column(Integer, ForeignKey("goals.id"), nullable=False)
+    previous_amount = Column(Numeric(12, 2), nullable=False)
+    new_amount = Column(Numeric(12, 2), nullable=False)
+    update_type = Column(String(20), nullable=False)  # "automatic", "manual", "deposit"
+    created_at = Column(DateTime, nullable=False, default=datetime.now, server_default=func.now())
+
+    # Relationships
+    goal = relationship("Goal", back_populates="updates")
+
+    def __repr__(self) -> str:
+        return f"<GoalUpdate(goal_id={self.goal_id}, type='{self.update_type}', amount={self.new_amount})>"

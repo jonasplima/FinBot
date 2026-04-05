@@ -93,11 +93,16 @@ Analise a mensagem do usuario e retorne um JSON com a intencao e dados extraidos
 - list_budgets: listar todos os orcamentos
 - remove_budget: remover orcamento de uma categoria
 - show_chart: mostrar grafico dos gastos (pizza, barras ou linha)
+- create_goal: criar meta de economia
+- check_goal: verificar progresso de uma meta
+- list_goals: listar todas as metas
+- remove_goal: remover/cancelar uma meta
+- add_to_goal: adicionar valor a uma meta (deposito manual)
 - unknown: nao entendi a mensagem
 
 ## Formato de resposta (JSON):
 {
-  "intent": "register_expense|register_recurring|cancel_recurring|query_month|export|list_recurring|undo_last|set_budget|check_budget|list_budgets|remove_budget|show_chart|unknown",
+  "intent": "register_expense|register_recurring|cancel_recurring|query_month|export|list_recurring|undo_last|set_budget|check_budget|list_budgets|remove_budget|show_chart|create_goal|check_goal|list_goals|remove_goal|add_to_goal|unknown",
   "data": {
     "description": "descricao do gasto",
     "amount": 0.00,
@@ -110,7 +115,11 @@ Analise a mensagem do usuario e retorne um JSON com a intencao e dados extraidos
     "month": null ou numero do mes (1-12),
     "year": null ou ano (ex: 2024),
     "budget_limit": null ou limite de orcamento (para set_budget),
-    "chart_type": null ou "pie" ou "bars" ou "line" (para show_chart)
+    "chart_type": null ou "pie" ou "bars" ou "line" (para show_chart),
+    "goal_description": null ou descricao da meta (para create_goal, check_goal, remove_goal, add_to_goal),
+    "goal_amount": null ou valor alvo em reais (para create_goal),
+    "goal_deadline": null ou data limite formato "YYYY-MM-DD" (para create_goal),
+    "goal_deposit": null ou valor a depositar na meta (para add_to_goal)
   },
   "confidence": 0.0 a 1.0
 }
@@ -127,6 +136,9 @@ Analise a mensagem do usuario e retorne um JSON com a intencao e dados extraidos
 9. Para orcamentos: extraia categoria e limite (budget_limit) em reais
 10. Frases como "definir limite", "orcamento de X reais", "limite de X para Y" indicam set_budget
 11. Para graficos: "grafico", "visualmente", "evolucao" indicam show_chart. Tipos: pie (pizza), bars (barras), line (linha/evolucao)
+12. Para metas: "quero economizar", "meta de", "guardar X ate" indicam create_goal. Extraia descricao, valor e prazo
+13. Para consultar meta: "como esta minha meta", "progresso da meta" indicam check_goal
+14. Para depositar na meta: "depositar na meta", "guardar na meta", "adicionar a meta" indicam add_to_goal
 
 ## Exemplos:
 
@@ -222,6 +234,48 @@ Saida: {"intent": "show_chart", "data": {"chart_type": "line", "month": null, "y
 
 Entrada: "mostra meus gastos em grafico de marco"
 Saida: {"intent": "show_chart", "data": {"chart_type": "pie", "month": 3, "year": null}, "confidence": 0.95}
+
+Entrada: "quero economizar 1000 reais ate dezembro"
+Saida: {"intent": "create_goal", "data": {"goal_description": "economia", "goal_amount": 1000.00, "goal_deadline": "2024-12-31"}, "confidence": 0.95}
+
+Entrada: "criar meta de 5000 reais para viagem ate junho"
+Saida: {"intent": "create_goal", "data": {"goal_description": "viagem", "goal_amount": 5000.00, "goal_deadline": "2025-06-30"}, "confidence": 0.95}
+
+Entrada: "meta de guardar 2000 para o natal"
+Saida: {"intent": "create_goal", "data": {"goal_description": "natal", "goal_amount": 2000.00, "goal_deadline": "2024-12-25"}, "confidence": 0.95}
+
+Entrada: "como esta minha meta de viagem"
+Saida: {"intent": "check_goal", "data": {"goal_description": "viagem"}, "confidence": 0.95}
+
+Entrada: "quanto falta para minha meta"
+Saida: {"intent": "check_goal", "data": {"goal_description": null}, "confidence": 0.90}
+
+Entrada: "progresso da meta de economia"
+Saida: {"intent": "check_goal", "data": {"goal_description": "economia"}, "confidence": 0.95}
+
+Entrada: "quais sao minhas metas"
+Saida: {"intent": "list_goals", "data": {}, "confidence": 0.95}
+
+Entrada: "minhas metas de economia"
+Saida: {"intent": "list_goals", "data": {}, "confidence": 0.95}
+
+Entrada: "listar metas"
+Saida: {"intent": "list_goals", "data": {}, "confidence": 0.95}
+
+Entrada: "cancelar meta de viagem"
+Saida: {"intent": "remove_goal", "data": {"goal_description": "viagem"}, "confidence": 0.95}
+
+Entrada: "remover meta de carro"
+Saida: {"intent": "remove_goal", "data": {"goal_description": "carro"}, "confidence": 0.95}
+
+Entrada: "depositar 200 reais na meta de viagem"
+Saida: {"intent": "add_to_goal", "data": {"goal_description": "viagem", "goal_deposit": 200.00}, "confidence": 0.95}
+
+Entrada: "guardar 500 reais na economia"
+Saida: {"intent": "add_to_goal", "data": {"goal_description": "economia", "goal_deposit": 500.00}, "confidence": 0.95}
+
+Entrada: "adicionar 100 na meta"
+Saida: {"intent": "add_to_goal", "data": {"goal_description": null, "goal_deposit": 100.00}, "confidence": 0.90}
 
 Responda APENAS com o JSON, sem texto adicional.
 """
@@ -660,4 +714,76 @@ class GeminiService:
                 f"Limite: R$ {limit:.2f}\n"
                 f"Gasto: R$ {spent:.2f}\n"
                 f"Restante: R$ {(limit - spent):.2f}"
+            )
+
+    def format_goal_motivation(self, progress: dict) -> str:
+        """
+        Format a motivational message for goal progress.
+
+        Args:
+            progress: Dict with goal progress details containing:
+                - description: goal description
+                - target_amount: target amount
+                - current_progress: current progress amount
+                - percentage: progress percentage
+                - remaining_amount: amount remaining
+                - remaining_days: days until deadline
+                - daily_rate_needed: daily savings needed
+                - is_on_track: whether user is on track
+                - is_achieved: whether goal is achieved
+
+        Returns:
+            Formatted motivational message
+        """
+        percentage = progress["percentage"]
+        description = progress["description"]
+        remaining = progress["remaining_amount"]
+        remaining_days = progress["remaining_days"]
+        is_on_track = progress.get("is_on_track", True)
+        is_achieved = progress.get("is_achieved", False)
+        daily_rate = progress.get("daily_rate_needed", 0)
+
+        if is_achieved or percentage >= 100:
+            return (
+                f"🎉 *Parabens!* Voce atingiu sua meta de *{description}*!\n\n"
+                f"Meta: R$ {progress['target_amount']:.2f}\n"
+                f"Economizado: R$ {progress['current_progress']:.2f}\n\n"
+                f"Continue assim! 💪"
+            )
+        elif percentage >= 75:
+            return (
+                f"🌟 *Quase la!* Voce esta com {percentage:.0f}% da meta de *{description}*!\n\n"
+                f"Faltam apenas R$ {remaining:.2f}\n"
+                f"Restam {remaining_days} dias\n\n"
+                f"Voce esta muito perto do objetivo! 🚀"
+            )
+        elif percentage >= 50:
+            return (
+                f"💪 *Metade do caminho!* Voce esta com {percentage:.0f}% da meta de *{description}*.\n\n"
+                f"Economizado: R$ {progress['current_progress']:.2f}\n"
+                f"Faltam: R$ {remaining:.2f}\n"
+                f"Restam {remaining_days} dias\n\n"
+                f"Continue firme! 🎯"
+            )
+        elif percentage >= 25:
+            emoji = "✅" if is_on_track else "⚠️"
+            track_msg = (
+                "Voce esta no caminho certo!"
+                if is_on_track
+                else f"Tente economizar R$ {daily_rate:.2f} por dia."
+            )
+            return (
+                f"{emoji} *Progresso da meta {description}:* {percentage:.0f}%\n\n"
+                f"Economizado: R$ {progress['current_progress']:.2f}\n"
+                f"Meta: R$ {progress['target_amount']:.2f}\n"
+                f"Restam {remaining_days} dias\n\n"
+                f"{track_msg}"
+            )
+        else:
+            return (
+                f"📊 *Meta {description}:* {percentage:.0f}% concluido\n\n"
+                f"Economizado: R$ {progress['current_progress']:.2f}\n"
+                f"Meta: R$ {progress['target_amount']:.2f}\n"
+                f"Restam {remaining_days} dias\n\n"
+                f"Cada real conta! Tente economizar R$ {daily_rate:.2f} por dia. 💰"
             )

@@ -147,14 +147,31 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
 
 ## Fase 4: Funcionalidades Avançadas (Prioridade Média)
 
-### 4.1 Metas de Economia
+### 4.1 Metas de Economia ✅
 - **Complexidade:** Média 🟡
 - **Valor:** Médio-Alto
-- **Orientações:**
-  - **Nova tabela:** `goals` (user_phone, description, target_amount, current_amount, deadline)
-  - Permitir: "quero economizar 1000 reais até dezembro"
-  - Calcular progresso baseado em (entradas - gastos) do período
-  - Enviar motivação semanal: "Você está 40% do caminho!"
+- **Status:** Implementado
+- **Implementação:**
+  - ✅ Novas tabelas: `goals` e `goal_updates` para rastrear progresso
+  - ✅ `GoalService` com: create, remove, list, check_progress, add_to_goal
+  - ✅ Cálculo de progresso baseado em (entradas - gastos) do período + depósitos manuais
+  - ✅ Fluxo de confirmação antes de criar meta
+  - ✅ Integração com Gemini para novos intents: create_goal, check_goal, list_goals, remove_goal, add_to_goal
+  - ✅ Job semanal (domingo 10h) para enviar mensagens motivacionais
+  - ✅ 24 testes específicos para funcionalidade de metas
+- **Comandos:**
+  - "quero economizar 1000 reais ate dezembro" → cria meta
+  - "como esta minha meta de viagem" → verifica progresso
+  - "minhas metas" → lista todas as metas
+  - "depositar 200 reais na meta de viagem" → depósito manual
+  - "cancelar meta de viagem" → remove meta
+- **Arquivos:**
+  - `app/database/models.py` - Models Goal e GoalUpdate
+  - `app/services/goal.py` - GoalService completo
+  - `app/services/gemini.py` - Novos intents e format_goal_motivation()
+  - `app/services/scheduler.py` - Job semanal de motivação
+  - `app/handlers/webhook.py` - Handlers de metas e confirmação
+  - `tests/test_goal.py` - Testes unitários
 
 ### 4.2 Conversão de Moeda
 - **Complexidade:** Baixa 🟢
@@ -200,7 +217,7 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
 | ~~Scheduler Recorrentes~~ | ✅ | 🟢 | Nenhuma | ⭐⭐⭐⭐ |
 | ~~Gráficos~~ | ✅ | 🟡 | Nenhuma | ⭐⭐⭐⭐ |
 | PDF Export | 🟡 | 🟢 | XLSX (existe) | ⭐⭐⭐ |
-| Metas | 🟡 | 🟡 | ~~Alertas~~ ✅ | ⭐⭐⭐ |
+| ~~Metas~~ | ✅ | 🟡 | ~~Alertas~~ ✅ | ⭐⭐⭐ |
 | Conversão Moeda | 🟡 | 🟢 | Nenhuma | ⭐⭐⭐ |
 | Multi-Usuários | 🔴 | 🔴 | ~~Testes, CI~~ ✅ | ⭐⭐ |
 | Backup | 🟡 | 🟡 | Multi-usuários | ⭐⭐ |
@@ -211,6 +228,6 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
 
 1. **Sprint 1:** ~~CI/CD + Testes~~ ✅ + ~~Desfazer Ação~~ ✅
 2. **Sprint 2:** ~~Alertas/Limites~~ ✅ + ~~Scheduler Recorrentes~~ ✅
-3. **Sprint 3:** ~~Gráficos~~ ✅ + PDF ⬅️ **PRÓXIMO**
-4. **Sprint 4:** Metas + Conversão Moeda
+3. **Sprint 3:** ~~Gráficos~~ ✅ + ~~Metas~~ ✅
+4. **Sprint 4:** PDF + Conversão Moeda ⬅️ **PRÓXIMO**
 5. **Sprint 5:** Multi-Usuários + Backup

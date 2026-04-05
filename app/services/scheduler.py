@@ -49,11 +49,26 @@ class SchedulerService:
             replace_existing=True,
         )
 
+        # Add weekly goal motivation job (runs every Sunday at 10:00)
+        self.scheduler.add_job(
+            self.send_weekly_goal_motivation,
+            CronTrigger(
+                day_of_week="sun",
+                hour=10,
+                minute=0,
+                timezone=timezone,
+            ),
+            id="weekly_goal_motivation",
+            name="Send weekly goal motivation messages",
+            replace_existing=True,
+        )
+
         self.scheduler.start()
         logger.info(
             f"Scheduler started. Recurring expenses job scheduled at "
             f"{settings.scheduler_hour:02d}:{settings.scheduler_minute:02d} "
-            f"({settings.scheduler_timezone})"
+            f"({settings.scheduler_timezone}). "
+            f"Weekly goal motivation scheduled for Sundays at 10:00."
         )
 
     def shutdown(self) -> None:
@@ -217,6 +232,61 @@ class SchedulerService:
         )
         session.add(pending)
         await session.commit()
+
+    async def send_weekly_goal_motivation(self) -> None:
+        """
+        Job function to send weekly motivation messages for active goals.
+
+        This is called by the scheduler every Sunday at 10:00.
+        """
+        from app.services.gemini import GeminiService
+        from app.services.goal import GoalService
+
+        logger.info("Starting weekly goal motivation job...")
+
+        goal_service = GoalService()
+        gemini_service = GeminiService()
+
+        try:
+            async with async_session() as session:
+                # Get all users with active goals
+                users_with_goals = await goal_service.get_users_with_active_goals(session)
+
+                if not users_with_goals:
+                    logger.info("No users with active goals")
+                    return
+
+                sent_count = 0
+                for phone in users_with_goals:
+                    try:
+                        motivations = await goal_service.get_weekly_motivation(session, phone)
+
+                        for motivation in motivations:
+                            msg = gemini_service.format_goal_motivation(motivation)
+                            await self.evolution.send_text(phone, msg)
+                            sent_count += 1
+
+                    except Exception as e:
+                        logger.error(f"Error sending motivation to {phone}: {e}")
+                        continue
+
+                logger.info(
+                    f"Sent {sent_count} goal motivation message(s) to "
+                    f"{len(users_with_goals)} user(s)"
+                )
+
+        except Exception as e:
+            logger.error(f"Error in weekly goal motivation job: {e}", exc_info=True)
+
+    async def trigger_goal_motivation_manually(self) -> dict:
+        """
+        Manually trigger the goal motivation job (for testing).
+
+        Returns dict with result information.
+        """
+        logger.info("Manually triggering weekly goal motivation job...")
+        await self.send_weekly_goal_motivation()
+        return {"status": "completed", "timestamp": datetime.now().isoformat()}
 
     async def trigger_recurring_job_manually(self) -> dict:
         """
