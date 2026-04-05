@@ -102,6 +102,10 @@ class ExpenseService:
                 recurring_day=data.get("recurring_day"),
                 recurring_active=data.get("is_recurring", False),
                 date=date.today(),
+                # Currency conversion fields
+                original_currency=data.get("original_currency"),
+                original_amount=Decimal(str(data["original_amount"])) if data.get("original_amount") else None,
+                exchange_rate=Decimal(str(data["exchange_rate"])) if data.get("exchange_rate") else None,
             )
 
             session.add(expense)

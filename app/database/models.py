@@ -77,6 +77,11 @@ class Expense(Base):
     is_shared = Column(Boolean, default=False, nullable=False)
     shared_percentage = Column(Numeric(5, 2), nullable=True)
 
+    # Currency conversion (stores original currency/amount if not BRL)
+    original_currency = Column(String(3), nullable=True)  # ISO code: USD, EUR, etc.
+    original_amount = Column(Numeric(12, 2), nullable=True)
+    exchange_rate = Column(Numeric(12, 6), nullable=True)  # Rate used for conversion
+
     # Recurring expense
     is_recurring = Column(Boolean, default=False, nullable=False)
     recurring_day = Column(Integer, nullable=True)
@@ -229,3 +234,18 @@ class GoalUpdate(Base):
 
     def __repr__(self) -> str:
         return f"<GoalUpdate(goal_id={self.goal_id}, type='{self.update_type}', amount={self.new_amount})>"
+
+
+class ExchangeRate(Base):
+    """Cached exchange rates for currency conversion fallback."""
+
+    __tablename__ = "exchange_rates"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    currency_code = Column(String(3), nullable=False, unique=True)  # ISO code: USD, EUR, etc.
+    rate_to_brl = Column(Numeric(12, 6), nullable=False)
+    source = Column(String(30), nullable=False)  # "wise", "exchangerate_api", "manual"
+    updated_at = Column(DateTime, nullable=False, default=datetime.now, server_default=func.now())
+
+    def __repr__(self) -> str:
+        return f"<ExchangeRate(currency={self.currency_code}, rate={self.rate_to_brl}, source='{self.source}')>"

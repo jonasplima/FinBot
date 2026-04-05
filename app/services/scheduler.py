@@ -63,12 +63,27 @@ class SchedulerService:
             replace_existing=True,
         )
 
+        # Add weekly exchange rates update job (runs every Monday at 6:00)
+        self.scheduler.add_job(
+            self.update_exchange_rates,
+            CronTrigger(
+                day_of_week="mon",
+                hour=6,
+                minute=0,
+                timezone=timezone,
+            ),
+            id="weekly_exchange_rates_update",
+            name="Update exchange rates in database",
+            replace_existing=True,
+        )
+
         self.scheduler.start()
         logger.info(
             f"Scheduler started. Recurring expenses job scheduled at "
             f"{settings.scheduler_hour:02d}:{settings.scheduler_minute:02d} "
             f"({settings.scheduler_timezone}). "
-            f"Weekly goal motivation scheduled for Sundays at 10:00."
+            f"Weekly goal motivation scheduled for Sundays at 10:00. "
+            f"Weekly exchange rates update scheduled for Mondays at 06:00."
         )
 
     def shutdown(self) -> None:
@@ -296,6 +311,38 @@ class SchedulerService:
         """
         logger.info("Manually triggering recurring expenses job...")
         await self.process_recurring_job()
+        return {"status": "completed", "timestamp": datetime.now().isoformat()}
+
+    async def update_exchange_rates(self) -> None:
+        """
+        Job function to update exchange rates in database.
+
+        This is called by the scheduler every Monday at 06:00.
+        """
+        from app.services.currency import CurrencyService
+
+        logger.info("Starting weekly exchange rates update job...")
+
+        try:
+            currency_service = CurrencyService()
+            updated = await currency_service.update_fallback_rates()
+
+            if updated:
+                logger.info("Exchange rates updated successfully")
+            else:
+                logger.warning("Failed to update exchange rates")
+
+        except Exception as e:
+            logger.error(f"Error in exchange rates update job: {e}", exc_info=True)
+
+    async def trigger_exchange_rates_update_manually(self) -> dict:
+        """
+        Manually trigger the exchange rates update job (for testing).
+
+        Returns dict with result information.
+        """
+        logger.info("Manually triggering exchange rates update job...")
+        await self.update_exchange_rates()
         return {"status": "completed", "timestamp": datetime.now().isoformat()}
 
 

@@ -11,6 +11,7 @@ from app.database.connection import async_session
 from app.database.models import PendingConfirmation
 from app.services.budget import BudgetService
 from app.services.chart import ChartService
+from app.services.currency import CurrencyService
 from app.services.evolution import EvolutionService
 from app.services.expense import ExpenseService
 from app.services.gemini import GeminiService
@@ -31,6 +32,7 @@ class WebhookHandler:
         self.budget_service = BudgetService()
         self.chart_service = ChartService()
         self.goal_service = GoalService()
+        self.currency_service = CurrencyService()
 
     async def handle(self, webhook_data: dict) -> None:
         """Process incoming webhook event."""
@@ -140,6 +142,8 @@ class WebhookHandler:
                 await self.handle_remove_goal(session, phone, result)
             elif intent == "add_to_goal":
                 await self.handle_add_to_goal(session, phone, result)
+            elif intent == "convert_currency":
+                await self.handle_convert_currency(session, phone, result)
             else:
                 # Unknown intent - ask for clarification
                 await self.evolution.send_text(
@@ -220,12 +224,33 @@ class WebhookHandler:
         data: dict,
     ) -> None:
         """Handle expense registration (with confirmation)."""
+        from decimal import Decimal
+
         expense_data = data.get("data", {})
 
         # Normalize shared_percentage - Gemini may return 0.7 instead of 70
         shared_percentage = expense_data.get("shared_percentage")
         if shared_percentage is not None and shared_percentage < 1:
             expense_data["shared_percentage"] = shared_percentage * 100
+
+        # Handle currency conversion if foreign currency detected
+        currency = expense_data.get("currency")
+        if currency and currency.upper() != "BRL":
+            amount = Decimal(str(expense_data.get("amount", 0)))
+            conversion = await self.currency_service.convert_to_brl(amount, currency)
+
+            if conversion["success"]:
+                # Store original currency info and converted amount
+                expense_data["original_currency"] = conversion["original_currency"]
+                expense_data["original_amount"] = float(conversion["original_amount"])
+                expense_data["exchange_rate"] = float(conversion["exchange_rate"])
+                expense_data["amount"] = float(conversion["converted_amount"])
+            else:
+                await self.evolution.send_text(
+                    phone,
+                    f"Erro na conversao de moeda: {conversion.get('error', 'Erro desconhecido')}",
+                )
+                return
 
         # Check if payment method is missing
         payment_method = expense_data.get("payment_method")
@@ -266,9 +291,20 @@ class WebhookHandler:
         installments = expense_data.get("installments")
         is_shared = expense_data.get("is_shared", False)
         shared_percentage = expense_data.get("shared_percentage")
+        original_currency = expense_data.get("original_currency")
+        original_amount = expense_data.get("original_amount")
+        exchange_rate = expense_data.get("exchange_rate")
 
         msg = "Entendi:\n"
-        msg += f"- Valor: R$ {amount:.2f}\n"
+
+        # Show currency conversion info if applicable
+        if original_currency and original_currency != "BRL":
+            msg += f"- Valor original: {original_currency} {original_amount:.2f}\n"
+            msg += f"- Valor convertido: R$ {amount:.2f}\n"
+            msg += f"- Cotacao: 1 {original_currency} = R$ {exchange_rate:.4f}\n"
+        else:
+            msg += f"- Valor: R$ {amount:.2f}\n"
+
         msg += f"- Descricao: {description}\n"
         msg += f"- Categoria: {category}\n"
         msg += f"- Pagamento: {payment_method}\n"
@@ -857,6 +893,40 @@ class WebhookHandler:
             await self.evolution.send_text(phone, msg)
         else:
             await self.evolution.send_text(phone, result["error"])
+
+    async def handle_convert_currency(
+        self,
+        session: AsyncSession,
+        phone: str,
+        data: dict,
+    ) -> None:
+        """Handle standalone currency conversion request."""
+        from decimal import Decimal
+
+        currency_data = data.get("data", {})
+        amount = currency_data.get("amount")
+        from_currency = currency_data.get("currency", "USD")
+        to_currency = currency_data.get("target_currency", "BRL")
+
+        if not amount:
+            await self.evolution.send_text(
+                phone,
+                "Por favor, informe o valor a converter.\n"
+                "Exemplo: 'quanto e 100 dolares em reais'",
+            )
+            return
+
+        result = await self.currency_service.convert_currency(
+            Decimal(str(amount)),
+            from_currency,
+            to_currency,
+        )
+
+        if result["success"]:
+            msg = self.currency_service.format_conversion_result(result)
+            await self.evolution.send_text(phone, msg)
+        else:
+            await self.evolution.send_text(phone, result.get("error", "Erro na conversao"))
 
     async def handle_confirmation_response(
         self,

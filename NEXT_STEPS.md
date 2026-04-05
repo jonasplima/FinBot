@@ -173,14 +173,42 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
   - `app/handlers/webhook.py` - Handlers de metas e confirmação
   - `tests/test_goal.py` - Testes unitários
 
-### 4.2 Conversão de Moeda
+### 4.2 Conversão de Moeda ✅
 - **Complexidade:** Baixa 🟢
 - **Valor:** Médio (nicho: viajantes)
-- **Orientações:**
-  - Integrar API gratuita de câmbio (exchangerate-api.com)
-  - Detectar moeda na mensagem: "gastei 50 dólares"
-  - Converter para BRL e armazenar ambos valores
-  - Cache de cotação por 1 hora
+- **Status:** Implementado
+- **Implementação:**
+  - ✅ `CurrencyService` com cache de 1 hora para cotações
+  - ✅ **API Wise como fonte primária** (cotação comercial + valor real com taxas)
+    - GET /v1/rates - Cotação comercial (mid-market)
+    - POST /v3/quotes - Valor real que chega após IOF e taxas Wise
+  - ✅ Fallback para exchangerate-api.com
+  - ✅ Fallback final para arquivo JSON (atualizado semanalmente)
+  - ✅ Detecção automática de moeda na mensagem: "gastei 50 dólares"
+  - ✅ Conversão para BRL e armazenamento de ambos valores no banco
+  - ✅ Serviço standalone para consultas: "quanto é 100 dólares em reais"
+  - ✅ 12 moedas suportadas: USD, EUR, GBP, KRW, HUF, ARS, JPY, CAD, AUD, CHF, CNY, MXN
+  - ✅ 31 testes unitários para funcionalidade de conversão
+- **Comandos:**
+  - "gastei 50 dolares no uber" → registra gasto convertendo para BRL
+  - "almoco de 30 euros" → registra gasto com conversão
+  - "quanto e 100 dolares em reais" → apenas consulta cotação (mostra cotação comercial + valor Wise)
+  - "converter 50 euros" → consulta cotação
+  - "cotacao do dolar" → mostra cotação atual
+- **Configurações (`.env`):**
+  - `WISE_API_KEY` - Chave da API Wise (primária, criar em https://wise.com/your-account/integrations-and-tools/api-tokens)
+  - `EXCHANGE_RATE_API_KEY` - Chave da API ExchangeRate (fallback)
+  - `EXCHANGE_RATE_CACHE_TTL=3600` - Tempo de cache em segundos
+  - `FALLBACK_RATES_FILE=data/fallback_rates.json` - Arquivo de taxas de fallback
+  - `FALLBACK_RATES_UPDATE_DAYS=7` - Intervalo de atualização do fallback (dias)
+- **Arquivos:**
+  - `app/config.py` - Configurações das APIs de câmbio (Wise + ExchangeRate)
+  - `app/database/models.py` - Campos original_currency, original_amount, exchange_rate
+  - `app/services/currency.py` - CurrencyService com Wise API + fallbacks
+  - `app/services/gemini.py` - Intent convert_currency e detecção de moeda
+  - `app/handlers/webhook.py` - Handlers de conversão e integração com registro
+  - `data/fallback_rates.json` - Taxas de fallback (gerado automaticamente)
+  - `tests/test_currency.py` - Testes unitários
 
 ---
 
@@ -218,7 +246,7 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
 | ~~Gráficos~~ | ✅ | 🟡 | Nenhuma | ⭐⭐⭐⭐ |
 | PDF Export | 🟡 | 🟢 | XLSX (existe) | ⭐⭐⭐ |
 | ~~Metas~~ | ✅ | 🟡 | ~~Alertas~~ ✅ | ⭐⭐⭐ |
-| Conversão Moeda | 🟡 | 🟢 | Nenhuma | ⭐⭐⭐ |
+| ~~Conversão Moeda~~ | ✅ | 🟢 | Nenhuma | ⭐⭐⭐ |
 | Multi-Usuários | 🔴 | 🔴 | ~~Testes, CI~~ ✅ | ⭐⭐ |
 | Backup | 🟡 | 🟡 | Multi-usuários | ⭐⭐ |
 
@@ -229,5 +257,5 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
 1. **Sprint 1:** ~~CI/CD + Testes~~ ✅ + ~~Desfazer Ação~~ ✅
 2. **Sprint 2:** ~~Alertas/Limites~~ ✅ + ~~Scheduler Recorrentes~~ ✅
 3. **Sprint 3:** ~~Gráficos~~ ✅ + ~~Metas~~ ✅
-4. **Sprint 4:** PDF + Conversão Moeda ⬅️ **PRÓXIMO**
+4. **Sprint 4:** PDF ⬅️ **PRÓXIMO** + ~~Conversão Moeda~~ ✅
 5. **Sprint 5:** Multi-Usuários + Backup

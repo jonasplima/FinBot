@@ -39,6 +39,18 @@ class Settings(BaseSettings):
     scheduler_hour: int = 8
     scheduler_minute: int = 0
 
+    # Currency Conversion - Wise API (primary)
+    wise_api_url: str = "https://api.wise.com"
+    wise_api_key: str = ""
+
+    # Currency Conversion - ExchangeRate API (fallback)
+    exchange_rate_api_url: str = "https://v6.exchangerate-api.com/v6"
+    exchange_rate_api_key: str = ""
+
+    # Currency cache settings
+    exchange_rate_cache_ttl: int = 3600  # 1 hour in seconds
+    fallback_rates_update_days: int = 7  # Update fallback rates in database weekly
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

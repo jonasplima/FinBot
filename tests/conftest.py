@@ -78,6 +78,9 @@ class Expense(TestBase):
     installment_total = Column(Integer, nullable=True)
     is_shared = Column(Boolean, default=False, nullable=False)
     shared_percentage = Column(Numeric(5, 2), nullable=True)
+    original_currency = Column(String(3), nullable=True)
+    original_amount = Column(Numeric(12, 2), nullable=True)
+    exchange_rate = Column(Numeric(12, 6), nullable=True)
     is_recurring = Column(Boolean, default=False, nullable=False)
     recurring_day = Column(Integer, nullable=True)
     recurring_active = Column(Boolean, default=True, nullable=True)
@@ -171,6 +174,18 @@ class GoalUpdate(TestBase):
     created_at = Column(DateTime, nullable=False, default=datetime.now)
 
     goal = relationship("Goal", back_populates="updates")
+
+
+class ExchangeRate(TestBase):
+    """Test ExchangeRate model."""
+
+    __tablename__ = "exchange_rates"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    currency_code = Column(String(3), nullable=False, unique=True)
+    rate_to_brl = Column(Numeric(12, 6), nullable=False)
+    source = Column(String(30), nullable=False)
+    updated_at = Column(DateTime, nullable=False, default=datetime.now)
 
 
 @pytest.fixture

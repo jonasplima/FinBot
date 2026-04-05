@@ -98,11 +98,12 @@ Analise a mensagem do usuario e retorne um JSON com a intencao e dados extraidos
 - list_goals: listar todas as metas
 - remove_goal: remover/cancelar uma meta
 - add_to_goal: adicionar valor a uma meta (deposito manual)
+- convert_currency: converter valor entre moedas (sem registrar gasto)
 - unknown: nao entendi a mensagem
 
 ## Formato de resposta (JSON):
 {
-  "intent": "register_expense|register_recurring|cancel_recurring|query_month|export|list_recurring|undo_last|set_budget|check_budget|list_budgets|remove_budget|show_chart|create_goal|check_goal|list_goals|remove_goal|add_to_goal|unknown",
+  "intent": "register_expense|register_recurring|cancel_recurring|query_month|export|list_recurring|undo_last|set_budget|check_budget|list_budgets|remove_budget|show_chart|create_goal|check_goal|list_goals|remove_goal|add_to_goal|convert_currency|unknown",
   "data": {
     "description": "descricao do gasto",
     "amount": 0.00,
@@ -119,7 +120,9 @@ Analise a mensagem do usuario e retorne um JSON com a intencao e dados extraidos
     "goal_description": null ou descricao da meta (para create_goal, check_goal, remove_goal, add_to_goal),
     "goal_amount": null ou valor alvo em reais (para create_goal),
     "goal_deadline": null ou data limite formato "YYYY-MM-DD" (para create_goal),
-    "goal_deposit": null ou valor a depositar na meta (para add_to_goal)
+    "goal_deposit": null ou valor a depositar na meta (para add_to_goal),
+    "currency": null ou codigo ISO da moeda estrangeira (USD, EUR, GBP, KRW, HUF, etc.),
+    "target_currency": null ou codigo ISO da moeda destino (para convert_currency, default BRL)
   },
   "confidence": 0.0 a 1.0
 }
@@ -139,6 +142,9 @@ Analise a mensagem do usuario e retorne um JSON com a intencao e dados extraidos
 12. Para metas: "quero economizar", "meta de", "guardar X ate" indicam create_goal. Extraia descricao, valor e prazo
 13. Para consultar meta: "como esta minha meta", "progresso da meta" indicam check_goal
 14. Para depositar na meta: "depositar na meta", "guardar na meta", "adicionar a meta" indicam add_to_goal
+15. Moedas estrangeiras: detecte dolares (USD), euros (EUR), libras (GBP), won coreano (KRW), florim hungaro (HUF), etc.
+16. Se o usuario registrar gasto em moeda estrangeira ("gastei 50 dolares"), use register_expense com currency preenchido
+17. Para conversao sem gasto ("quanto e 100 dolares", "converter 50 euros pra reais"), use convert_currency
 
 ## Exemplos:
 
@@ -276,6 +282,24 @@ Saida: {"intent": "add_to_goal", "data": {"goal_description": "economia", "goal_
 
 Entrada: "adicionar 100 na meta"
 Saida: {"intent": "add_to_goal", "data": {"goal_description": null, "goal_deposit": 100.00}, "confidence": 0.90}
+
+Entrada: "gastei 50 dolares no uber"
+Saida: {"intent": "register_expense", "data": {"description": "uber", "amount": 50.00, "category": "Transporte", "payment_method": "Pix", "installments": null, "is_shared": false, "shared_percentage": null, "recurring_day": null, "month": null, "year": null, "currency": "USD"}, "confidence": 0.95}
+
+Entrada: "almoco de 30 euros"
+Saida: {"intent": "register_expense", "data": {"description": "almoco", "amount": 30.00, "category": "Alimentacao", "payment_method": "Pix", "installments": null, "is_shared": false, "shared_percentage": null, "recurring_day": null, "month": null, "year": null, "currency": "EUR"}, "confidence": 0.95}
+
+Entrada: "quanto e 100 dolares em reais"
+Saida: {"intent": "convert_currency", "data": {"amount": 100.00, "currency": "USD", "target_currency": "BRL"}, "confidence": 0.95}
+
+Entrada: "converter 50 euros"
+Saida: {"intent": "convert_currency", "data": {"amount": 50.00, "currency": "EUR", "target_currency": "BRL"}, "confidence": 0.95}
+
+Entrada: "quanto vale 1000 won coreano"
+Saida: {"intent": "convert_currency", "data": {"amount": 1000.00, "currency": "KRW", "target_currency": "BRL"}, "confidence": 0.95}
+
+Entrada: "cotacao do dolar"
+Saida: {"intent": "convert_currency", "data": {"amount": 1.00, "currency": "USD", "target_currency": "BRL"}, "confidence": 0.90}
 
 Responda APENAS com o JSON, sem texto adicional.
 """
