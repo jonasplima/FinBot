@@ -2,6 +2,7 @@
 
 import inspect
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import date, datetime, timedelta
 from uuid import uuid4
 from zoneinfo import ZoneInfo
@@ -27,11 +28,11 @@ operational_status = OperationalStatusService()
 class SchedulerService:
     """Service for managing scheduled tasks."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.scheduler: AsyncIOScheduler | None = None
-        self.evolution = EvolutionService()
-        self.redis_url = settings.redis_url
-        self.instance_id = settings.effective_instance_id or f"scheduler-{uuid4().hex}"
+        self.evolution: EvolutionService = EvolutionService()
+        self.redis_url: str = settings.redis_url
+        self.instance_id: str = settings.effective_instance_id or f"scheduler-{uuid4().hex}"
         self._redis: Redis | None = None
 
     def start(self) -> None:
@@ -194,7 +195,7 @@ class SchedulerService:
         normalized_phone = normalize_phone(phone)
 
         # Build expense list for message
-        expense_list = []
+        expense_list: list[dict[str, int | float | str]] = []
         total = 0.0
 
         for exp in expenses:
@@ -202,13 +203,13 @@ class SchedulerService:
             total += amount
             expense_list.append(
                 {
-                    "id": exp.id,
-                    "description": exp.description,
+                    "id": int(exp.id),
+                    "description": str(exp.description),
                     "amount": amount,
                     "category": exp.category.name if exp.category else "Outros",
                     "payment_method": exp.payment_method.name if exp.payment_method else "Pix",
-                    "category_id": exp.category_id,
-                    "payment_method_id": exp.payment_method_id,
+                    "category_id": int(exp.category_id),
+                    "payment_method_id": int(exp.payment_method_id),
                 }
             )
 
@@ -225,7 +226,11 @@ class SchedulerService:
         except Exception as e:
             logger.error(f"Failed to send recurring confirmation to {phone}: {e}")
 
-    def _format_confirmation_message(self, expenses: list[dict], total: float) -> str:
+    def _format_confirmation_message(
+        self,
+        expenses: list[dict[str, int | float | str]],
+        total: float,
+    ) -> str:
         """Format the confirmation message for WhatsApp."""
         lines = ["*Despesas recorrentes de hoje:*\n"]
 
@@ -317,7 +322,7 @@ class SchedulerService:
         except Exception as e:
             logger.error(f"Error in weekly goal motivation job: {e}", exc_info=True)
 
-    async def trigger_goal_motivation_manually(self) -> dict:
+    async def trigger_goal_motivation_manually(self) -> dict[str, str]:
         """
         Manually trigger the goal motivation job (for testing).
 
@@ -327,7 +332,7 @@ class SchedulerService:
         await self.send_weekly_goal_motivation()
         return {"status": "completed", "timestamp": datetime.now().isoformat()}
 
-    async def trigger_recurring_job_manually(self) -> dict:
+    async def trigger_recurring_job_manually(self) -> dict[str, str]:
         """
         Manually trigger the recurring job (for testing).
 
@@ -366,7 +371,7 @@ class SchedulerService:
         except Exception as e:
             logger.error(f"Error in exchange rates update job: {e}", exc_info=True)
 
-    async def trigger_exchange_rates_update_manually(self) -> dict:
+    async def trigger_exchange_rates_update_manually(self) -> dict[str, str]:
         """
         Manually trigger the exchange rates update job (for testing).
 
@@ -376,7 +381,11 @@ class SchedulerService:
         await self.update_exchange_rates()
         return {"status": "completed", "timestamp": datetime.now().isoformat()}
 
-    async def _run_singleton_job(self, job_name: str, job_coro) -> None:
+    async def _run_singleton_job(
+        self,
+        job_name: str,
+        job_coro: Callable[[], Awaitable[None]],
+    ) -> None:
         """Run a scheduler job under a distributed lock when needed."""
         lock_token = await self._acquire_job_lock(job_name)
         if lock_token is False:
