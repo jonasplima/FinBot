@@ -138,6 +138,7 @@ class WebhookHandler:
         """Handle text message with Gemini AI."""
         phone = msg_data["phone"]
         text = msg_data["text"]
+        safe_phone = mask_phone(phone)
 
         if not text:
             return
