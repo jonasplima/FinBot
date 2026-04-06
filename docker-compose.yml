@@ -82,6 +82,9 @@ services:
       - SCHEDULER_TIMEZONE=${SCHEDULER_TIMEZONE}
       - SCHEDULER_HOUR=${SCHEDULER_HOUR}
       - SCHEDULER_MINUTE=${SCHEDULER_MINUTE}
+      - DEPLOYMENT_MODE=${DEPLOYMENT_MODE:-single_instance}
+      - SCHEDULER_LOCK_TTL_SECONDS=${SCHEDULER_LOCK_TTL_SECONDS:-1800}
+      - INSTANCE_ID=${INSTANCE_ID}
       - WISE_API_KEY=${WISE_API_KEY}
       - EXCHANGE_RATE_API_KEY=${EXCHANGE_RATE_API_KEY}
       - EXCHANGE_RATE_CACHE_TTL=${EXCHANGE_RATE_CACHE_TTL}
@@ -108,6 +111,18 @@ services:
         condition: service_healthy
       evolution:
         condition: service_started
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:3003/health/live', timeout=3)"
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     restart: unless-stopped
 
 volumes:

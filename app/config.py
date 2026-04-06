@@ -1,5 +1,6 @@
 """Application configuration from environment variables."""
 
+import os
 from functools import lru_cache
 from typing import Any
 
@@ -41,6 +42,9 @@ class Settings(BaseSettings):
     scheduler_timezone: str = "America/Sao_Paulo"
     scheduler_hour: int = 8
     scheduler_minute: int = 0
+    deployment_mode: str = "single_instance"
+    scheduler_lock_ttl_seconds: int = 1800
+    instance_id: str = os.getenv("INSTANCE_ID", "")
 
     # Currency Conversion - Wise API (primary)
     wise_api_url: str = "https://api.wise.com"
@@ -154,6 +158,22 @@ class Settings(BaseSettings):
     def effective_gemini_timeout_seconds(self) -> int:
         """Clamp Gemini timeout to a safe server ceiling."""
         return min(max(self.gemini_timeout_seconds, 5), 120)
+
+    @property
+    def effective_scheduler_lock_ttl_seconds(self) -> int:
+        """Clamp scheduler lock TTL to a safe operational window."""
+        return min(max(self.scheduler_lock_ttl_seconds, 60), 86_400)
+
+    @property
+    def effective_instance_id(self) -> str:
+        """Return a stable instance identifier when configured."""
+        return self.instance_id.strip()
+
+    @property
+    def normalized_deployment_mode(self) -> str:
+        """Normalize deployment mode to supported values."""
+        mode = self.deployment_mode.strip().lower()
+        return mode if mode in {"single_instance", "multi_instance"} else "single_instance"
 
 
 @lru_cache

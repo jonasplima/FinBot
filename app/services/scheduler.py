@@ -2,10 +2,12 @@
 
 import logging
 from datetime import date, datetime, timedelta
+from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from redis.asyncio import Redis
 from sqlalchemy import extract, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,6 +27,9 @@ class SchedulerService:
     def __init__(self):
         self.scheduler: AsyncIOScheduler | None = None
         self.evolution = EvolutionService()
+        self.redis_url = settings.redis_url
+        self.instance_id = settings.effective_instance_id or f"scheduler-{uuid4().hex}"
+        self._redis: Redis | None = None
 
     def start(self) -> None:
         """Start the scheduler with configured jobs."""
@@ -83,7 +88,9 @@ class SchedulerService:
             f"{settings.scheduler_hour:02d}:{settings.scheduler_minute:02d} "
             f"({settings.scheduler_timezone}). "
             f"Weekly goal motivation scheduled for Sundays at 10:00. "
-            f"Weekly exchange rates update scheduled for Mondays at 06:00."
+            f"Weekly exchange rates update scheduled for Mondays at 06:00. "
+            f"Deployment mode: {settings.normalized_deployment_mode}. "
+            f"Scheduler lock TTL: {settings.effective_scheduler_lock_ttl_seconds}s."
         )
 
     def shutdown(self) -> None:
@@ -98,6 +105,13 @@ class SchedulerService:
 
         This is called by the scheduler at the configured time daily.
         """
+        await self._run_singleton_job(
+            "process_recurring_expenses",
+            self._process_recurring_job_impl,
+        )
+
+    async def _process_recurring_job_impl(self) -> None:
+        """Actual recurring processing logic executed under the scheduler guard."""
         logger.info("Starting recurring expenses job...")
 
         try:
@@ -254,6 +268,13 @@ class SchedulerService:
 
         This is called by the scheduler every Sunday at 10:00.
         """
+        await self._run_singleton_job(
+            "weekly_goal_motivation",
+            self._send_weekly_goal_motivation_impl,
+        )
+
+    async def _send_weekly_goal_motivation_impl(self) -> None:
+        """Actual weekly goal motivation logic executed under the scheduler guard."""
         from app.services.gemini import GeminiService
         from app.services.goal import GoalService
 
@@ -319,6 +340,13 @@ class SchedulerService:
 
         This is called by the scheduler every Monday at 06:00.
         """
+        await self._run_singleton_job(
+            "weekly_exchange_rates_update",
+            self._update_exchange_rates_impl,
+        )
+
+    async def _update_exchange_rates_impl(self) -> None:
+        """Actual exchange-rate refresh logic executed under the scheduler guard."""
         from app.services.currency import CurrencyService
 
         logger.info("Starting weekly exchange rates update job...")
@@ -344,6 +372,106 @@ class SchedulerService:
         logger.info("Manually triggering exchange rates update job...")
         await self.update_exchange_rates()
         return {"status": "completed", "timestamp": datetime.now().isoformat()}
+
+    async def _run_singleton_job(self, job_name: str, job_coro) -> None:
+        """Run a scheduler job under a distributed lock when needed."""
+        lock_token = await self._acquire_job_lock(job_name)
+        if lock_token is False:
+            return
+
+        try:
+            await job_coro()
+        finally:
+            if isinstance(lock_token, str):
+                await self._release_job_lock(job_name, lock_token)
+
+    async def _acquire_job_lock(self, job_name: str) -> str | None | bool:
+        """Acquire distributed lock for a job.
+
+        Returns:
+            str token when a distributed lock was acquired
+            None when local execution is allowed without distributed lock
+            False when the job should be skipped
+        """
+        redis_client = await self._get_redis()
+        if redis_client is None:
+            if settings.normalized_deployment_mode == "multi_instance":
+                logger.error(
+                    "Skipping scheduler job '%s' because Redis is unavailable in multi-instance mode",
+                    job_name,
+                )
+                return False
+
+            logger.warning(
+                "Running scheduler job '%s' without distributed lock because deployment mode is single_instance",
+                job_name,
+            )
+            return None
+
+        lock_key = self._build_lock_key(job_name)
+        token = f"{self.instance_id}:{uuid4().hex}"
+        try:
+            acquired = await redis_client.set(
+                lock_key,
+                token,
+                ex=settings.effective_scheduler_lock_ttl_seconds,
+                nx=True,
+            )
+        except Exception as exc:
+            if settings.normalized_deployment_mode == "multi_instance":
+                logger.error(
+                    "Skipping scheduler job '%s' because lock acquisition failed in multi-instance mode: %s",
+                    job_name,
+                    exc,
+                )
+                return False
+
+            logger.warning(
+                "Running scheduler job '%s' without distributed lock after Redis failure: %s",
+                job_name,
+                exc,
+            )
+            return None
+
+        if not acquired:
+            logger.info("Skipping scheduler job '%s' because another instance owns the lock", job_name)
+            return False
+
+        logger.info("Acquired scheduler lock for '%s' on instance %s", job_name, self.instance_id)
+        return token
+
+    async def _release_job_lock(self, job_name: str, token: str) -> None:
+        """Release distributed lock only when owned by this instance."""
+        redis_client = await self._get_redis()
+        if redis_client is None:
+            return
+
+        script = """
+        if redis.call('get', KEYS[1]) == ARGV[1] then
+            return redis.call('del', KEYS[1])
+        end
+        return 0
+        """
+        try:
+            await redis_client.eval(script, 1, self._build_lock_key(job_name), token)
+        except Exception as exc:
+            logger.warning("Failed to release scheduler lock for '%s': %s", job_name, exc)
+
+    async def _get_redis(self) -> Redis | None:
+        """Lazily initialize Redis client for scheduler locks."""
+        if self._redis is not None:
+            return self._redis
+
+        try:
+            self._redis = Redis.from_url(self.redis_url, decode_responses=True)
+            return self._redis
+        except Exception as exc:
+            logger.warning(f"Could not initialize Redis client for scheduler locks: {exc}")
+            return None
+
+    def _build_lock_key(self, job_name: str) -> str:
+        """Build Redis lock key for a scheduler job."""
+        return f"finbot:scheduler:lock:{job_name}"
 
 
 # Singleton instance

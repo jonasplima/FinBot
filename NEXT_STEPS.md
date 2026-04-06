@@ -229,6 +229,167 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
   - `tests/test_expense.py`
   - `tests/test_scheduler.py`
 
+### 0.9 Auditoria Complementar: Riscos Residuais e Hardening Adicional
+- **Complexidade:** Média/Alta 🔴
+- **Valor:** Muito Alto
+- **Status:** Em andamento
+- **Contexto:**
+  - O projeto já recebeu uma boa rodada de hardening, mas ainda existem riscos residuais de duplicidade, exposição de erro, fragilidade operacional e decisões de produto que precisam virar regra explícita
+  - Esta etapa consolida os achados da revisão completa do projeto para evitar que eles se percam fora do roadmap
+
+#### 0.9.1 Idempotência real após efeitos colaterais
+- **Status:** Implementado
+- **Problema identificado:**
+  - O webhook reserva o `message_id`, mas em caso de exceção posterior a reserva pode ser liberada mesmo depois de persistência em banco
+  - Isso abre espaço para reprocessamento do mesmo evento e duplicidade de lançamentos em cenários de retry parcial
+  - O risco aumenta quando o registro no banco acontece antes do envio das mensagens finais ao usuário
+- **Implementação sugerida:**
+  - Persistir uma trilha de processamento por `message_id` com estados explícitos (`received`, `processing`, `committed`, `failed`)
+  - Evitar liberar a idempotência quando já houve commit de efeito de negócio
+  - Garantir que mensagens de saída e alertas sejam tratadas como side effects secundários, sem reabrir a operação principal
+  - Adicionar testes cobrindo falha depois do commit e retry da mesma mensagem
+- **Critérios de aceite:**
+  - O mesmo evento não gera duas despesas mesmo com falha parcial e retry da origem
+  - O sistema diferencia falha antes do commit e falha depois do commit
+  - O retry fica seguro sem depender de timing entre banco, Redis e Evolution API
+- **Implementação realizada:**
+  - ✅ Sinalização explícita de `processing_committed` no handler
+  - ✅ Preservação da reserva de idempotência quando a falha acontece após persistência
+  - ✅ Resposta controlada `ok_committed_with_warnings` para falhas pós-commit
+  - ✅ Testes cobrindo falha antes e depois do commit
+
+#### 0.9.2 Sanitização de erros HTTP e respostas internas
+- **Status:** Implementado
+- **Problema identificado:**
+  - Endpoints administrativos e webhook ainda devolvem `str(e)` em alguns fluxos
+  - Isso pode expor detalhes internos, mensagens de biblioteca, estrutura de integração e pistas úteis para diagnóstico por terceiros
+- **Implementação sugerida:**
+  - Substituir mensagens técnicas por erros genéricos para o cliente
+  - Manter detalhes completos apenas em log estruturado
+  - Introduzir um padrão único de tratamento de exceção para rotas FastAPI
+- **Critérios de aceite:**
+  - Nenhum endpoint expõe stack, exceções brutas ou mensagens internas sensíveis ao cliente
+  - Logs continuam suficientes para troubleshooting operacional
+- **Implementação realizada:**
+  - ✅ Remoção de `str(e)` das respostas HTTP do webhook e endpoints admin
+  - ✅ Mensagens genéricas para cliente com log detalhado apenas no servidor
+  - ✅ Ajustes de testes cobrindo sanitização
+
+#### 0.9.3 Healthcheck real e startup degradado
+- **Status:** Implementado
+- **Problema identificado:**
+  - O endpoint `/health` sempre responde saudável mesmo quando dependências críticas podem estar indisponíveis
+  - O startup continua em modo degradado se Evolution falhar, mas sem sinalização operacional forte
+- **Implementação sugerida:**
+  - Criar healthchecks separados: `liveness` e `readiness`
+  - Validar conectividade com banco, Redis e Evolution API no readiness
+  - Expor estado degradado quando integrações opcionais falharem
+  - Adicionar `healthcheck` ao serviço `finbot` no `docker-compose`
+- **Critérios de aceite:**
+  - Orquestradores conseguem distinguir instância viva de instância pronta
+  - Falhas de dependência aparecem claramente para operação
+  - O comportamento degradado é explícito e observável
+- **Implementação realizada:**
+  - ✅ Endpoints `/health/live` e `/health/ready`
+  - ✅ `/health` convertido para readiness com checagem de banco, Redis e Evolution
+  - ✅ `healthcheck` do serviço `finbot` no `docker-compose`
+
+#### 0.9.4 Redis como ponto único de consistência distribuída
+- **Status:** Em andamento
+- **Problema identificado:**
+  - Idempotência, rate limit e backup temporário têm fallback em memória local
+  - Isso funciona em ambiente simples, mas quebra consistência em múltiplos processos ou múltiplas réplicas
+- **Implementação sugerida:**
+  - Definir formalmente se o produto opera apenas em instância única ou se suportará horizontal scaling
+  - Se suportar múltiplas instâncias, tornar Redis obrigatório para os fluxos que dependem de consistência compartilhada
+  - Adicionar métricas e alertas para fallback em memória, tratando-o como estado degradado
+- **Critérios de aceite:**
+  - O comportamento em multi-instância é previsível e documentado
+  - Queda do Redis não produz duplicidade silenciosa nem limites inconsistentes
+
+#### 0.9.5 Scheduler com trava distribuída
+- **Status:** Implementado
+- **Problema identificado:**
+  - Cada instância do `finbot` sobe o scheduler localmente
+  - Em múltiplas réplicas isso pode gerar lembretes duplicados, atualizações repetidas e concorrência entre jobs
+- **Implementação sugerida:**
+  - Adotar lock distribuído para jobs agendados ou mover scheduler para um worker dedicado
+  - Documentar claramente o modo suportado de deploy
+  - Adicionar testes ou validações de execução exclusiva por janela
+- **Critérios de aceite:**
+  - Jobs recorrentes rodam uma única vez por janela esperada
+  - O deploy com mais de uma réplica não duplica notificações
+- **Implementação realizada:**
+  - ✅ Lock distribuído por job com Redis
+  - ✅ Política explícita de `DEPLOYMENT_MODE` (`single_instance` vs `multi_instance`)
+  - ✅ Bloqueio de execução quando Redis está indisponível em `multi_instance`
+  - ✅ Fallback controlado para execução local apenas em `single_instance`
+  - ✅ Testes cobrindo lock adquirido, lock ocupado e indisponibilidade de Redis
+
+#### 0.9.6 Política de restore de backup com migração de número
+- **Status:** Pendente
+- **Problema identificado:**
+  - Hoje o restore aceita backup de outra origem sem uma política explícita
+  - Bloquear rigidamente por `source_phone == target_phone` parece seguro, mas quebra um caso legítimo: usuário que trocou de número e precisa migrar o histórico
+  - Liberar irrestritamente também aumenta risco de restauração indevida para o número errado
+- **Diretriz de produto:**
+  - O sistema deve permitir migração entre números quando isso representar continuidade legítima do mesmo usuário
+  - A política não deve ser “sempre bloquear número diferente” nem “sempre aceitar qualquer origem”
+- **Implementação sugerida:**
+  - Exigir confirmação explícita reforçada quando `source_phone` for diferente do número atual
+  - Exibir com clareza origem e destino da restauração antes do aceite final
+  - Registrar auditoria da migração de backup entre números
+  - Avaliar uso de um identificador estável de usuário no backup, reduzindo dependência exclusiva do telefone
+  - Considerar flag/configuração para permitir restore cruzado apenas em modo assistido ou com confirmação adicional
+- **Critérios de aceite:**
+  - Um usuário consegue migrar backup do número antigo para o novo com segurança
+  - O fluxo reduz o risco de restaurar dados de terceiros por engano
+  - A decisão fica documentada como regra de negócio, não como comportamento implícito
+
+#### 0.9.7 Hardening adicional de Docker e supply chain
+- **Status:** Pendente
+- **Problema identificado:**
+  - Imagens base e de terceiros não estão fixadas por digest
+  - Dependências Python não usam hashes de integridade
+  - Portas administrativas e da Evolution estão publicadas para o host por padrão
+- **Implementação sugerida:**
+  - Fixar imagens críticas por digest em produção
+  - Avaliar travamento de dependências com hashes
+  - Rever exposição de portas e preferir publicação apenas quando necessário
+  - Adicionar uma rotina de auditoria de dependências (`pip-audit` ou equivalente) na CI
+- **Critérios de aceite:**
+  - A cadeia de build fica mais reprodutível e auditável
+  - A superfície de exposição padrão do ambiente sobe mais fechada
+
+#### 0.9.8 Proteção adicional dos segredos estáticos
+- **Status:** Parcialmente implementado
+- **Problema identificado:**
+  - A autenticação de admin e webhook depende de bearer secrets estáticos
+  - A validação atual usa comparação simples de string
+- **Implementação sugerida:**
+  - Trocar para `secrets.compare_digest`
+  - Adicionar rate limit ou proteção adicional aos endpoints administrativos
+  - Documentar rotação periódica de segredos
+- **Critérios de aceite:**
+  - Comparações sensíveis passam a usar comparação em tempo constante
+  - Endpoints administrativos ficam menos suscetíveis a abuso por força bruta ou enumeração
+- **Implementação realizada:**
+  - ✅ Migração para `secrets.compare_digest`
+  - ⏳ Rate limit e proteção adicional para endpoints administrativos ainda pendentes
+
+#### 0.9.9 Observações de validação
+- **Resultado da revisão local:**
+  - Suíte de testes local executada com sucesso: 277 testes passando
+  - `ruff check .` sem achados
+  - `python -m compileall app tests` sem erros
+  - Não foi executada auditoria online de CVEs de dependências durante a revisão
+
+#### 0.9.10 Ordem sugerida de execução
+1. Fechar a política oficial de restore com migração entre números
+2. Endurecer Redis/rate-limit/backup temporário para comportamento previsível em multi-instância
+3. Adicionar proteção adicional aos endpoints administrativos
+4. Endurecer Docker, segredos e supply chain
+
 ---
 
 ## Fase 1: Fundação e Qualidade (Prioridade Crítica)

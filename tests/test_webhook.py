@@ -9,7 +9,14 @@ from starlette.requests import Request
 
 from app.database.models import PendingConfirmation
 from app.handlers.webhook import WebhookHandler
-from app.main import evolution_webhook, get_qrcode, get_status
+from app.main import (
+    evolution_webhook,
+    get_qrcode,
+    get_status,
+    health_check,
+    health_live,
+    health_ready,
+)
 from app.services.rate_limit import RateLimitService
 
 
@@ -239,13 +246,39 @@ class TestEvolutionWebhookAuthentication:
             mock_idempotency.release = AsyncMock()
             mock_idempotency_cls.return_value = mock_idempotency
             mock_handler = MagicMock()
+            mock_handler.processing_committed = False
             mock_handler.handle = AsyncMock(side_effect=RuntimeError("boom"))
             mock_handler_cls.return_value = mock_handler
 
             response = await evolution_webhook(request)
 
         assert response.status_code == 500
+        assert response.body == b'{"status":"error","message":"Erro interno ao processar o webhook."}'
         mock_idempotency.release.assert_awaited_once_with("msg-123")
+
+    async def test_does_not_release_reservation_after_committed_failure(self):
+        """Test webhook keeps reservation and returns success when failure happens post-commit."""
+        request = self._build_request(headers={"Authorization": "Bearer test-webhook-secret"})
+
+        with (
+            patch("app.main.settings.webhook_secret", "test-webhook-secret"),
+            patch("app.main.WebhookIdempotencyService") as mock_idempotency_cls,
+            patch("app.handlers.webhook.WebhookHandler") as mock_handler_cls,
+        ):
+            mock_idempotency = MagicMock()
+            mock_idempotency.reserve = AsyncMock(return_value=True)
+            mock_idempotency.release = AsyncMock()
+            mock_idempotency_cls.return_value = mock_idempotency
+
+            mock_handler = MagicMock()
+            mock_handler.processing_committed = True
+            mock_handler.handle = AsyncMock(side_effect=RuntimeError("post-commit boom"))
+            mock_handler_cls.return_value = mock_handler
+
+            response = await evolution_webhook(request)
+
+        assert response == {"status": "ok_committed_with_warnings"}
+        mock_idempotency.release.assert_not_awaited()
 
     async def test_rejects_message_event_without_message_id(self):
         """Test message webhooks without a message ID are rejected explicitly."""
@@ -320,6 +353,108 @@ class TestAdminAuthentication:
             result = await get_status(request)
 
         assert result == {"instance": "ok"}
+
+    async def test_admin_status_sanitizes_internal_errors(self):
+        """Test status endpoint does not expose raw upstream errors."""
+        request = self._build_get_request(
+            "/admin/status",
+            headers={"Authorization": "Bearer test-secret"},
+        )
+
+        with (
+            patch("app.main.settings.admin_secret", "test-secret"),
+            patch("app.services.evolution.EvolutionService") as mock_evolution_cls,
+            pytest.raises(HTTPException) as exc_info,
+        ):
+            mock_evolution = MagicMock()
+            mock_evolution.get_connection_state = AsyncMock(side_effect=RuntimeError("upstream boom"))
+            mock_evolution_cls.return_value = mock_evolution
+            await get_status(request)
+
+        assert exc_info.value.status_code == 502
+        assert "upstream boom" not in exc_info.value.detail
+
+
+class TestHealthEndpoints:
+    """Tests for liveness and readiness endpoints."""
+
+    async def test_health_live_returns_healthy(self):
+        """Test liveness endpoint stays simple and local."""
+        response = await health_live()
+
+        assert response.status_code == 200
+        assert b'"status":"healthy"' in response.body
+
+    async def test_health_ready_returns_healthy_when_dependencies_are_available(self):
+        """Test readiness endpoint reports healthy dependencies."""
+
+        class MockRedis:
+            async def ping(self):
+                return True
+
+            async def aclose(self):
+                return None
+
+        mock_session = MagicMock()
+        mock_session.execute = AsyncMock(return_value=None)
+
+        class MockSessionManager:
+            async def __aenter__(self):
+                return mock_session
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+        with (
+            patch("app.main.async_session", return_value=MockSessionManager()),
+            patch("app.main.Redis.from_url", return_value=MockRedis()),
+            patch("app.services.evolution.EvolutionService") as mock_evolution_cls,
+        ):
+            mock_evolution = MagicMock()
+            mock_evolution.get_connection_state = AsyncMock(return_value={"instance": {"state": "open"}})
+            mock_evolution_cls.return_value = mock_evolution
+
+            response = await health_ready()
+
+        assert response.status_code == 200
+        assert b'"database":"healthy"' in response.body
+        assert b'"redis":"healthy"' in response.body
+        assert b'"evolution":"healthy"' in response.body
+
+    async def test_health_check_returns_degraded_when_dependency_fails(self):
+        """Test shared health endpoint returns degraded status on dependency failure."""
+
+        class MockRedis:
+            async def ping(self):
+                return True
+
+            async def aclose(self):
+                return None
+
+        mock_session = MagicMock()
+        mock_session.execute = AsyncMock(side_effect=RuntimeError("db unavailable"))
+
+        class MockSessionManager:
+            async def __aenter__(self):
+                return mock_session
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+        with (
+            patch("app.main.async_session", return_value=MockSessionManager()),
+            patch("app.main.Redis.from_url", return_value=MockRedis()),
+            patch("app.services.evolution.EvolutionService") as mock_evolution_cls,
+        ):
+            mock_evolution = MagicMock()
+            mock_evolution.get_connection_state = AsyncMock(return_value={"instance": {"state": "open"}})
+            mock_evolution_cls.return_value = mock_evolution
+
+            response = await health_check()
+
+        assert response.status_code == 503
+        assert b'"status":"degraded"' in response.body
+        assert b'"database":"unhealthy"' in response.body
 
 
 class TestWebhookHandlerBuildExpenseSummary:
@@ -835,6 +970,7 @@ class TestWebhookHandlerIntentHandling:
         assert pending is not None
         assert pending.data["type"] == "backup_restore"
         assert pending.data["backup_ref"] == "finbot:backup:test"
+        assert pending.data["target_phone"] == test_phone
         assert "backup_data" not in pending.data
         handler.evolution.send_text.assert_awaited_once()
 
@@ -872,13 +1008,14 @@ class TestWebhookHandlerIntentHandling:
                 "type": "backup_restore",
                 "backup_ref": "finbot:backup:test",
                 "summary": {
-                    "source_phone": "5511888888888",
+                    "source_phone": test_phone,
                     "expenses": 2,
                     "budgets": 1,
                     "budget_alerts": 1,
                     "goals": 1,
                     "goal_updates": 2,
                 },
+                "target_phone": test_phone,
             },
             accepted_user_in_db,
         )
@@ -890,6 +1027,51 @@ class TestWebhookHandlerIntentHandling:
         handler.evolution.send_text.assert_awaited_once()
         call_args = handler.evolution.send_text.call_args
         assert "backup restaurado com sucesso" in call_args.args[1].lower()
+
+    async def test_handle_backup_restore_confirmation_tolerates_notification_failure(
+        self, handler, seeded_session, test_phone, accepted_user_in_db
+    ):
+        """Test restore success does not fail the flow when notification sending breaks."""
+        handler.evolution.send_text = AsyncMock(side_effect=RuntimeError("send failed"))
+        handler.backup_service.load_temporary_backup = AsyncMock(
+            return_value={
+                "metadata": {"schema_version": 1},
+                "expenses": [],
+                "budgets": [],
+                "goals": [],
+            }
+        )
+        handler.backup_service.delete_temporary_backup = AsyncMock()
+        handler.backup_service.restore_user_backup = AsyncMock(
+            return_value={
+                "success": True,
+                "restored": {
+                    "expenses": 1,
+                    "budgets": 0,
+                    "budget_alerts": 0,
+                    "goals": 0,
+                    "goal_updates": 0,
+                },
+            }
+        )
+
+        await handler._handle_backup_restore_confirmation(
+            seeded_session,
+            test_phone,
+            "sim",
+            {
+                "type": "backup_restore",
+                "backup_ref": "finbot:backup:test",
+                "summary": {},
+                "target_phone": test_phone,
+            },
+            accepted_user_in_db,
+        )
+
+        handler.backup_service.restore_user_backup.assert_awaited_once()
+        handler.backup_service.delete_temporary_backup.assert_awaited_once_with(
+            "finbot:backup:test"
+        )
 
     async def test_handle_backup_restore_confirmation_rejects_expired_reference(
         self, handler, seeded_session, test_phone, accepted_user_in_db
@@ -907,6 +1089,7 @@ class TestWebhookHandlerIntentHandling:
                 "type": "backup_restore",
                 "backup_ref": "finbot:backup:missing",
                 "summary": {},
+                "target_phone": test_phone,
             },
             accepted_user_in_db,
         )
@@ -914,6 +1097,93 @@ class TestWebhookHandlerIntentHandling:
         handler.backup_service.restore_user_backup.assert_not_awaited()
         handler.evolution.send_text.assert_awaited_once()
         assert "expirou" in handler.evolution.send_text.call_args.args[1].lower()
+
+    async def test_handle_backup_restore_requires_explicit_migration_confirmation(
+        self, handler, seeded_session, test_phone, accepted_user_in_db
+    ):
+        """Test cross-phone restore asks for explicit migration confirmation."""
+        handler.backup_service.load_temporary_backup = AsyncMock()
+        handler.backup_service.restore_user_backup = AsyncMock()
+
+        await handler._handle_backup_restore_confirmation(
+            seeded_session,
+            test_phone,
+            "sim",
+            {
+                "type": "backup_restore",
+                "backup_ref": "finbot:backup:test",
+                "summary": {
+                    "source_phone": "5511888888888",
+                    "expenses": 1,
+                    "budgets": 0,
+                    "budget_alerts": 0,
+                    "goals": 0,
+                    "goal_updates": 0,
+                },
+                "target_phone": test_phone,
+            },
+            accepted_user_in_db,
+        )
+
+        handler.backup_service.restore_user_backup.assert_not_awaited()
+        handler.evolution.send_text.assert_awaited_once()
+        assert "sim migrar" in handler.evolution.send_text.call_args.args[1].lower()
+
+        pending = await handler.get_pending_confirmation(seeded_session, test_phone)
+        assert pending is not None
+        assert pending.data["target_phone"] == test_phone
+
+    async def test_handle_backup_restore_allows_explicit_migration_confirmation(
+        self, handler, seeded_session, test_phone, accepted_user_in_db
+    ):
+        """Test cross-phone restore succeeds after explicit migration confirmation."""
+        handler.backup_service.load_temporary_backup = AsyncMock(
+            return_value={
+                "metadata": {"schema_version": 1, "source_phone": "5511888888888"},
+                "expenses": [],
+                "budgets": [],
+                "goals": [],
+            }
+        )
+        handler.backup_service.delete_temporary_backup = AsyncMock()
+        handler.backup_service.restore_user_backup = AsyncMock(
+            return_value={
+                "success": True,
+                "restored": {
+                    "expenses": 1,
+                    "budgets": 0,
+                    "budget_alerts": 0,
+                    "goals": 0,
+                    "goal_updates": 0,
+                },
+            }
+        )
+
+        await handler._handle_backup_restore_confirmation(
+            seeded_session,
+            test_phone,
+            "sim migrar",
+            {
+                "type": "backup_restore",
+                "backup_ref": "finbot:backup:test",
+                "summary": {
+                    "source_phone": "5511888888888",
+                    "expenses": 1,
+                    "budgets": 0,
+                    "budget_alerts": 0,
+                    "goals": 0,
+                    "goal_updates": 0,
+                },
+                "target_phone": test_phone,
+            },
+            accepted_user_in_db,
+        )
+
+        handler.backup_service.restore_user_backup.assert_awaited_once()
+        handler.backup_service.delete_temporary_backup.assert_awaited_once_with(
+            "finbot:backup:test"
+        )
+        assert handler.processing_committed is True
 
     async def test_handle_export_sends_xlsx_by_default(self, handler, seeded_session, test_phone):
         """Test that export uses XLSX by default."""
@@ -988,6 +1258,43 @@ class TestWebhookHandlerIntentHandling:
                 caption="Seus gastos de Marco de 2026",
                 mimetype="application/pdf",
             )
+
+    async def test_handle_confirmation_marks_processing_committed_on_success(
+        self, handler, seeded_session, test_phone, accepted_user_in_db
+    ):
+        """Test successful confirmation marks the webhook as committed."""
+        pending = PendingConfirmation(
+            user_phone=test_phone,
+            data={
+                "type": "expense",
+                "data": {
+                    "description": "Almoco",
+                    "amount": 50.0,
+                    "category": "Alimentação",
+                    "payment_method": "Pix",
+                },
+            },
+            expires_at=datetime.now() + timedelta(minutes=5),
+        )
+        seeded_session.add(pending)
+        await seeded_session.commit()
+
+        handler.gemini.evaluate_confirmation_response.return_value = {
+            "action": "confirm",
+            "adjustments": {},
+        }
+        handler.expense_service.create_expense = AsyncMock(return_value={"success": True})
+        handler.budget_service.check_and_send_alerts = AsyncMock(return_value=[])
+
+        await handler.handle_confirmation_response(
+            seeded_session,
+            test_phone,
+            "sim",
+            pending,
+            accepted_user_in_db,
+        )
+
+        assert handler.processing_committed is True
 
     async def test_handle_query_month(self, handler, seeded_session, test_phone, expense_in_db):
         """Test handling query month intent."""

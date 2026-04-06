@@ -31,6 +31,7 @@ class WebhookHandler:
     """Handler for incoming WhatsApp messages."""
 
     def __init__(self):
+        self.processing_committed = False
         self.evolution = EvolutionService()
         self.gemini = GeminiService()
         self.expense_service = ExpenseService()
@@ -42,8 +43,20 @@ class WebhookHandler:
         self.user_service = UserService()
         self.rate_limit_service = RateLimitService()
 
+    async def _notify_user(self, phone: str, message: str) -> None:
+        """Send a best-effort user notification without breaking committed flows."""
+        try:
+            await self.evolution.send_text(phone, message)
+        except Exception as exc:
+            logger.error(f"Failed to notify user {mask_phone(phone)}: {exc}")
+
+    def _mark_processing_committed(self) -> None:
+        """Mark that the current webhook already produced a persistent side effect."""
+        self.processing_committed = True
+
     async def handle(self, webhook_data: dict) -> None:
         """Process incoming webhook event."""
+        self.processing_committed = False
         # Extract message data
         msg_data = self.evolution.extract_message_data(webhook_data)
         if not msg_data:
@@ -505,12 +518,13 @@ class WebhookHandler:
                     "backup_ref": stored["backup_ref"],
                     "backup_hash": stored["backup_hash"],
                     "summary": summary,
+                    "target_phone": normalize_phone(phone),
                 },
             )
 
             await self.evolution.send_text(
                 phone,
-                self._build_backup_restore_message(summary),
+                self._build_backup_restore_message(summary, phone),
             )
 
         except Exception as e:
@@ -721,6 +735,7 @@ class WebhookHandler:
         result = await self.expense_service.cancel_recurring(session, phone, description)
 
         if result["success"]:
+            self._mark_processing_committed()
             await self.evolution.send_text(
                 phone,
                 f"Despesa recorrente '{description}' cancelada com sucesso!",
@@ -821,6 +836,7 @@ class WebhookHandler:
         result = await self.expense_service.undo_last_expense(session, phone)
 
         if result["success"]:
+            self._mark_processing_committed()
             expense = result["expense"]
             msg = (
                 f"Gasto removido:\n"
@@ -857,6 +873,7 @@ class WebhookHandler:
         )
 
         if result["success"]:
+            self._mark_processing_committed()
             category_name = result.get("category") or "Geral"
             limit_value = result.get("limit", 0)
             action = "atualizado" if result.get("updated") else "criado"
@@ -959,6 +976,7 @@ class WebhookHandler:
         result = await self.budget_service.remove_budget(session, phone, category)
 
         if result["success"]:
+            self._mark_processing_committed()
             category_name = result.get("category") or "Geral"
             await self.evolution.send_text(
                 phone,
@@ -1378,7 +1396,8 @@ class WebhookHandler:
                 result = {"success": False}
 
             if result.get("success"):
-                await self.evolution.send_text(phone, "Registrado com sucesso!")
+                self._mark_processing_committed()
+                await self._notify_user(phone, "Registrado com sucesso!")
 
                 # Check for budget alerts (only for expenses, not income)
                 if expense_data.get("category"):
@@ -1390,7 +1409,7 @@ class WebhookHandler:
                         # Send alert messages
                         for alert in alerts:
                             alert_msg = self.gemini.format_budget_alert(alert)
-                            await self.evolution.send_text(phone, alert_msg)
+                            await self._notify_user(phone, alert_msg)
             else:
                 await self.evolution.send_text(
                     phone,
@@ -1707,9 +1726,10 @@ class WebhookHandler:
                 created_count += 1
 
             await session.commit()
+            self._mark_processing_committed()
 
             # Send confirmation message
-            await self.evolution.send_text(
+            await self._notify_user(
                 phone,
                 f"Lancadas {created_count} despesa(s) recorrente(s) (R$ {total:.2f})",
             )
@@ -1723,7 +1743,7 @@ class WebhookHandler:
                     )
                     for alert in alerts:
                         alert_msg = self.gemini.format_budget_alert(alert)
-                        await self.evolution.send_text(phone, alert_msg)
+                        await self._notify_user(phone, alert_msg)
 
         elif response_lower in negative_responses:
             await self.evolution.send_text(
@@ -1835,6 +1855,7 @@ class WebhookHandler:
             )
 
             if result["success"]:
+                self._mark_processing_committed()
                 msg = (
                     f"✅ *Meta criada com sucesso!*\n\n"
                     f"Descricao: {result['description']}\n"
@@ -1907,6 +1928,9 @@ class WebhookHandler:
         """Handle user response to backup restore confirmation."""
         summary = pending_data.get("summary", {})
         backup_ref = pending_data.get("backup_ref", "")
+        target_phone = normalize_phone(pending_data.get("target_phone", phone))
+        source_phone = normalize_phone(summary.get("source_phone", ""))
+        requires_migration_confirmation = bool(source_phone and source_phone != target_phone)
         response_lower = response.lower().strip().rstrip("!.,?")
 
         positive_responses = (
@@ -1927,6 +1951,14 @@ class WebhookHandler:
             "cancelar",
             "desisto",
         )
+        migration_positive_responses = (
+            "sim migrar",
+            "confirmo migracao",
+            "confirmo migração",
+            "confirmar migracao",
+            "confirmar migração",
+            "migrar backup",
+        )
 
         await session.execute(
             delete(PendingConfirmation).where(
@@ -1935,7 +1967,24 @@ class WebhookHandler:
         )
         await session.commit()
 
-        if response_lower in positive_responses:
+        if requires_migration_confirmation and response_lower in positive_responses:
+            await self.evolution.send_text(
+                phone,
+                self._build_backup_migration_warning(source_phone, target_phone),
+            )
+            await self.save_pending_confirmation(
+                session,
+                phone,
+                {
+                    "type": "backup_restore",
+                    "backup_ref": backup_ref,
+                    "summary": summary,
+                    "target_phone": target_phone,
+                },
+            )
+            return
+
+        if response_lower in positive_responses or response_lower in migration_positive_responses:
             backup_data = await self.backup_service.load_temporary_backup(backup_ref)
             if backup_data is None:
                 await self.evolution.send_text(
@@ -1947,8 +1996,15 @@ class WebhookHandler:
             result = await self.backup_service.restore_user_backup(session, phone, backup_data)
             await self.backup_service.delete_temporary_backup(backup_ref)
             if result["success"]:
+                self._mark_processing_committed()
+                if requires_migration_confirmation:
+                    logger.warning(
+                        "Backup migration executed from %s to %s after explicit confirmation",
+                        source_phone or "desconhecido",
+                        target_phone,
+                    )
                 restored = result["restored"]
-                await self.evolution.send_text(
+                await self._notify_user(
                     phone,
                     "Backup restaurado com sucesso!\n"
                     f"- Despesas: {restored['expenses']}\n"
@@ -1967,6 +2023,23 @@ class WebhookHandler:
         if response_lower in negative_responses:
             await self.backup_service.delete_temporary_backup(backup_ref)
             await self.evolution.send_text(phone, "Restauracao cancelada.")
+            return
+
+        if requires_migration_confirmation:
+            await self.evolution.send_text(
+                phone,
+                self._build_backup_migration_warning(source_phone, target_phone),
+            )
+            await self.save_pending_confirmation(
+                session,
+                phone,
+                {
+                    "type": "backup_restore",
+                    "backup_ref": backup_ref,
+                    "summary": summary,
+                    "target_phone": target_phone,
+                },
+            )
             return
 
         ai_allowed = await self._check_daily_limit(session, phone, user, "daily_ai_limit")
@@ -1997,6 +2070,7 @@ class WebhookHandler:
                     "type": "backup_restore",
                     "backup_ref": backup_ref,
                     "summary": summary,
+                    "target_phone": target_phone,
                 },
             )
 
@@ -2040,8 +2114,24 @@ class WebhookHandler:
             f"Atualizacoes de metas: {summary.get('goal_updates', 0)}"
         )
 
-    def _build_backup_restore_message(self, summary: dict) -> str:
+    def _build_backup_restore_message(self, summary: dict, target_phone: str) -> str:
         """Build user-facing message before restoring a backup."""
+        normalized_target = normalize_phone(target_phone)
+        source_phone = normalize_phone(summary.get("source_phone", ""))
+        if source_phone and source_phone != normalized_target:
+            return (
+                "Encontrei um backup valido de outro numero.\n"
+                f"Origem do backup: {source_phone}\n"
+                f"Numero atual de destino: {normalized_target}\n"
+                f"Despesas: {summary.get('expenses', 0)}\n"
+                f"Orcamentos: {summary.get('budgets', 0)}\n"
+                f"Alertas: {summary.get('budget_alerts', 0)}\n"
+                f"Metas: {summary.get('goals', 0)}\n"
+                f"Atualizacoes de metas: {summary.get('goal_updates', 0)}\n\n"
+                "Se voce trocou de numero e quer migrar esse historico, responda *sim migrar*.\n"
+                "Se nao reconhecer esses dados, responda *nao* para cancelar."
+            )
+
         return (
             "Encontrei um backup valido.\n"
             f"Origem: {summary.get('source_phone', 'desconhecido')}\n"
@@ -2051,4 +2141,14 @@ class WebhookHandler:
             f"Metas: {summary.get('goals', 0)}\n"
             f"Atualizacoes de metas: {summary.get('goal_updates', 0)}\n\n"
             "Responda *sim* para restaurar esse backup em modo append ou *nao* para cancelar."
+        )
+
+    def _build_backup_migration_warning(self, source_phone: str, target_phone: str) -> str:
+        """Build the warning shown when migrating data across phone numbers."""
+        return (
+            "Este backup pertence a outro numero.\n"
+            f"Origem do backup: {source_phone or 'desconhecido'}\n"
+            f"Destino atual: {target_phone}\n\n"
+            "Para confirmar a migracao do historico para este novo numero, responda *sim migrar*.\n"
+            "Se nao quiser continuar, responda *nao*."
         )

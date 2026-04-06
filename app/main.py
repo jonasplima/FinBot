@@ -1,10 +1,13 @@
 """FinBot - WhatsApp Financial Assistant."""
 
 import logging
+import secrets
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
+from redis.asyncio import Redis
+from sqlalchemy import text
 
 from app.config import get_settings
 from app.database.connection import async_session, init_db
@@ -22,22 +25,23 @@ settings = get_settings()
 MESSAGE_EVENTS = {"messages.upsert", "messages_upssert", "message"}
 
 
-def _is_valid_webhook_authorization(authorization: str | None) -> bool:
-    """Validate webhook Authorization header."""
-    if not settings.webhook_secret or not authorization:
+def _bearer_matches(secret_value: str, authorization: str | None) -> bool:
+    """Validate a bearer token using constant-time comparison."""
+    if not secret_value or not authorization:
         return False
 
-    expected = f"Bearer {settings.webhook_secret}"
-    return authorization == expected
+    expected = f"Bearer {secret_value}"
+    return secrets.compare_digest(authorization, expected)
+
+
+def _is_valid_webhook_authorization(authorization: str | None) -> bool:
+    """Validate webhook Authorization header."""
+    return _bearer_matches(settings.webhook_secret, authorization)
 
 
 def _is_valid_admin_authorization(authorization: str | None) -> bool:
     """Validate admin Authorization header."""
-    if not settings.admin_secret or not authorization:
-        return False
-
-    expected = f"Bearer {settings.admin_secret}"
-    return authorization == expected
+    return _bearer_matches(settings.admin_secret, authorization)
 
 
 def _is_message_event(event: str) -> bool:
@@ -49,6 +53,54 @@ def _is_message_event(event: str) -> bool:
 def _extract_webhook_message_id(body: dict) -> str:
     """Extract message ID from webhook payload when available."""
     return str(body.get("data", {}).get("key", {}).get("id", "")).strip()
+
+
+async def _build_health_payload(include_dependencies: bool = True) -> tuple[dict, int]:
+    """Build liveness/readiness payload with dependency details when requested."""
+    payload = {
+        "status": "healthy",
+        "app": "FinBot",
+        "version": "1.0.0",
+    }
+    if not include_dependencies:
+        return payload, 200
+
+    checks: dict[str, str] = {}
+    status_code = 200
+
+    try:
+        async with async_session() as session:
+            await session.execute(text("SELECT 1"))
+        checks["database"] = "healthy"
+    except Exception as exc:
+        logger.error(f"Readiness check failed for database: {exc}")
+        checks["database"] = "unhealthy"
+        status_code = 503
+
+    try:
+        redis_client = Redis.from_url(settings.redis_url, decode_responses=True)
+        await redis_client.ping()
+        await redis_client.aclose()
+        checks["redis"] = "healthy"
+    except Exception as exc:
+        logger.error(f"Readiness check failed for redis: {exc}")
+        checks["redis"] = "unhealthy"
+        status_code = 503
+
+    try:
+        from app.services.evolution import EvolutionService
+
+        evolution = EvolutionService()
+        await evolution.get_connection_state()
+        checks["evolution"] = "healthy"
+    except Exception as exc:
+        logger.error(f"Readiness check failed for evolution: {exc}")
+        checks["evolution"] = "unhealthy"
+        status_code = 503
+
+    payload["checks"] = checks
+    payload["status"] = "healthy" if status_code == 200 else "degraded"
+    return payload, status_code
 
 
 @asynccontextmanager
@@ -101,8 +153,23 @@ app = FastAPI(
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
-    return {"status": "healthy", "app": "FinBot", "version": "1.0.0"}
+    """Readiness endpoint with dependency checks."""
+    payload, status_code = await _build_health_payload(include_dependencies=True)
+    return JSONResponse(status_code=status_code, content=payload)
+
+
+@app.get("/health/live")
+async def health_live():
+    """Liveness endpoint for process supervision."""
+    payload, status_code = await _build_health_payload(include_dependencies=False)
+    return JSONResponse(status_code=status_code, content=payload)
+
+
+@app.get("/health/ready")
+async def health_ready():
+    """Explicit readiness endpoint with dependency checks."""
+    payload, status_code = await _build_health_payload(include_dependencies=True)
+    return JSONResponse(status_code=status_code, content=payload)
 
 
 @app.get("/admin/qrcode", response_class=HTMLResponse)
@@ -335,7 +402,7 @@ async def get_qrcode(request: Request):
         )
     except Exception as e:
         logger.error(f"Error getting QR code: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=502, detail="Nao foi possivel obter o QR code no momento.")
 
 
 @app.get("/admin/status")
@@ -353,7 +420,10 @@ async def get_status(request: Request):
         return status
     except Exception as e:
         logger.error(f"Error getting status: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=502,
+            detail="Nao foi possivel consultar o status da conexao no momento.",
+        )
 
 
 @app.post("/webhook/evolution")
@@ -401,11 +471,14 @@ async def evolution_webhook(request: Request):
         return {"status": "ok"}
     except Exception as e:
         logger.error(f"Webhook error: {e}")
+        if "handler" in locals() and getattr(handler, "processing_committed", False):
+            logger.warning("Webhook completed persistence before failing on post-commit side effects")
+            return {"status": "ok_committed_with_warnings"}
         if "message_id" in locals() and message_id and "idempotency_service" in locals():
             await idempotency_service.release(message_id)
         return JSONResponse(
             status_code=500,
-            content={"status": "error", "message": str(e)},
+            content={"status": "error", "message": "Erro interno ao processar o webhook."},
         )
 
 

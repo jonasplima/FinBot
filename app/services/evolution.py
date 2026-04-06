@@ -235,31 +235,35 @@ class EvolutionService:
 
     async def send_text(self, phone: str, message: str) -> dict:
         """Send text message to phone number."""
-        # Ensure phone has WhatsApp suffix
-        if not phone.endswith("@s.whatsapp.net"):
-            phone = f"{phone}@s.whatsapp.net"
+        try:
+            # Ensure phone has WhatsApp suffix
+            if not phone.endswith("@s.whatsapp.net"):
+                phone = f"{phone}@s.whatsapp.net"
 
-        data = {
-            "number": phone,
-            "text": message,
-        }
+            data = {
+                "number": phone,
+                "text": message,
+            }
 
-        result = await self._request(
-            "POST",
-            f"/message/sendText/{self.instance}",
-            json=data,
-        )
+            result = await self._request(
+                "POST",
+                f"/message/sendText/{self.instance}",
+                json=data,
+            )
 
-        # Track sent message ID to avoid processing it when received via webhook
-        msg_id = result.get("key", {}).get("id")
-        if msg_id:
-            _sent_message_ids[msg_id] = datetime.now()
-            logger.debug(f"Tracked sent message ID: {msg_id}")
+            # Track sent message ID to avoid processing it when received via webhook
+            msg_id = result.get("key", {}).get("id")
+            if msg_id:
+                _sent_message_ids[msg_id] = datetime.now()
+                logger.debug(f"Tracked sent message ID: {msg_id}")
 
-        # Cleanup old IDs periodically
-        _cleanup_old_ids()
+            # Cleanup old IDs periodically
+            _cleanup_old_ids()
 
-        return result
+            return result
+        except Exception as e:
+            logger.error(f"Error sending text message: {e}")
+            return {"success": False, "error": "message_send_failed"}
 
     async def send_document(
         self,
@@ -270,25 +274,29 @@ class EvolutionService:
         mimetype: str = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     ) -> dict:
         """Send document (file) to phone number."""
-        if not phone.endswith("@s.whatsapp.net"):
-            phone = f"{phone}@s.whatsapp.net"
+        try:
+            if not phone.endswith("@s.whatsapp.net"):
+                phone = f"{phone}@s.whatsapp.net"
 
-        data = {
-            "number": phone,
-            "media": document_base64,
-            "fileName": filename,
-            "mediatype": "document",
-            "mimetype": mimetype,
-        }
+            data = {
+                "number": phone,
+                "media": document_base64,
+                "fileName": filename,
+                "mediatype": "document",
+                "mimetype": mimetype,
+            }
 
-        if caption:
-            data["caption"] = caption
+            if caption:
+                data["caption"] = caption
 
-        return await self._request(
-            "POST",
-            f"/message/sendMedia/{self.instance}",
-            json=data,
-        )
+            return await self._request(
+                "POST",
+                f"/message/sendMedia/{self.instance}",
+                json=data,
+            )
+        except Exception as e:
+            logger.error(f"Error sending document message: {e}")
+            return {"success": False, "error": "document_send_failed"}
 
     async def send_image(
         self,
@@ -298,28 +306,32 @@ class EvolutionService:
         caption: str | None = None,
     ) -> dict:
         """Send image to phone number via WhatsApp."""
-        if not phone.endswith("@s.whatsapp.net"):
-            phone = f"{phone}@s.whatsapp.net"
+        try:
+            if not phone.endswith("@s.whatsapp.net"):
+                phone = f"{phone}@s.whatsapp.net"
 
-        # Encode image to base64
-        image_base64 = base64.b64encode(image_bytes).decode("utf-8")
+            # Encode image to base64
+            image_base64 = base64.b64encode(image_bytes).decode("utf-8")
 
-        data = {
-            "number": phone,
-            "media": image_base64,
-            "fileName": filename,
-            "mediatype": "image",
-            "mimetype": "image/png",
-        }
+            data = {
+                "number": phone,
+                "media": image_base64,
+                "fileName": filename,
+                "mediatype": "image",
+                "mimetype": "image/png",
+            }
 
-        if caption:
-            data["caption"] = caption
+            if caption:
+                data["caption"] = caption
 
-        return await self._request(
-            "POST",
-            f"/message/sendMedia/{self.instance}",
-            json=data,
-        )
+            return await self._request(
+                "POST",
+                f"/message/sendMedia/{self.instance}",
+                json=data,
+            )
+        except Exception as e:
+            logger.error(f"Error sending image message: {e}")
+            return {"success": False, "error": "image_send_failed"}
 
     async def download_media(self, message_key: dict) -> bytes | None:
         """Download media from a message."""

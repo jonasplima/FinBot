@@ -368,6 +368,110 @@ class TestSchedulerServiceStartStop:
             service.shutdown()
 
 
+class TestSchedulerDistributedLock:
+    """Tests for scheduler distributed lock behavior."""
+
+    async def test_runs_without_redis_in_single_instance_mode(self):
+        """Single-instance mode may continue without Redis lock."""
+        from app.services.scheduler import SchedulerService
+
+        mock_settings = MagicMock()
+        mock_settings.redis_url = "redis://localhost:6379"
+        mock_settings.effective_instance_id = "instance-a"
+        mock_settings.normalized_deployment_mode = "single_instance"
+        mock_settings.effective_scheduler_lock_ttl_seconds = 1800
+
+        with (
+            patch("app.services.scheduler.settings", mock_settings),
+            patch("app.services.scheduler.EvolutionService"),
+        ):
+            service = SchedulerService()
+            service._get_redis = AsyncMock(return_value=None)
+            job = AsyncMock()
+
+            await service._run_singleton_job("test-job", job)
+
+        job.assert_awaited_once()
+
+    async def test_skips_without_redis_in_multi_instance_mode(self):
+        """Multi-instance mode must skip jobs when Redis is unavailable."""
+        from app.services.scheduler import SchedulerService
+
+        mock_settings = MagicMock()
+        mock_settings.redis_url = "redis://localhost:6379"
+        mock_settings.effective_instance_id = "instance-a"
+        mock_settings.normalized_deployment_mode = "multi_instance"
+        mock_settings.effective_scheduler_lock_ttl_seconds = 1800
+
+        with (
+            patch("app.services.scheduler.settings", mock_settings),
+            patch("app.services.scheduler.EvolutionService"),
+        ):
+            service = SchedulerService()
+            service._get_redis = AsyncMock(return_value=None)
+            job = AsyncMock()
+
+            await service._run_singleton_job("test-job", job)
+
+        job.assert_not_awaited()
+
+    async def test_skips_when_lock_is_already_held(self):
+        """Job should not run when another instance already owns the lock."""
+        from app.services.scheduler import SchedulerService
+
+        class MockRedis:
+            async def set(self, *args, **kwargs):
+                return False
+
+        mock_settings = MagicMock()
+        mock_settings.redis_url = "redis://localhost:6379"
+        mock_settings.effective_instance_id = "instance-a"
+        mock_settings.normalized_deployment_mode = "multi_instance"
+        mock_settings.effective_scheduler_lock_ttl_seconds = 1800
+
+        with (
+            patch("app.services.scheduler.settings", mock_settings),
+            patch("app.services.scheduler.EvolutionService"),
+        ):
+            service = SchedulerService()
+            service._get_redis = AsyncMock(return_value=MockRedis())
+            service._release_job_lock = AsyncMock()
+            job = AsyncMock()
+
+            await service._run_singleton_job("test-job", job)
+
+        job.assert_not_awaited()
+        service._release_job_lock.assert_not_awaited()
+
+    async def test_runs_and_releases_lock_when_acquired(self):
+        """Job should run and release lock when acquisition succeeds."""
+        from app.services.scheduler import SchedulerService
+
+        class MockRedis:
+            async def set(self, *args, **kwargs):
+                return True
+
+        mock_settings = MagicMock()
+        mock_settings.redis_url = "redis://localhost:6379"
+        mock_settings.effective_instance_id = "instance-a"
+        mock_settings.normalized_deployment_mode = "multi_instance"
+        mock_settings.effective_scheduler_lock_ttl_seconds = 1800
+
+        with (
+            patch("app.services.scheduler.settings", mock_settings),
+            patch("app.services.scheduler.EvolutionService"),
+        ):
+            service = SchedulerService()
+            service._get_redis = AsyncMock(return_value=MockRedis())
+            service._release_job_lock = AsyncMock()
+            job = AsyncMock()
+
+            await service._run_singleton_job("test-job", job)
+
+        job.assert_awaited_once()
+        service._release_job_lock.assert_awaited_once()
+
+
 class TestRecurringConfirmationHandler:
     """Tests for recurring confirmation handling in webhook."""
 
