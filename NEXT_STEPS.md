@@ -382,7 +382,8 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
   - ✅ Job de `pip-audit` adicionado à CI em modo não-bloqueante
   - ✅ Compose e build Docker parametrizados para permitir pin por digest via ambiente
   - ✅ CI reforçada com `pip check` para validar consistência das dependências instaladas
-  - ⏳ Ainda faltam hashes de integridade para dependências Python, se o projeto decidir adotar lockfile mais rígido
+  - ✅ `requirements.lock` gerado com hashes de integridade
+  - ✅ CI passa a validar sincronização do lockfile e instalar dependências com `--require-hashes`
 
 #### 0.9.8 Proteção adicional dos segredos estáticos
 - **Status:** Implementado
@@ -409,7 +410,7 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
   - Não foi executada auditoria online de CVEs de dependências durante a revisão
 
 #### 0.9.10 Ordem sugerida de execução
-1. Avaliar lockfile Python com hashes de integridade
+1. Revisar periodicamente o lockfile Python e a política de atualização de dependências
 
 ---
 

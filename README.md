@@ -182,6 +182,7 @@ FinBot/
 ├── docker-compose.yml
 ├── Dockerfile
 ├── requirements.txt
+├── requirements.lock
 └── .env.example
 ```
 
@@ -189,7 +190,7 @@ FinBot/
 
 ```bash
 # Instalar dependências de desenvolvimento
-pip install -r requirements.txt
+pip install --require-hashes -r requirements.lock
 pip install pytest pytest-asyncio pytest-cov aiosqlite
 
 # Rodar todos os testes
@@ -217,11 +218,27 @@ mypy app/
 ```bash
 # Auditoria local de dependências conhecidas
 pip install pip-audit
-pip-audit -r requirements.txt
+pip-audit -r requirements.lock
 
 # Verificação adicional de consistência do ambiente instalado
 pip check
 ```
+
+### Lockfile com Hashes
+
+O projeto agora mantém:
+
+- `requirements.txt`: lista fonte de dependências diretas
+- `requirements.lock`: lockfile gerado com versões resolvidas e hashes de integridade
+
+Para regenerar o lockfile depois de mudar o `requirements.txt`:
+
+```bash
+python -m pip install pip-tools
+python -m piptools compile --generate-hashes --strip-extras --output-file requirements.lock requirements.txt
+```
+
+A CI valida se o `requirements.lock` está sincronizado e instala dependências com `--require-hashes`.
 
 ### Pin por Digest em Produção
 
