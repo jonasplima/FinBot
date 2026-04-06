@@ -334,7 +334,7 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
   - ✅ Testes cobrindo lock adquirido, lock ocupado e indisponibilidade de Redis
 
 #### 0.9.6 Política de restore de backup com migração de número
-- **Status:** Parcialmente implementado
+- **Status:** Implementado
 - **Problema identificado:**
   - Hoje o restore aceita backup de outra origem sem uma política explícita
   - Bloquear rigidamente por `source_phone == target_phone` parece seguro, mas quebra um caso legítimo: usuário que trocou de número e precisa migrar o histórico
@@ -356,7 +356,9 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
   - ✅ Confirmação reforçada `sim migrar` quando origem e destino do backup diferem
   - ✅ Exibição explícita do contexto de migração antes do restore
   - ✅ Auditoria persistida em banco para restores, com origem, destino, status e confirmação explícita de migração
-  - ⏳ Ainda falta avaliar identificador estável de usuário para reduzir dependência exclusiva do telefone
+  - ✅ `backup_owner_id` estável no perfil do usuário e nos metadados do backup
+  - ✅ Migração explícita passa a transferir a identidade estável para o novo número
+  - ✅ Backups com a mesma identidade estável deixam de depender apenas da comparação por telefone
 
 #### 0.9.7 Hardening adicional de Docker e supply chain
 - **Status:** Implementado
@@ -407,8 +409,7 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
   - Não foi executada auditoria online de CVEs de dependências durante a revisão
 
 #### 0.9.10 Ordem sugerida de execução
-1. Avaliar identificador estável de usuário para migração de backup entre números
-2. Avaliar lockfile Python com hashes de integridade
+1. Avaliar lockfile Python com hashes de integridade
 
 ---
 

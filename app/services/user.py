@@ -5,6 +5,7 @@ import re
 import unicodedata
 from datetime import datetime
 from typing import Any
+from uuid import uuid4
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -48,6 +49,8 @@ class UserService:
         user = result.scalar_one_or_none()
 
         if user:
+            if not user.backup_owner_id:
+                user.backup_owner_id = self._generate_backup_owner_id()
             user.last_seen_at = datetime.now()
             await session.commit()
             return user
@@ -55,6 +58,7 @@ class UserService:
         defaults = self.settings.user_limit_defaults()
         user = User(
             phone=normalized_phone,
+            backup_owner_id=self._generate_backup_owner_id(),
             accepted_terms=False,
             terms_version=None,
             is_active=True,
@@ -72,6 +76,24 @@ class UserService:
         await session.commit()
         await session.refresh(user)
         logger.info(f"Created new user profile for {normalized_phone}")
+        return user
+
+    async def adopt_backup_owner_identity(
+        self,
+        session: AsyncSession,
+        user: User,
+        backup_owner_id: str,
+    ) -> User:
+        """Adopt a stable backup identity after an explicit account migration."""
+        normalized_backup_owner_id = backup_owner_id.strip()
+        if not normalized_backup_owner_id:
+            raise ValueError("Identificador de backup invalido.")
+
+        user.backup_owner_id = normalized_backup_owner_id
+        user.updated_at = datetime.now()
+        user.last_seen_at = datetime.now()
+        await session.commit()
+        await session.refresh(user)
         return user
 
     def has_accepted_current_terms(self, user: User) -> bool:
@@ -216,3 +238,7 @@ class UserService:
         normalized = "".join(char for char in normalized if unicodedata.category(char) != "Mn")
         normalized = re.sub(r"\s+", " ", normalized)
         return normalized
+
+    def _generate_backup_owner_id(self) -> str:
+        """Generate a stable identifier to carry backup ownership across phone changes."""
+        return uuid4().hex

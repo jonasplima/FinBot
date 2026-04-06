@@ -1301,6 +1301,7 @@ class TestWebhookHandlerIntentHandling:
                 "backup_ref": "finbot:backup:test",
                 "summary": {
                     "source_phone": "5511888888888",
+                    "source_backup_owner_id": "legacy-owner-1",
                     "expenses": 1,
                     "budgets": 0,
                     "budget_alerts": 0,
@@ -1320,6 +1321,62 @@ class TestWebhookHandlerIntentHandling:
         assert pending is not None
         assert pending.data["target_phone"] == test_phone
 
+    async def test_handle_backup_restore_skips_migration_when_backup_owner_matches(
+        self, handler, seeded_session, test_phone, accepted_user_in_db
+    ):
+        """Test stable backup identity avoids redundant migration confirmation."""
+        handler.backup_service.load_temporary_backup = AsyncMock(
+            return_value={
+                "success": True,
+                "backup_data": {
+                    "metadata": {
+                        "schema_version": 1,
+                        "source_phone": "5511888888888",
+                        "source_backup_owner_id": accepted_user_in_db.backup_owner_id,
+                    },
+                    "expenses": [],
+                    "budgets": [],
+                    "goals": [],
+                },
+            }
+        )
+        handler.backup_service.delete_temporary_backup = AsyncMock()
+        handler.backup_service.restore_user_backup = AsyncMock(
+            return_value={
+                "success": True,
+                "restored": {
+                    "expenses": 0,
+                    "budgets": 0,
+                    "budget_alerts": 0,
+                    "goals": 0,
+                    "goal_updates": 0,
+                },
+            }
+        )
+
+        await handler._handle_backup_restore_confirmation(
+            seeded_session,
+            test_phone,
+            "sim",
+            {
+                "type": "backup_restore",
+                "backup_ref": "finbot:backup:test",
+                "summary": {
+                    "source_phone": "5511888888888",
+                    "source_backup_owner_id": accepted_user_in_db.backup_owner_id,
+                    "expenses": 0,
+                    "budgets": 0,
+                    "budget_alerts": 0,
+                    "goals": 0,
+                    "goal_updates": 0,
+                },
+                "target_phone": test_phone,
+            },
+            accepted_user_in_db,
+        )
+
+        handler.backup_service.restore_user_backup.assert_awaited_once()
+
     async def test_handle_backup_restore_allows_explicit_migration_confirmation(
         self, handler, seeded_session, test_phone, accepted_user_in_db
     ):
@@ -1328,7 +1385,11 @@ class TestWebhookHandlerIntentHandling:
             return_value={
                 "success": True,
                 "backup_data": {
-                    "metadata": {"schema_version": 1, "source_phone": "5511888888888"},
+                    "metadata": {
+                        "schema_version": 1,
+                        "source_phone": "5511888888888",
+                        "source_backup_owner_id": "legacy-owner-1",
+                    },
                     "expenses": [],
                     "budgets": [],
                     "goals": [],
@@ -1358,6 +1419,7 @@ class TestWebhookHandlerIntentHandling:
                 "backup_ref": "finbot:backup:test",
                 "summary": {
                     "source_phone": "5511888888888",
+                    "source_backup_owner_id": "legacy-owner-1",
                     "expenses": 1,
                     "budgets": 0,
                     "budget_alerts": 0,
@@ -1381,6 +1443,7 @@ class TestWebhookHandlerIntentHandling:
         assert audit.source_phone == "5511888888888"
         assert audit.status == "restored"
         assert audit.explicit_migration_confirmation is True
+        assert accepted_user_in_db.backup_owner_id == "legacy-owner-1"
 
     async def test_handle_export_sends_xlsx_by_default(self, handler, seeded_session, test_phone):
         """Test that export uses XLSX by default."""

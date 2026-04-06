@@ -493,6 +493,7 @@ class WebhookHandler:
     ) -> None:
         """Handle JSON backup documents sent by the user."""
         phone = msg_data["phone"]
+        user = await self.user_service.get_or_create_user(session, phone)
 
         try:
             document_bytes = await self.evolution.download_media(msg_data["message_key"])
@@ -533,7 +534,7 @@ class WebhookHandler:
 
             await self.evolution.send_text(
                 phone,
-                self._build_backup_restore_message(summary, phone),
+                self._build_backup_restore_message(summary, phone, user.backup_owner_id),
             )
 
         except Exception as e:
@@ -1939,7 +1940,12 @@ class WebhookHandler:
         backup_ref = pending_data.get("backup_ref", "")
         target_phone = normalize_phone(pending_data.get("target_phone", phone))
         source_phone = normalize_phone(summary.get("source_phone", ""))
-        requires_migration_confirmation = bool(source_phone and source_phone != target_phone)
+        source_backup_owner_id = str(summary.get("source_backup_owner_id") or "").strip()
+        requires_migration_confirmation = self._requires_backup_migration_confirmation(
+            summary,
+            target_phone,
+            user.backup_owner_id,
+        )
         response_lower = response.lower().strip().rstrip("!.,?")
         explicit_migration_confirmation = response_lower in {
             "sim migrar",
@@ -2014,6 +2020,16 @@ class WebhookHandler:
             result = await self.backup_service.restore_user_backup(session, phone, backup_data)
             await self.backup_service.delete_temporary_backup(backup_ref)
             if result["success"]:
+                if (
+                    explicit_migration_confirmation
+                    and source_backup_owner_id
+                    and user.backup_owner_id != source_backup_owner_id
+                ):
+                    user = await self.user_service.adopt_backup_owner_identity(
+                        session,
+                        user,
+                        source_backup_owner_id,
+                    )
                 await self.backup_service.record_restore_audit(
                     session,
                     target_phone=target_phone,
@@ -2167,10 +2183,35 @@ class WebhookHandler:
             f"Atualizacoes de metas: {summary.get('goal_updates', 0)}"
         )
 
-    def _build_backup_restore_message(self, summary: dict, target_phone: str) -> str:
+    def _build_backup_restore_message(
+        self,
+        summary: dict,
+        target_phone: str,
+        target_backup_owner_id: str | None = None,
+    ) -> str:
         """Build user-facing message before restoring a backup."""
         normalized_target = normalize_phone(target_phone)
         source_phone = normalize_phone(summary.get("source_phone", ""))
+        source_backup_owner_id = str(summary.get("source_backup_owner_id") or "").strip()
+        if (
+            source_phone
+            and source_phone != normalized_target
+            and source_backup_owner_id
+            and target_backup_owner_id
+            and source_backup_owner_id == target_backup_owner_id
+        ):
+            return (
+                "Encontrei um backup valido associado ao mesmo perfil de usuario.\n"
+                f"Origem anterior: {source_phone}\n"
+                f"Numero atual de destino: {normalized_target}\n"
+                f"Despesas: {summary.get('expenses', 0)}\n"
+                f"Orcamentos: {summary.get('budgets', 0)}\n"
+                f"Alertas: {summary.get('budget_alerts', 0)}\n"
+                f"Metas: {summary.get('goals', 0)}\n"
+                f"Atualizacoes de metas: {summary.get('goal_updates', 0)}\n\n"
+                "Responda *sim* para restaurar esse backup em modo append ou *nao* para cancelar."
+            )
+
         if source_phone and source_phone != normalized_target:
             return (
                 "Encontrei um backup valido de outro numero.\n"
@@ -2195,6 +2236,23 @@ class WebhookHandler:
             f"Atualizacoes de metas: {summary.get('goal_updates', 0)}\n\n"
             "Responda *sim* para restaurar esse backup em modo append ou *nao* para cancelar."
         )
+
+    def _requires_backup_migration_confirmation(
+        self,
+        summary: dict,
+        target_phone: str,
+        target_backup_owner_id: str | None,
+    ) -> bool:
+        """Decide whether a backup restore needs explicit migration confirmation."""
+        normalized_target = normalize_phone(target_phone)
+        source_phone = normalize_phone(summary.get("source_phone", ""))
+        source_backup_owner_id = str(summary.get("source_backup_owner_id") or "").strip()
+        normalized_target_backup_owner_id = (target_backup_owner_id or "").strip()
+
+        if source_backup_owner_id and normalized_target_backup_owner_id:
+            return source_backup_owner_id != normalized_target_backup_owner_id
+
+        return bool(source_phone and source_phone != normalized_target)
 
     def _build_backup_migration_warning(self, source_phone: str, target_phone: str) -> str:
         """Build the warning shown when migrating data across phone numbers."""

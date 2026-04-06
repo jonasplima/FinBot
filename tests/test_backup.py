@@ -12,7 +12,16 @@ from sqlalchemy import select
 from app.database.models import BackupRestoreAudit
 from app.services.backup import BACKUP_SCHEMA_VERSION, BackupService
 from app.services.backup import settings as backup_settings
-from tests.conftest import Budget, BudgetAlert, Category, Expense, Goal, GoalUpdate, PaymentMethod
+from tests.conftest import (
+    Budget,
+    BudgetAlert,
+    Category,
+    Expense,
+    Goal,
+    GoalUpdate,
+    PaymentMethod,
+    User,
+)
 
 
 class TestBackupService:
@@ -24,6 +33,17 @@ class TestBackupService:
 
     async def test_export_user_backup_with_data(self, service, seeded_session, test_phone):
         """Test exporting backup with expenses, budgets, and goals."""
+        seeded_session.add(
+            User(
+                phone=test_phone,
+                backup_owner_id="backup-owner-123",
+                accepted_terms=True,
+                terms_version="2026-04",
+                is_active=True,
+            )
+        )
+        await seeded_session.commit()
+
         payment_method = await seeded_session.execute(
             select(PaymentMethod).where(PaymentMethod.name == "Pix")
         )
@@ -78,6 +98,7 @@ class TestBackupService:
         assert result["filename"].endswith(".json")
         payload = result["backup_data"]
         assert payload["metadata"]["schema_version"] == BACKUP_SCHEMA_VERSION
+        assert payload["metadata"]["source_backup_owner_id"] == "backup-owner-123"
         assert len(payload["expenses"]) == 1
         assert len(payload["budgets"]) == 1
         assert len(payload["goals"]) == 1

@@ -69,6 +69,7 @@ class User(TestBase):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     phone = Column(String(20), nullable=False, unique=True, index=True)
+    backup_owner_id = Column(String(64), nullable=True, unique=True, index=True)
     name = Column(String(120), nullable=True)
     display_name = Column(String(120), nullable=True)
     email = Column(String(255), nullable=True)
@@ -497,6 +498,7 @@ async def accepted_user_in_db(seeded_session, test_phone):
     """Create an accepted user in the database for testing."""
     user = User(
         phone=test_phone,
+        backup_owner_id="user-owner-test-1",
         accepted_terms=True,
         accepted_terms_at=datetime.now(),
         terms_version="2026-04",

@@ -25,6 +25,7 @@ from app.database.models import (
     Goal,
     GoalUpdate,
     PaymentMethod,
+    User,
 )
 from app.services.operational_status import OperationalStatusService
 from app.utils.validators import normalize_phone
@@ -99,6 +100,7 @@ class BackupService:
     ) -> dict:
         """Export a user's data to a JSON backup payload."""
         normalized_phone = normalize_phone(phone)
+        user = await self._get_user(session, normalized_phone)
 
         expenses = await self._get_expenses(session, normalized_phone)
         budgets = await self._get_budgets(session, normalized_phone)
@@ -109,6 +111,7 @@ class BackupService:
                 "schema_version": BACKUP_SCHEMA_VERSION,
                 "exported_at": datetime.now().isoformat(),
                 "source_phone": normalized_phone,
+                "source_backup_owner_id": user.backup_owner_id if user else None,
             },
             "expenses": [self._serialize_expense(expense) for expense in expenses],
             "budgets": [self._serialize_budget(budget) for budget in budgets],
@@ -176,6 +179,13 @@ class BackupService:
                 "error": f"Versao de backup nao suportada: {schema_version}.",
             }
 
+        source_backup_owner_id = metadata.get("source_backup_owner_id")
+        if source_backup_owner_id is not None:
+            if not isinstance(source_backup_owner_id, str) or not source_backup_owner_id.strip():
+                return {"success": False, "error": "Metadata.source_backup_owner_id invalido."}
+            if len(source_backup_owner_id.strip()) > 64:
+                return {"success": False, "error": "Metadata.source_backup_owner_id invalido."}
+
         for key in ("expenses", "budgets", "goals"):
             if key not in backup_data or not isinstance(backup_data[key], list):
                 return {"success": False, "error": f"Campo '{key}' ausente ou invalido."}
@@ -219,6 +229,7 @@ class BackupService:
         """Build a short summary of a backup payload."""
         return {
             "source_phone": backup_data.get("metadata", {}).get("source_phone", "desconhecido"),
+            "source_backup_owner_id": backup_data.get("metadata", {}).get("source_backup_owner_id"),
             "expenses": len(backup_data.get("expenses", [])),
             "budgets": len(backup_data.get("budgets", [])),
             "goals": len(backup_data.get("goals", [])),
@@ -481,6 +492,11 @@ class BackupService:
             .order_by(Expense.date, Expense.id)
         )
         return list(result.scalars().all())
+
+    async def _get_user(self, session: AsyncSession, phone: str) -> User | None:
+        """Load the user profile associated with a phone number when available."""
+        result = await session.execute(select(User).where(User.phone == phone))
+        return result.scalar_one_or_none()
 
     async def _get_budgets(self, session: AsyncSession, phone: str) -> list[Budget]:
         result = await session.execute(

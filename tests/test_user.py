@@ -15,6 +15,7 @@ class TestUserService:
 
         assert user.phone == test_phone
         assert user.accepted_terms is False
+        assert user.backup_owner_id
         assert user.daily_text_limit == 100
         assert user.daily_media_limit == 20
         assert user.daily_ai_limit == 50

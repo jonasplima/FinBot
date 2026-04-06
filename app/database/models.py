@@ -59,6 +59,7 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     phone = Column(String(20), nullable=False, unique=True, index=True)
+    backup_owner_id = Column(String(64), nullable=True, unique=True, index=True)
     name = Column(String(120), nullable=True)
     display_name = Column(String(120), nullable=True)
     email = Column(String(255), nullable=True)
