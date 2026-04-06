@@ -1,6 +1,7 @@
 """Tests for UserService."""
 
 from app.services.user import UserService
+from app.utils.validators import mask_phone, sanitize_for_log
 
 
 class TestUserService:
@@ -51,3 +52,16 @@ class TestUserService:
         assert result["action"] == "set"
         assert result["limit_type"] == "daily_ai_limit"
         assert result["limit_value"] == 30
+
+
+class TestLogSafetyHelpers:
+    """Tests for helpers used to reduce sensitive logging."""
+
+    def test_mask_phone(self):
+        """Test phone masking for logs."""
+        assert mask_phone("5511999999999") == "5511*****999"
+
+    def test_sanitize_for_log(self):
+        """Test log sanitization and truncation."""
+        result = sanitize_for_log("mensagem muito longa com dados sensiveis", max_length=10)
+        assert result.endswith("...")

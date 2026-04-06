@@ -21,7 +21,7 @@ from app.services.gemini import GeminiService
 from app.services.goal import GoalService
 from app.services.rate_limit import RateLimitService
 from app.services.user import UserService
-from app.utils.validators import is_phone_allowed, normalize_phone
+from app.utils.validators import is_phone_allowed, mask_phone, normalize_phone, sanitize_for_log
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -52,15 +52,16 @@ class WebhookHandler:
 
         phone = msg_data["phone"]
         text = msg_data["text"]
+        safe_phone = mask_phone(phone)
 
-        logger.info(f"Message from {phone}: {text[:100] if text else '(empty)'}...")
+        logger.info(f"Message received from {safe_phone}: {sanitize_for_log(text)}")
 
         # Optional allowlist for controlled rollout
         if settings.allowed_phones and not is_phone_allowed(phone, settings.allowed_phones):
-            logger.warning(f"Unauthorized phone: {phone}")
+            logger.warning(f"Unauthorized phone: {safe_phone}")
             return
 
-        logger.info(f"Phone {phone} accepted for processing")
+        logger.info(f"Phone {safe_phone} accepted for processing")
 
         # Process message
         async with async_session() as session:
@@ -75,8 +76,9 @@ class WebhookHandler:
         phone = msg_data["phone"]
         text = msg_data["text"].strip().lower()
         user = await self.user_service.get_or_create_user(session, phone)
+        safe_phone = mask_phone(phone)
 
-        logger.info(f"Processing message: '{text}' from {phone}")
+        logger.info(f"Processing message for {safe_phone}")
 
         if not self.user_service.has_accepted_current_terms(user):
             await self.handle_user_onboarding(session, msg_data, user)
@@ -94,12 +96,12 @@ class WebhookHandler:
 
         # Check for pending confirmation first
         pending = await self.get_pending_confirmation(session, phone)
-        logger.info(f"Pending confirmation found: {pending is not None}")
+        logger.info(f"Pending confirmation found for {safe_phone}: {pending is not None}")
 
         if pending:
             # User is responding to a confirmation
             logger.info(
-                f"Handling confirmation response for pending type: {pending.data.get('type')}"
+                f"Handling confirmation response for {safe_phone}, type: {pending.data.get('type')}"
             )
             await self.handle_confirmation_response(session, phone, text, pending, user)
             return
@@ -219,7 +221,7 @@ class WebhookHandler:
 
         except Exception as e:
             logger.error(
-                f"Error processing message from {phone}: {type(e).__name__}: {e}",
+                f"Error processing message from {safe_phone}: {type(e).__name__}: {e}",
                 exc_info=True,
             )
             # Provide more helpful error message based on error type

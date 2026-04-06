@@ -3,7 +3,7 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from app.config import get_settings
@@ -12,7 +12,7 @@ from app.database.seed import seed_all
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=getattr(logging, get_settings().log_level.upper(), logging.INFO),
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
@@ -26,6 +26,15 @@ def _is_valid_webhook_authorization(authorization: str | None) -> bool:
         return False
 
     expected = f"Bearer {settings.webhook_secret}"
+    return authorization == expected
+
+
+def _is_valid_admin_authorization(authorization: str | None) -> bool:
+    """Validate admin Authorization header."""
+    if not settings.admin_secret or not authorization:
+        return False
+
+    expected = f"Bearer {settings.admin_secret}"
     return authorization == expected
 
 
@@ -84,15 +93,15 @@ async def health_check():
 
 
 @app.get("/admin/qrcode", response_class=HTMLResponse)
-async def get_qrcode(secret: str = Query(..., description="Admin secret")):
+async def get_qrcode(request: Request):
     """
     Get QR Code to connect WhatsApp.
 
     Requires ADMIN_SECRET for security.
     Returns an HTML page with the QR code image.
     """
-    if secret != settings.admin_secret:
-        raise HTTPException(status_code=401, detail="Invalid admin secret")
+    if not _is_valid_admin_authorization(request.headers.get("Authorization")):
+        raise HTTPException(status_code=401, detail="Invalid admin authorization")
 
     from app.services.evolution import EvolutionService
 
@@ -317,10 +326,10 @@ async def get_qrcode(secret: str = Query(..., description="Admin secret")):
 
 
 @app.get("/admin/status")
-async def get_status(secret: str = Query(..., description="Admin secret")):
+async def get_status(request: Request):
     """Get connection status."""
-    if secret != settings.admin_secret:
-        raise HTTPException(status_code=401, detail="Invalid admin secret")
+    if not _is_valid_admin_authorization(request.headers.get("Authorization")):
+        raise HTTPException(status_code=401, detail="Invalid admin authorization")
 
     from app.services.evolution import EvolutionService
 

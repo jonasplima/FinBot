@@ -9,8 +9,8 @@ from starlette.requests import Request
 
 from app.database.models import PendingConfirmation
 from app.handlers.webhook import WebhookHandler
+from app.main import evolution_webhook, get_qrcode, get_status
 from app.services.rate_limit import RateLimitService
-from app.main import evolution_webhook
 
 
 class TestWebhookHandlerMessageExtraction:
@@ -193,6 +193,64 @@ class TestEvolutionWebhookAuthentication:
         assert response == {"status": "ok"}
         mock_handler_cls.assert_called_once()
         mock_handler.handle.assert_awaited_once()
+
+
+class TestAdminAuthentication:
+    """Tests for admin endpoint authentication via Authorization header."""
+
+    @staticmethod
+    def _build_get_request(path: str, headers: dict[str, str] | None = None) -> Request:
+        header_pairs = []
+        for key, value in (headers or {}).items():
+            header_pairs.append((key.lower().encode("latin-1"), value.encode("latin-1")))
+
+        async def receive() -> dict:
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        scope = {
+            "type": "http",
+            "asgi": {"version": "3.0"},
+            "http_version": "1.1",
+            "method": "GET",
+            "scheme": "http",
+            "path": path,
+            "raw_path": path.encode("utf-8"),
+            "query_string": b"",
+            "headers": header_pairs,
+            "client": ("testclient", 123),
+            "server": ("testserver", 80),
+        }
+        return Request(scope, receive)
+
+    async def test_admin_qrcode_rejects_invalid_authorization(self):
+        """Test QR code endpoint rejects invalid admin auth."""
+        request = self._build_get_request(
+            "/admin/qrcode",
+            headers={"Authorization": "Bearer wrong-secret"},
+        )
+
+        with patch("app.main.settings.admin_secret", "test-secret"):
+            with pytest.raises(HTTPException) as exc_info:
+                await get_qrcode(request)
+
+        assert exc_info.value.status_code == 401
+
+    async def test_admin_status_accepts_valid_authorization(self):
+        """Test status endpoint accepts valid admin auth."""
+        request = self._build_get_request(
+            "/admin/status",
+            headers={"Authorization": "Bearer test-secret"},
+        )
+
+        with patch("app.main.settings.admin_secret", "test-secret"):
+            with patch("app.services.evolution.EvolutionService") as mock_evolution_cls:
+                mock_evolution = MagicMock()
+                mock_evolution.get_connection_state = AsyncMock(return_value={"instance": "ok"})
+                mock_evolution_cls.return_value = mock_evolution
+
+                result = await get_status(request)
+
+        assert result == {"instance": "ok"}
 
 
 class TestWebhookHandlerBuildExpenseSummary:

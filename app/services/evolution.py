@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 import httpx
 
 from app.config import get_settings
+from app.utils.validators import mask_phone
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -60,7 +61,7 @@ class EvolutionService:
             )
 
             if response.status_code >= 400:
-                logger.error(f"Evolution API error: {response.status_code} - {response.text}")
+                logger.error(f"Evolution API error on {endpoint}: {response.status_code}")
                 response.raise_for_status()
 
             return response.json()
@@ -70,7 +71,8 @@ class EvolutionService:
         # Check if instance exists
         try:
             state = await self.get_connection_state()
-            logger.info(f"Instance {self.instance} exists, state: {state}")
+            instance_state = state.get("instance", {}).get("state", "unknown")
+            logger.info(f"Instance {self.instance} exists, state: {instance_state}")
             await self.setup_webhook()
             return state
         except httpx.HTTPStatusError as e:
@@ -93,7 +95,7 @@ class EvolutionService:
             data["number"] = settings.owner_phone
 
         result = await self._request("POST", "/instance/create", json=data)
-        logger.info(f"Instance created: {result}")
+        logger.info(f"Instance created successfully: {self.instance}")
 
         # Setup webhook
         await self.setup_webhook()
@@ -131,7 +133,7 @@ class EvolutionService:
             f"/webhook/set/{self.instance}",
             json=data,
         )
-        logger.info(f"Webhook configured: {result}")
+        logger.info(f"Webhook configured for instance: {self.instance}")
         return result
 
     async def get_connection_state(self) -> dict:
@@ -174,7 +176,6 @@ class EvolutionService:
                 logger.info("Instance not found, creating...")
                 try:
                     create_result = await self.create_instance()
-                    logger.info(f"Create result: {create_result}")
 
                     # Check if QR code is in create response
                     if "qrcode" in create_result:
@@ -200,7 +201,7 @@ class EvolutionService:
                 "GET",
                 f"/instance/connect/{self.instance}",
             )
-            logger.info(f"Connect result: {result}")
+            logger.info(f"Requested connection artifact for instance: {self.instance}")
 
             # Return formatted response
             if "base64" in result:
@@ -327,6 +328,7 @@ class EvolutionService:
     async def download_media(self, message_key: dict) -> bytes | None:
         """Download media from a message."""
         try:
+            safe_phone = mask_phone(message_key.get("remoteJid", ""))
             # Build the request in the format expected by Evolution API
             data = {
                 "message": {
@@ -338,7 +340,7 @@ class EvolutionService:
                 }
             }
 
-            logger.info(f"Downloading media with key: {data}")
+            logger.info(f"Downloading media for phone {safe_phone}")
 
             result = await self._request(
                 "POST",
@@ -365,13 +367,9 @@ class EvolutionService:
                 return None
 
             data = webhook_data.get("data", {})
-            logger.info(f"Webhook data keys: {list(data.keys()) if data else 'empty'}")
 
             key = data.get("key", {})
             message = data.get("message", {})
-
-            logger.info(f"Key: {key}")
-            logger.info(f"Message keys: {list(message.keys()) if message else 'empty'}")
 
             # Get message ID
             msg_id = key.get("id", "")
@@ -397,8 +395,6 @@ class EvolutionService:
                 logger.info("No remoteJid found in key")
                 return None
 
-            logger.info(f"remoteJid: {remote_jid}")
-
             # Skip group messages - only handle personal chats
             if remote_jid.endswith("@g.us"):
                 logger.info("Skipping group message")
@@ -406,6 +402,7 @@ class EvolutionService:
 
             # Extract phone number (remove WhatsApp suffixes)
             phone = remote_jid.replace("@s.whatsapp.net", "").replace("@c.us", "")
+            safe_phone = mask_phone(phone)
 
             # Get message content
             text_content = (
@@ -426,6 +423,13 @@ class EvolutionService:
                 text_content = image_message.get("caption", "")
             if has_document and not text_content:
                 text_content = document_message.get("caption", "")
+
+            logger.info(
+                "Webhook message extracted from %s (image=%s, document=%s)",
+                safe_phone,
+                has_image,
+                has_document,
+            )
 
             return {
                 "phone": phone,

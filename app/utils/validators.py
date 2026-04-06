@@ -44,6 +44,26 @@ def is_phone_allowed(phone: str, allowed_phones: list[str]) -> bool:
     return any(normalize_phone(allowed) == normalized for allowed in allowed_phones)
 
 
+def mask_phone(phone: str) -> str:
+    """Mask phone number for safe logging."""
+    normalized = normalize_phone(phone)
+    if not normalized:
+        return "***"
+    if len(normalized) <= 6:
+        return "*" * len(normalized)
+    return f"{normalized[:4]}*****{normalized[-3:]}"
+
+
+def sanitize_for_log(text: str | None, max_length: int = 80) -> str:
+    """Sanitize and truncate text for logging without exposing full content."""
+    cleaned = sanitize_text(text or "", max_length=max_length)
+    if not cleaned:
+        return "(empty)"
+    if len(cleaned) < len((text or "").strip()):
+        return f"{cleaned}..."
+    return cleaned
+
+
 def sanitize_text(text: str, max_length: int = 500) -> str:
     """Sanitize user input text."""
     if not text:

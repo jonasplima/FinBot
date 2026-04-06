@@ -118,8 +118,9 @@ Edite o arquivo `.env`:
 # Obrigatórios
 OWNER_PHONE=5511999999999        # Seu número (formato internacional)
 GEMINI_API_KEY=sua_chave_gemini  # Do Google AI Studio
-ADMIN_SECRET=senha_segura        # Para acessar /admin/qrcode
+ADMIN_SECRET=senha_segura        # Para acessar endpoints admin via Authorization
 EVOLUTION_API_KEY=chave_aleatoria # Gere com: openssl rand -hex 32
+WEBHOOK_SECRET=chave_webhook     # Autenticação do webhook da Evolution
 
 # Opcionais
 ALLOWED_NUMBERS=5511988888888    # Números adicionais (separados por vírgula)
@@ -137,7 +138,12 @@ docker-compose up -d
 
 Acesse no navegador:
 ```
-http://localhost:3003/admin/qrcode?secret=SUA_SENHA_ADMIN
+http://localhost:3003/admin/qrcode
+```
+
+Envie o header:
+```text
+Authorization: Bearer SUA_SENHA_ADMIN
 ```
 
 Escaneie o QR Code com o WhatsApp (como no WhatsApp Web).

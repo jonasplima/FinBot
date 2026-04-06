@@ -25,19 +25,21 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
 
 ## Fase 0: Hardening, Segurança e Confiabilidade (Prioridade Máxima)
 
-### 0.1 Autenticação do Webhook da Evolution API
+### 0.1 Autenticação do Webhook da Evolution API ✅
 - **Complexidade:** Média 🟡
 - **Valor:** Muito Alto
-- **Status:** Pendente
+- **Status:** Implementado
 - **Problema identificado:**
   - O endpoint `/webhook/evolution` aceita requisições sem autenticação forte
   - Hoje é possível forjar payloads com `remoteJid` e simular mensagens de outros números caso a porta esteja acessível
   - A publicação da porta do `finbot` no `docker-compose` amplia a superfície de ataque
-- **Plano de correção:**
-  - Exigir autenticação do webhook com token compartilhado ou assinatura HMAC em header dedicado
-  - Validar origem da requisição antes de processar payload
-  - Restringir a exposição do serviço `finbot` na rede quando ele só precisar receber tráfego interno do stack
-  - Adicionar testes cobrindo requisição válida, inválida e sem credencial
+- **Implementação:**
+  - ✅ Inclusão de `WEBHOOK_SECRET` nas configurações da aplicação
+  - ✅ Configuração do webhook da Evolution com header customizado `Authorization: Bearer <WEBHOOK_SECRET>`
+  - ✅ Validação fail-closed do header no endpoint `/webhook/evolution`
+  - ✅ Rejeição explícita quando o segredo não está configurado
+  - ✅ Atualização do `docker-compose` e `.env.example` para propagar a nova variável
+  - ✅ Testes cobrindo credencial válida, inválida, ausente e payload enviado no `setup_webhook()`
 - **Critérios de aceite:**
   - Webhooks sem credencial válida são rejeitados antes de qualquer processamento
   - Requisições legítimas da Evolution continuam funcionando normalmente
@@ -48,19 +50,21 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
   - `docker-compose.yml`
   - `tests/test_webhook.py`
 
-### 0.2 Proteção da Superfície Admin e Redução de Logs Sensíveis
+### 0.2 Proteção da Superfície Admin e Redução de Logs Sensíveis ✅
 - **Complexidade:** Média 🟡
 - **Valor:** Muito Alto
-- **Status:** Pendente
+- **Status:** Implementado
 - **Problema identificado:**
   - `ADMIN_SECRET` é enviado por query string em `/admin/qrcode` e `/admin/status`
   - Logs atuais podem registrar QR code, pairing code, telefone, conteúdo da mensagem e metadados sensíveis
   - O `logging.basicConfig()` está fixando `INFO`, reduzindo o controle operacional do que vaza
-- **Plano de correção:**
-  - Migrar autenticação admin para header `Authorization` ou outra forma que não exponha o segredo na URL
-  - Redigir ou remover logs de QR code, pairing code, telefone completo e texto de mensagens
-  - Passar a respeitar `LOG_LEVEL` da configuração da aplicação
-  - Criar utilitário de mascaramento para telefones e segredos
+- **Implementação:**
+  - ✅ Migração dos endpoints admin para autenticação via header `Authorization: Bearer <ADMIN_SECRET>`
+  - ✅ Remoção da dependência de `secret` na query string dos endpoints administrativos
+  - ✅ `logging.basicConfig()` passando a respeitar `LOG_LEVEL`
+  - ✅ Inclusão de helpers para mascarar telefone e sanitizar texto em logs
+  - ✅ Redução de logs sensíveis no webhook e na integração com Evolution API
+  - ✅ Atualização da documentação e testes cobrindo autenticação admin e helpers de segurança
 - **Critérios de aceite:**
   - URLs administrativas deixam de carregar segredo em texto puro
   - Logs não exibem QR code, pairing code, payload bruto nem mensagem financeira do usuário
