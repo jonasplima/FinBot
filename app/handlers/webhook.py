@@ -1454,7 +1454,7 @@ class WebhookHandler:
 
         elif action == "list_categories":
             # Send categories list and mark that we're awaiting category selection
-            categories_list = await self.expense_service.get_categories_list(session)
+            categories_list = await self.expense_service.get_categories_list(session, phone)
             await self.evolution.send_text(phone, categories_list + "\nQual categoria deseja usar?")
             # Update pending to mark we're awaiting category selection
             await session.delete(pending)
@@ -1733,6 +1733,7 @@ class WebhookHandler:
                     user_phone=normalize_phone(phone),
                     description=exp_data["description"],
                     amount=exp_data["amount"],
+                    custom_category_name=exp_data.get("custom_category_name"),
                     category_id=exp_data["category_id"],
                     payment_method_id=exp_data["payment_method_id"],
                     type="Negativo",

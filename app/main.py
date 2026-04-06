@@ -16,6 +16,7 @@ from app.database.connection import async_session, init_db
 from app.database.seed import seed_all
 from app.services.admin_rate_limit import AdminRateLimitService
 from app.services.auth import AuthService
+from app.services.category import CategoryService
 from app.services.onboarding import OnboardingService
 from app.services.operational_status import OperationalStatusService
 from app.services.user import UserService
@@ -36,6 +37,7 @@ auth_service = AuthService()
 onboarding_service = OnboardingService()
 user_service = UserService()
 whatsapp_onboarding_service = WhatsAppOnboardingService()
+category_service = CategoryService()
 
 
 class RegisterRequest(BaseModel):
@@ -66,6 +68,20 @@ class OnboardingProfileRequest(BaseModel):
     name: str
     display_name: str | None = None
     timezone: str
+
+
+class OnboardingCategoryCreateRequest(BaseModel):
+    """Payload to create a custom user category."""
+
+    name: str
+    type: str
+
+
+class OnboardingCategoryVisibilityRequest(BaseModel):
+    """Payload to toggle a system category for the current user."""
+
+    category_name: str
+    is_active: bool
 
 
 def _bearer_matches(secret_value: str, authorization: str | None) -> bool:
@@ -760,6 +776,22 @@ async def web_onboarding_page(request: Request):
                     color: #9f1239;
                     border: 1px solid #fecdd3;
                 }
+                .pill-list {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 10px;
+                }
+                .pill {
+                    border: 1px solid var(--line);
+                    border-radius: 999px;
+                    padding: 8px 12px;
+                    background: #fff;
+                    font-size: 0.92rem;
+                }
+                .pill.inactive {
+                    background: #e2e8f0;
+                    color: var(--muted);
+                }
                 .qr-shell {
                     display: grid;
                     gap: 16px;
@@ -860,11 +892,36 @@ async def web_onboarding_page(request: Request):
                             <button class="primary" type="submit">Salvar perfil</button>
                         </form>
                     </section>
+
+                    <section class="card">
+                        <h2>Categorias personalizadas</h2>
+                        <p>Voce pode adicionar categorias proprias e ocultar categorias padrao sem afetar outros usuarios da instancia.</p>
+                        <form id="category-form">
+                            <label>Nome da categoria
+                                <input name="name" placeholder="Ex.: Pets, Freelance, Academia" required>
+                            </label>
+                            <label>Tipo
+                                <input name="type" placeholder="Negativo ou Positivo" value="Negativo" required>
+                            </label>
+                            <button class="primary" type="submit">Adicionar categoria</button>
+                        </form>
+                        <div class="grid" style="margin-top: 18px;">
+                            <div class="stat">
+                                <strong>Ativas</strong>
+                                <div class="pill-list" id="categories-active"></div>
+                            </div>
+                            <div class="stat">
+                                <strong>Ocultas</strong>
+                                <div class="pill-list" id="categories-inactive"></div>
+                            </div>
+                        </div>
+                        <div class="status" id="category-status"></div>
+                    </section>
                 </main>
             </div>
 
             <script>
-                const state = { steps: [], currentStep: 'welcome', user: null, whatsapp: null };
+                const state = { steps: [], currentStep: 'welcome', user: null, whatsapp: null, categories: null };
                 const stepLabels = {
                     welcome: 'Boas-vindas',
                     terms: 'Termos',
@@ -941,6 +998,40 @@ async def web_onboarding_page(request: Request):
                     document.getElementById('whatsapp-status-message').className = 'status';
                 }
 
+                function renderCategories(payload) {
+                    state.categories = payload;
+                    const active = document.getElementById('categories-active');
+                    const inactive = document.getElementById('categories-inactive');
+                    active.innerHTML = '';
+                    inactive.innerHTML = '';
+
+                    for (const item of payload.active || []) {
+                        const pill = document.createElement('button');
+                        pill.type = 'button';
+                        pill.className = 'pill';
+                        pill.textContent = item.is_custom ? `${item.name} (${item.type})` : `${item.name} ocultar`;
+                        if (!item.is_custom) {
+                            pill.addEventListener('click', () => toggleCategory(item.name, false));
+                        } else {
+                            pill.disabled = true;
+                        }
+                        active.appendChild(pill);
+                    }
+
+                    for (const item of payload.inactive || []) {
+                        const pill = document.createElement('button');
+                        pill.type = 'button';
+                        pill.className = 'pill inactive';
+                        pill.textContent = `${item.name} reativar`;
+                        if (!item.is_custom) {
+                            pill.addEventListener('click', () => toggleCategory(item.name, true));
+                        } else {
+                            pill.disabled = true;
+                        }
+                        inactive.appendChild(pill);
+                    }
+                }
+
                 async function loadState() {
                     const payload = await fetchJson('/onboarding/state');
                     renderStats(payload);
@@ -949,6 +1040,27 @@ async def web_onboarding_page(request: Request):
                 async function loadWhatsAppStatus() {
                     const payload = await fetchJson('/onboarding/whatsapp/status');
                     renderWhatsApp(payload);
+                }
+
+                async function loadCategories() {
+                    const payload = await fetchJson('/onboarding/categories');
+                    renderCategories(payload);
+                }
+
+                async function toggleCategory(categoryName, isActive) {
+                    try {
+                        await fetchJson('/onboarding/categories/visibility', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ category_name: categoryName, is_active: isActive })
+                        });
+                        await loadCategories();
+                        document.getElementById('category-status').textContent = 'Categorias atualizadas.';
+                        document.getElementById('category-status').className = 'status';
+                    } catch (error) {
+                        document.getElementById('category-status').textContent = error.message;
+                        document.getElementById('category-status').className = 'status error';
+                    }
                 }
 
                 async function updateStep(nextStep) {
@@ -1063,6 +1175,25 @@ async def web_onboarding_page(request: Request):
                     }
                 });
 
+                document.getElementById('category-form').addEventListener('submit', async (event) => {
+                    event.preventDefault();
+                    const payload = Object.fromEntries(new FormData(event.currentTarget).entries());
+                    try {
+                        await fetchJson('/onboarding/categories', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        event.currentTarget.reset();
+                        await loadCategories();
+                        document.getElementById('category-status').textContent = 'Categoria adicionada com sucesso.';
+                        document.getElementById('category-status').className = 'status';
+                    } catch (error) {
+                        document.getElementById('category-status').textContent = error.message;
+                        document.getElementById('category-status').className = 'status error';
+                    }
+                });
+
                 loadState().catch((error) => {
                     document.getElementById('flow-status').textContent = error.message;
                     document.getElementById('flow-status').className = 'status error';
@@ -1070,6 +1201,9 @@ async def web_onboarding_page(request: Request):
 
                 loadWhatsAppStatus().catch(() => {
                     // Keep the onboarding screen functional even if the session is not prepared yet.
+                });
+                loadCategories().catch(() => {
+                    // Keep the onboarding screen functional even if category loading fails.
                 });
             </script>
         </body>
@@ -1163,6 +1297,83 @@ async def onboarding_profile(request: Request, payload: OnboardingProfileRequest
             raise HTTPException(status_code=400, detail=str(exc))
         state = await onboarding_service.get_or_create_state(session, updated_user)
         return onboarding_service.build_state_payload(updated_user, state)
+
+
+@app.get("/onboarding/categories")
+async def onboarding_categories(request: Request):
+    """Return category customization data for the authenticated user."""
+    await _get_current_web_user(request)
+    async with async_session() as session:
+        refreshed_user = await auth_service.get_user_by_session_token(
+            session, _get_session_cookie_token(request) or ""
+        )
+        if refreshed_user is None:
+            raise HTTPException(status_code=401, detail="Sessao web invalida ou expirada.")
+        return await category_service.list_available_categories(session, refreshed_user)
+
+
+@app.post("/onboarding/categories")
+async def onboarding_create_category(request: Request, payload: OnboardingCategoryCreateRequest):
+    """Create a custom category for the authenticated user."""
+    await _get_current_web_user(request)
+    async with async_session() as session:
+        refreshed_user = await auth_service.get_user_by_session_token(
+            session, _get_session_cookie_token(request) or ""
+        )
+        if refreshed_user is None:
+            raise HTTPException(status_code=401, detail="Sessao web invalida ou expirada.")
+        try:
+            category = await category_service.create_custom_category(
+                session,
+                refreshed_user,
+                name=payload.name,
+                category_type=payload.type,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {
+            "status": "ok",
+            "category": {
+                "id": category.id,
+                "name": category.name,
+                "type": category.type,
+                "is_active": category.is_active,
+                "is_custom": True,
+            },
+        }
+
+
+@app.post("/onboarding/categories/visibility")
+async def onboarding_category_visibility(
+    request: Request,
+    payload: OnboardingCategoryVisibilityRequest,
+):
+    """Hide or reactivate a default category for the authenticated user."""
+    await _get_current_web_user(request)
+    async with async_session() as session:
+        refreshed_user = await auth_service.get_user_by_session_token(
+            session, _get_session_cookie_token(request) or ""
+        )
+        if refreshed_user is None:
+            raise HTTPException(status_code=401, detail="Sessao web invalida ou expirada.")
+        try:
+            category = await category_service.set_system_category_visibility(
+                session,
+                refreshed_user,
+                category_name=payload.category_name,
+                is_active=payload.is_active,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {
+            "status": "ok",
+            "category": {
+                "name": category.name,
+                "type": category.type,
+                "is_active": category.is_active,
+                "is_custom": False,
+            },
+        }
 
 
 @app.post("/onboarding/complete")

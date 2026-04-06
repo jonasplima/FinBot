@@ -206,10 +206,13 @@ class SchedulerService:
                     "id": int(exp.id),
                     "description": str(exp.description),
                     "amount": amount,
-                    "category": exp.category.name if exp.category else "Outros",
+                    "category": exp.display_category,
                     "payment_method": exp.payment_method.name if exp.payment_method else "Pix",
                     "category_id": int(exp.category_id),
                     "payment_method_id": int(exp.payment_method_id),
+                    "custom_category_name": str(exp.custom_category_name)
+                    if exp.custom_category_name
+                    else "",
                 }
             )
 

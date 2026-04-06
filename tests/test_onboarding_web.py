@@ -7,11 +7,15 @@ from starlette.requests import Request
 from app.config import get_settings
 from app.database.connection import async_session, init_db
 from app.database.models import User, UserOnboardingState, UserWebSession, UserWhatsAppSession
+from app.database.seed import seed_all
 from app.main import (
     RegisterRequest,
     auth_register,
     onboarding_accept_terms,
+    onboarding_categories,
+    onboarding_category_visibility,
     onboarding_complete,
+    onboarding_create_category,
     onboarding_profile,
     onboarding_state,
     onboarding_step,
@@ -32,6 +36,7 @@ class TestOnboardingWeb:
     async def _reset_real_db(self) -> None:
         await init_db()
         async with async_session() as session:
+            await seed_all(session)
             await session.execute(delete(UserWebSession))
             await session.execute(delete(UserOnboardingState))
             await session.execute(delete(UserWhatsAppSession))
@@ -274,3 +279,44 @@ class TestOnboardingWeb:
 
         assert payload["session"]["connection_status"] == "pending"
         assert payload["session"]["evolution_instance"].startswith(f"{self.EVOLUTION_PREFIX}-user-")
+
+    async def test_onboarding_categories_can_create_and_hide(self):
+        """Authenticated users should manage category customization from onboarding."""
+        await self._reset_real_db()
+        register_response = Response()
+        await auth_register(
+            RegisterRequest(
+                name="Tami",
+                email="tami@example.com",
+                password="senha-super-segura",
+                phone="5511966666666",
+            ),
+            register_response,
+        )
+        session_cookie = self._extract_cookie(register_response)
+        request = self._request_with_cookie("/onboarding/categories", session_cookie)
+
+        initial_payload = await onboarding_categories(request)
+        assert any(item["name"] == "Lazer" for item in initial_payload["active"])
+
+        create_payload = await onboarding_create_category(
+            request,
+            payload=type("CategoryPayload", (), {"name": "Pets", "type": "Negativo"})(),
+        )
+        assert create_payload["category"]["name"] == "Pets"
+        assert create_payload["category"]["is_custom"] is True
+
+        visibility_payload = await onboarding_category_visibility(
+            request,
+            payload=type(
+                "VisibilityPayload",
+                (),
+                {"category_name": "Lazer", "is_active": False},
+            )(),
+        )
+        assert visibility_payload["category"]["name"] == "Lazer"
+        assert visibility_payload["category"]["is_active"] is False
+
+        updated_payload = await onboarding_categories(request)
+        assert any(item["name"] == "Pets" for item in updated_payload["custom"])
+        assert any(item["name"] == "Lazer" for item in updated_payload["inactive"])

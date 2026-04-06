@@ -95,6 +95,7 @@ class Expense(Base):
     user_phone = Column(String(20), nullable=False, index=True)
     description = Column(String(500), nullable=False)
     amount = Column(Numeric(12, 2), nullable=False)
+    custom_category_name = Column(String(100), nullable=True)
 
     # Foreign keys
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=False)
@@ -144,6 +145,15 @@ class Expense(Base):
         if self.installment_current and self.installment_total:
             return f"{self.installment_current}/{self.installment_total}"
         return None
+
+    @property
+    def display_category(self) -> str:
+        """Return the effective category label shown to the user."""
+        if self.custom_category_name:
+            return self.custom_category_name
+        if self.category and self.category.name:
+            return self.category.name
+        return "Outros"
 
 
 class PendingConfirmation(Base):

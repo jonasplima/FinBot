@@ -58,6 +58,7 @@ class RecurringService:
                 user_phone=recurring.user_phone,
                 description=recurring.description,
                 amount=recurring.amount,
+                custom_category_name=recurring.custom_category_name,
                 category_id=recurring.category_id,
                 payment_method_id=recurring.payment_method_id,
                 type=recurring.type,

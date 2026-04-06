@@ -105,6 +105,7 @@ class Expense(TestBase):
     user_phone = Column(String(20), nullable=False, index=True)
     description = Column(String(500), nullable=False)
     amount = Column(Numeric(12, 2), nullable=False)
+    custom_category_name = Column(String(100), nullable=True)
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=False)
     payment_method_id = Column(Integer, ForeignKey("payment_methods.id"), nullable=False)
     type = Column(String(10), nullable=False)
@@ -129,6 +130,14 @@ class Expense(TestBase):
         if self.installment_current and self.installment_total:
             return f"{self.installment_current}/{self.installment_total}"
         return None
+
+    @property
+    def display_category(self):
+        if self.custom_category_name:
+            return self.custom_category_name
+        if self.category and self.category.name:
+            return self.category.name
+        return "Outros"
 
 
 class PendingConfirmation(TestBase):

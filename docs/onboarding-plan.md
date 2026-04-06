@@ -557,6 +557,8 @@ Status: concluída
 
 ### Fase 6. Categorias personalizadas
 
+Status: concluída
+
 1. CRUD de categorias do usuário
 2. Ocultar/reativar categorias padrão para o usuário
 3. Injetar categorias personalizadas no contexto da IA

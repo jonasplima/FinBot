@@ -11,7 +11,9 @@ import google.generativeai as genai
 import httpx
 
 from app.config import get_settings
+from app.database.connection import async_session
 from app.database.models import User
+from app.services.category import CategoryService
 from app.services.credentials import CredentialService
 
 logger = logging.getLogger(__name__)
@@ -508,6 +510,7 @@ class AIService:
         self.gemini_api_key = settings.gemini_api_key
         self.groq_api_key = settings.groq_api_key
         self.credential_service = CredentialService()
+        self.category_service = CategoryService()
         self._current_model_index = 0
         self._current_vision_model_index = 0
 
@@ -769,16 +772,47 @@ class AIService:
         """Resolve effective provider credentials for the current user."""
         return await self.credential_service.resolve_many(["gemini", "groq"], user=user)
 
+    async def _build_dynamic_category_context(self, user: User | None = None) -> str:
+        """Build the active category catalog section for the current user."""
+        if user is None:
+            return ""
+
+        try:
+            async with async_session() as session:
+                grouped = await self.category_service.get_active_category_names(session, user)
+        except Exception as exc:
+            logger.warning("Could not load user category context for AI prompts: %s", exc)
+            return ""
+
+        negatives = grouped.get("Negativo", [])
+        positives = grouped.get("Positivo", [])
+
+        lines = [
+            "## Catalogo ativo deste usuario (priorize APENAS estas categorias):",
+            "### Gastos (Negativo):",
+        ]
+        lines.extend(f"- {name}" for name in negatives)
+        lines.append("\n### Entradas (Positivo):")
+        lines.extend(f"- {name}" for name in positives)
+        lines.append(
+            "\nUse somente categorias desta secao ao classificar, ajustar ou listar categorias."
+        )
+        return "\n".join(lines)
+
     async def process_message(self, text: str, user: User | None = None) -> dict:
         """Process text message and extract intent/data."""
         try:
             provider_credentials = await self._resolve_provider_credentials(user)
+            dynamic_category_context = await self._build_dynamic_category_context(user)
             # Add current date context
             today = date.today()
             context = f"Data atual: {today.strftime('%d/%m/%Y')}\n\nMensagem do usuario: {text}"
+            prompt = SYSTEM_PROMPT
+            if dynamic_category_context:
+                prompt = f"{SYSTEM_PROMPT}\n\n{dynamic_category_context}"
 
             response_text = await self._generate_with_fallback(
-                contents=[SYSTEM_PROMPT, context],
+                contents=[prompt, context],
                 generation_config=genai.GenerationConfig(
                     response_mime_type="application/json",
                     temperature=0.1,
@@ -814,6 +848,7 @@ class AIService:
         """Process image (receipt/invoice) and extract data."""
         try:
             provider_credentials = await self._resolve_provider_credentials(user)
+            dynamic_category_context = await self._build_dynamic_category_context(user)
             # Encode image to base64
             image_b64 = base64.b64encode(image_data).decode("utf-8")
 
@@ -825,6 +860,8 @@ class AIService:
 
             # Add context if there's additional text
             prompt = IMAGE_PROMPT
+            if dynamic_category_context:
+                prompt += f"\n\n{dynamic_category_context}"
             if additional_text:
                 prompt += f"\n\nTexto adicional do usuario: {additional_text}"
 
@@ -860,8 +897,11 @@ class AIService:
         """Process extracted PDF text and infer expense data."""
         try:
             provider_credentials = await self._resolve_provider_credentials(user)
+            dynamic_category_context = await self._build_dynamic_category_context(user)
             text_excerpt = pdf_text[:12000]
             prompt = PDF_PROMPT + f"\n\nTexto extraido do PDF:\n{text_excerpt}"
+            if dynamic_category_context:
+                prompt += f"\n\n{dynamic_category_context}"
             if additional_text:
                 prompt += f"\n\nTexto adicional do usuario: {additional_text}"
 
@@ -955,10 +995,13 @@ class AIService:
 
             # Use LLM for more complex responses
             logger.info(f"Using AI provider for confirmation evaluation: '{user_response}'")
+            dynamic_category_context = await self._build_dynamic_category_context(user)
             prompt = CONFIRMATION_PROMPT.format(
                 expense_summary=expense_summary,
                 user_response=user_response,
             )
+            if dynamic_category_context:
+                prompt = f"{prompt}\n\n{dynamic_category_context}"
             provider_credentials = await self._resolve_provider_credentials(user)
 
             response_text = await self._generate_with_fallback(

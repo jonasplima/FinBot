@@ -11,7 +11,9 @@ from sqlalchemy import extract, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.database.models import Category, Expense, PaymentMethod
+from app.database.models import Category, Expense, PaymentMethod, User
+from app.services.category import CategoryService
+from app.services.user import UserService
 from app.utils.validators import normalize_phone
 
 logger = logging.getLogger(__name__)
@@ -45,6 +47,10 @@ MONTH_NAMES = {
 
 class ExpenseService:
     """Service for managing expenses."""
+
+    def __init__(self) -> None:
+        self.category_service = CategoryService()
+        self.user_service = UserService()
 
     def _validate_financial_consistency(self, data: dict) -> str | None:
         """Validate financial field combinations before persisting."""
@@ -92,12 +98,19 @@ class ExpenseService:
         """Create a new expense record."""
         try:
             normalized_phone = normalize_phone(phone)
+            user = await self.user_service.get_or_create_user(session, normalized_phone)
 
             # Get category
             category_name = data.get("category", "Outros")
-            category = await self._get_category(session, category_name)
-            if not category:
-                return {"success": False, "error": f"Categoria '{category_name}' nao encontrada"}
+            try:
+                (
+                    category,
+                    custom_category_name,
+                ) = await self.category_service.resolve_category_for_user(
+                    session, user, category_name
+                )
+            except ValueError as exc:
+                return {"success": False, "error": str(exc)}
 
             # Get payment method
             payment_name = data.get("payment_method", "Pix")
@@ -124,6 +137,7 @@ class ExpenseService:
                     normalized_phone,
                     data,
                     category,
+                    custom_category_name,
                     payment_method,
                     amount,
                     installments,
@@ -134,6 +148,7 @@ class ExpenseService:
                 user_phone=normalized_phone,
                 description=data.get("description", ""),
                 amount=amount,
+                custom_category_name=custom_category_name,
                 category_id=category.id,
                 payment_method_id=payment_method.id,
                 type=category.type,
@@ -170,6 +185,7 @@ class ExpenseService:
         phone: str,
         data: dict,
         category: Category,
+        custom_category_name: str | None,
         payment_method: PaymentMethod,
         total_amount: Decimal,
         installments: int,
@@ -203,6 +219,7 @@ class ExpenseService:
                     user_phone=phone,
                     description=data.get("description", ""),
                     amount=installment_amount,
+                    custom_category_name=custom_category_name,
                     category_id=category.id,
                     payment_method_id=payment_method.id,
                     type=category.type,
@@ -316,7 +333,7 @@ class ExpenseService:
             expense_details = {
                 "description": expense.description,
                 "amount": float(expense.amount),
-                "category": expense.category.name if expense.category else "N/A",
+                "category": expense.display_category,
             }
 
             # Delete the expense
@@ -401,7 +418,7 @@ class ExpenseService:
 
             # Group by category (for expenses only)
             if exp.type == "Negativo":
-                cat_name = exp.category.name if exp.category else "Outros"
+                cat_name = exp.display_category
                 by_category[cat_name] = by_category.get(cat_name, Decimal("0")) + exp.amount
 
         # Build summary message
@@ -453,7 +470,7 @@ class ExpenseService:
                 {
                     "Data": exp.date.strftime("%d/%m/%Y"),
                     "Descricao": exp.description,
-                    "Categoria": exp.category.name if exp.category else "",
+                    "Categoria": exp.display_category,
                     "Forma de Pagamento": exp.payment_method.name if exp.payment_method else "",
                     "Tipo": exp.type,
                     "Parcela": exp.installment_display or "",
@@ -503,7 +520,7 @@ class ExpenseService:
         # Group by category
         by_category: dict[str, Decimal] = {}
         for exp in expenses:
-            cat_name = exp.category.name if exp.category else "Outros"
+            cat_name = exp.display_category
             by_category[cat_name] = by_category.get(cat_name, Decimal("0")) + exp.amount
 
         # Convert to list of dicts sorted by amount
@@ -593,23 +610,12 @@ class ExpenseService:
             {"date": d.strftime("%d/%m"), "amount": amount} for d, amount in sorted(by_date.items())
         ]
 
-    async def get_categories_list(self, session: AsyncSession) -> str:
+    async def get_categories_list(self, session: AsyncSession, phone: str) -> str:
         """Return formatted list of all categories."""
-        result = await session.execute(select(Category).order_by(Category.type, Category.name))
-        categories = result.scalars().all()
-
-        gastos = [c.name for c in categories if c.type == "Negativo"]
-        entradas = [c.name for c in categories if c.type == "Positivo"]
-
-        msg = "Categorias disponiveis:\n\n"
-        msg += "GASTOS:\n"
-        for cat in gastos:
-            msg += f"  • {cat}\n"
-        msg += "\nENTRADAS:\n"
-        for cat in entradas:
-            msg += f"  • {cat}\n"
-
-        return msg
+        user = await self._get_user(session, normalize_phone(phone))
+        if user is None:
+            return "Nao consegui localizar seu perfil para listar categorias."
+        return await self.category_service.format_categories_message(session, user)
 
     async def get_payment_methods_list(self, session: AsyncSession) -> str:
         """Return formatted list of all payment methods."""
@@ -673,3 +679,12 @@ class ExpenseService:
                 return method
 
         return None
+
+    async def _get_user(
+        self,
+        session: AsyncSession,
+        phone: str,
+    ) -> User | None:
+        """Get a user profile by normalized phone."""
+        result = await session.execute(select(User).where(User.phone == phone))
+        return result.scalar_one_or_none()
