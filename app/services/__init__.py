@@ -2,6 +2,7 @@
 from .ai import AIService
 from .auth import AuthService
 from .backup import BackupService
+from .credentials import CredentialService
 from .evolution import EvolutionService
 from .expense import ExpenseService
 from .export import ExportService
@@ -14,6 +15,7 @@ __all__ = [
     "AIService",
     "AuthService",
     "BackupService",
+    "CredentialService",
     "EvolutionService",
     "ExpenseService",
     "RecurringService",

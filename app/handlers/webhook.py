@@ -162,7 +162,7 @@ class WebhookHandler:
                 return
 
             # Process with the configured AI provider
-            result = await self.ai.process_message(text)
+            result = await self.ai.process_message(text, user=user)
 
             intent = result.get("intent", "unknown")
 
@@ -413,7 +413,7 @@ class WebhookHandler:
                 return
 
             # Process with the configured vision-capable AI provider
-            result = await self.ai.process_image(image_data, msg_data.get("text", ""))
+            result = await self.ai.process_image(image_data, msg_data.get("text", ""), user=user)
 
             if result.get("success"):
                 await self.handle_register_expense(session, phone, result)
@@ -468,7 +468,7 @@ class WebhookHandler:
             if not ai_allowed:
                 return
 
-            result = await self.ai.process_pdf_text(pdf_text, msg_data.get("text", ""))
+            result = await self.ai.process_pdf_text(pdf_text, msg_data.get("text", ""), user=user)
 
             if result.get("success"):
                 await self.handle_register_expense(session, phone, result)
@@ -603,7 +603,8 @@ class WebhookHandler:
         currency = expense_data.get("currency")
         if currency and currency.upper() != "BRL":
             amount = Decimal(str(expense_data.get("amount", 0)))
-            conversion = await self.currency_service.convert_to_brl(amount, currency)
+            user = await self.user_service.get_or_create_user(session, phone)
+            conversion = await self.currency_service.convert_to_brl(amount, currency, user=user)
 
             if conversion["success"]:
                 # Store original currency info and converted amount
@@ -1316,10 +1317,13 @@ class WebhookHandler:
             )
             return
 
+        user = await self.user_service.get_or_create_user(session, phone)
+
         result = await self.currency_service.convert_currency(
             Decimal(str(amount)),
             from_currency,
             to_currency,
+            user=user,
         )
 
         if result["success"]:
@@ -1373,7 +1377,9 @@ class WebhookHandler:
             return
 
         # Evaluate response using LLM
-        evaluation = await self.ai.evaluate_confirmation_response(expense_summary, response)
+        evaluation = await self.ai.evaluate_confirmation_response(
+            expense_summary, response, user=user
+        )
 
         action = evaluation.get("action", "unknown")
         adjustments = evaluation.get("adjustments", {})
@@ -1528,6 +1534,7 @@ class WebhookHandler:
             evaluation = await self.ai.evaluate_confirmation_response(
                 "Selecao de forma de pagamento",
                 response,
+                user=await self.user_service.get_or_create_user(session, phone),
             )
             if evaluation.get("action") == "list_payment_methods":
                 methods_list = await self.expense_service.get_payment_methods_list(session)
@@ -1769,6 +1776,7 @@ class WebhookHandler:
             evaluation = await self.ai.evaluate_confirmation_response(
                 f"Confirmacao de {len(expenses)} despesa(s) recorrente(s) no valor de R$ {total:.2f}",
                 response,
+                user=user,
             )
 
             action = evaluation.get("action", "unknown")
@@ -1894,7 +1902,7 @@ class WebhookHandler:
             if not ai_allowed:
                 return
 
-            evaluation = await self.ai.evaluate_confirmation_response(summary, response)
+            evaluation = await self.ai.evaluate_confirmation_response(summary, response, user=user)
 
             action = evaluation.get("action", "unknown")
 
@@ -2109,6 +2117,7 @@ class WebhookHandler:
         evaluation = await self.ai.evaluate_confirmation_response(
             self._build_backup_restore_summary(summary),
             response,
+            user=user,
         )
         action = evaluation.get("action", "unknown")
 

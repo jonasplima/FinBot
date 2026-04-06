@@ -999,6 +999,7 @@ class TestWebhookHandlerIntentHandling:
         handler.ai.process_pdf_text.assert_awaited_once_with(
             "COMPROVANTE PIX UBER",
             "comprovante uber",
+            user=accepted_user_in_db,
         )
         handler.handle_register_expense.assert_awaited_once()
 

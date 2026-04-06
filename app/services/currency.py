@@ -10,7 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.database.connection import async_session
-from app.database.models import ExchangeRate
+from app.database.models import ExchangeRate, User
+from app.services.credentials import CredentialService
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -75,6 +76,7 @@ class CurrencyService:
         # Cache settings
         self.cache_ttl = settings.exchange_rate_cache_ttl
         self.fallback_rates_update_days = settings.fallback_rates_update_days
+        self.credential_service = CredentialService()
 
     def _is_cache_valid(self, currency: str) -> bool:
         """Check if cached rate is still valid."""
@@ -106,20 +108,21 @@ class CurrencyService:
         }
         logger.info(f"Cached exchange rate from {source}: 1 {from_currency} = {rate} BRL")
 
-    async def _get_wise_rate(self, from_currency: str) -> dict | None:
+    async def _get_wise_rate(self, from_currency: str, api_key: str | None = None) -> dict | None:
         """
         Get exchange rate from Wise API (commercial/mid-market rate).
 
         Uses GET /v1/rates endpoint.
         """
-        if not self.wise_api_key:
+        api_key = api_key or self.wise_api_key
+        if not api_key:
             logger.debug("Wise API key not configured, skipping")
             return None
 
         try:
             url = f"{self.wise_api_url}/v1/rates"
             params = {"source": from_currency, "target": "BRL"}
-            headers = {"Authorization": f"Bearer {self.wise_api_key}"}
+            headers = {"Authorization": f"Bearer {api_key}"}
 
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.get(url, params=params, headers=headers)
@@ -149,20 +152,26 @@ class CurrencyService:
             logger.warning(f"Wise rates API error: {e}")
             return None
 
-    async def _get_wise_quote(self, amount: Decimal, from_currency: str) -> dict | None:
+    async def _get_wise_quote(
+        self,
+        amount: Decimal,
+        from_currency: str,
+        api_key: str | None = None,
+    ) -> dict | None:
         """
         Get real conversion value from Wise API (with fees and IOF).
 
         Uses POST /v3/quotes endpoint (unauthenticated).
         Returns the actual amount that arrives after Wise deducts fees.
         """
+        api_key = api_key or self.wise_api_key
         try:
             url = f"{self.wise_api_url}/v3/quotes"
             headers = {"Content-Type": "application/json"}
 
             # If we have API key, use authenticated endpoint
-            if self.wise_api_key:
-                headers["Authorization"] = f"Bearer {self.wise_api_key}"
+            if api_key:
+                headers["Authorization"] = f"Bearer {api_key}"
 
             payload = {
                 "sourceCurrency": from_currency,
@@ -210,14 +219,19 @@ class CurrencyService:
             logger.warning(f"Wise quotes API error: {e}")
             return None
 
-    async def _get_exchange_rate_api_rate(self, from_currency: str) -> dict | None:
+    async def _get_exchange_rate_api_rate(
+        self,
+        from_currency: str,
+        api_key: str | None = None,
+    ) -> dict | None:
         """Get exchange rate from ExchangeRate API (fallback)."""
-        if not self.exchange_rate_api_key:
+        api_key = api_key or self.exchange_rate_api_key
+        if not api_key:
             logger.debug("ExchangeRate API key not configured, skipping")
             return None
 
         try:
-            url = f"{self.exchange_rate_api_url}/{self.exchange_rate_api_key}/pair/{from_currency}/BRL"
+            url = f"{self.exchange_rate_api_url}/{api_key}/pair/{from_currency}/BRL"
 
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.get(url)
@@ -322,13 +336,15 @@ class CurrencyService:
                 source = None
 
                 # Try Wise first
-                result = await self._get_wise_rate(currency)
+                result = await self._get_wise_rate(currency, self.wise_api_key)
                 if result:
                     rate = result["rate"]
                     source = "wise"
                 else:
                     # Try ExchangeRate API
-                    result = await self._get_exchange_rate_api_rate(currency)
+                    result = await self._get_exchange_rate_api_rate(
+                        currency, self.exchange_rate_api_key
+                    )
                     if result:
                         rate = result["rate"]
                         source = "exchangerate_api"
@@ -368,7 +384,11 @@ class CurrencyService:
 
         return {"success": False, "error": f"Moeda {from_currency} nao suportada"}
 
-    async def get_exchange_rate(self, from_currency: str) -> dict:
+    async def _resolve_provider_keys(self, user: User | None = None) -> dict[str, str]:
+        """Resolve effective provider keys for currency APIs."""
+        return await self.credential_service.resolve_many(["wise", "exchange_rate"], user=user)
+
+    async def get_exchange_rate(self, from_currency: str, user: User | None = None) -> dict:
         """
         Get exchange rate from currency to BRL.
 
@@ -388,6 +408,7 @@ class CurrencyService:
         if from_currency not in SUPPORTED_CURRENCIES:
             return {"success": False, "error": f"Moeda {from_currency} nao suportada"}
 
+        provider_keys = await self._resolve_provider_keys(user)
         # Check cache first
         cached_rate = self._get_cached_rate(from_currency)
         if cached_rate is not None:
@@ -395,13 +416,18 @@ class CurrencyService:
             return {"success": True, "rate": cached_rate}
 
         # Try Wise API first
-        result = await self._get_wise_rate(from_currency)
+        result = await self._get_wise_rate(
+            from_currency, provider_keys.get("wise", self.wise_api_key)
+        )
         if result:
             self._cache_rate(from_currency, result["rate"], "wise")
             return {"success": True, "rate": result["rate"], "source": "wise"}
 
         # Try ExchangeRate API
-        result = await self._get_exchange_rate_api_rate(from_currency)
+        result = await self._get_exchange_rate_api_rate(
+            from_currency,
+            provider_keys.get("exchange_rate", self.exchange_rate_api_key),
+        )
         if result:
             self._cache_rate(from_currency, result["rate"], "exchangerate_api")
             return {"success": True, "rate": result["rate"], "source": "exchangerate_api"}
@@ -409,7 +435,12 @@ class CurrencyService:
         # Use database fallback
         return await self._get_fallback_rate(from_currency)
 
-    async def get_wise_real_value(self, amount: Decimal, from_currency: str) -> dict:
+    async def get_wise_real_value(
+        self,
+        amount: Decimal,
+        from_currency: str,
+        user: User | None = None,
+    ) -> dict:
         """
         Get real conversion value from Wise (after IOF and fees).
 
@@ -435,7 +466,10 @@ class CurrencyService:
                 "source": "same_currency",
             }
 
-        quote = await self._get_wise_quote(amount, from_currency)
+        provider_keys = await self._resolve_provider_keys(user)
+        quote = await self._get_wise_quote(
+            amount, from_currency, provider_keys.get("wise", self.wise_api_key)
+        )
 
         if quote:
             return {
@@ -453,6 +487,7 @@ class CurrencyService:
         amount: Decimal,
         from_currency: str,
         include_wise_quote: bool = False,
+        user: User | None = None,
     ) -> dict:
         """
         Convert amount from foreign currency to BRL.
@@ -476,7 +511,7 @@ class CurrencyService:
                 "exchange_rate": Decimal("1"),
             }
 
-        rate_result = await self.get_exchange_rate(from_currency)
+        rate_result = await self.get_exchange_rate(from_currency, user=user)
 
         if not rate_result["success"]:
             return rate_result
@@ -496,7 +531,7 @@ class CurrencyService:
 
         # Optionally include Wise quote (real value with fees)
         if include_wise_quote:
-            wise_quote = await self.get_wise_real_value(amount, from_currency)
+            wise_quote = await self.get_wise_real_value(amount, from_currency, user=user)
             if wise_quote.get("success"):
                 result["wise_real_value"] = wise_quote["target_amount"]
                 result["wise_effective_rate"] = wise_quote["effective_rate"]
@@ -508,6 +543,7 @@ class CurrencyService:
         amount: Decimal,
         from_currency: str,
         to_currency: str = "BRL",
+        user: User | None = None,
     ) -> dict:
         """
         Convert amount between any two supported currencies.
@@ -546,20 +582,22 @@ class CurrencyService:
 
         # Convert to BRL first, then to target if needed
         if to_currency == "BRL":
-            result = await self.convert_to_brl(amount, from_currency, include_wise_quote=True)
+            result = await self.convert_to_brl(
+                amount, from_currency, include_wise_quote=True, user=user
+            )
             if result["success"]:
                 result["target_currency"] = "BRL"
             return result
 
         # Convert from_currency -> BRL -> to_currency
-        to_brl = await self.convert_to_brl(amount, from_currency)
+        to_brl = await self.convert_to_brl(amount, from_currency, user=user)
         if not to_brl["success"]:
             return to_brl
 
         brl_amount = to_brl["converted_amount"]
 
         # Get rate from target currency to BRL (inverse)
-        target_rate_result = await self.get_exchange_rate(to_currency)
+        target_rate_result = await self.get_exchange_rate(to_currency, user=user)
         if not target_rate_result["success"]:
             return target_rate_result
 

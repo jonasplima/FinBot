@@ -530,6 +530,8 @@ Status: concluída
 
 ### Fase 3. Camada de resolução de credenciais
 
+Status: concluída
+
 1. Criar serviço central para resolver credenciais
 2. Integrar com `AIService`
 3. Integrar com `CurrencyService`

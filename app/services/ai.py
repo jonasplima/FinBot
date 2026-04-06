@@ -11,13 +11,11 @@ import google.generativeai as genai
 import httpx
 
 from app.config import get_settings
+from app.database.models import User
+from app.services.credentials import CredentialService
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
-
-# Configure Gemini provider when available
-if settings.gemini_api_key:
-    genai.configure(api_key=settings.gemini_api_key)
 
 # Model fallback chain - ordered by priority (best to fallback)
 MODEL_FALLBACK_CHAIN = [
@@ -507,6 +505,9 @@ class AIService:
         self.groq_models = GROQ_MODEL_FALLBACK_CHAIN
         self.groq_vision_models = GROQ_VISION_MODEL_FALLBACK_CHAIN
         self.primary_provider = settings.normalized_ai_primary_provider
+        self.gemini_api_key = settings.gemini_api_key
+        self.groq_api_key = settings.groq_api_key
+        self.credential_service = CredentialService()
         self._current_model_index = 0
         self._current_vision_model_index = 0
 
@@ -569,19 +570,27 @@ class AIService:
         self._exhausted_models[model_key] = datetime.now()
         logger.warning("Model %s marked as exhausted (quota exceeded)", model_key)
 
-    def _has_gemini(self) -> bool:
+    def _has_gemini(self, credentials: dict[str, str] | None = None) -> bool:
         """Whether the Gemini provider is configured."""
-        return bool(settings.gemini_api_key)
+        if credentials is not None:
+            return bool(credentials.get("gemini"))
+        return bool(self.gemini_api_key)
 
-    def _has_groq(self) -> bool:
+    def _has_groq(self, credentials: dict[str, str] | None = None) -> bool:
         """Whether Groq is configured."""
-        return bool(settings.groq_api_key)
+        if credentials is not None:
+            return bool(credentials.get("groq"))
+        return bool(self.groq_api_key)
 
     def _get_model_key(self, provider: str, model_name: str) -> str:
         """Build a unique key for per-provider model exhaustion tracking."""
         return f"{provider}:{model_name}"
 
-    def _build_provider_chains(self, vision_only: bool = False) -> list[tuple[str, str]]:
+    def _build_provider_chains(
+        self,
+        vision_only: bool = False,
+        credentials: dict[str, str] | None = None,
+    ) -> list[tuple[str, str]]:
         """Build the ordered provider/model fallback chain."""
         gemini_models = self.vision_models if vision_only else self.models
         groq_models = self.groq_vision_models if vision_only else self.groq_models
@@ -592,9 +601,9 @@ class AIService:
 
         provider_chains: list[tuple[str, str]] = []
         for provider in ordered_providers:
-            if provider == "gemini" and self._has_gemini():
+            if provider == "gemini" and self._has_gemini(credentials):
                 provider_chains.extend(("gemini", model_name) for model_name in gemini_models)
-            if provider == "groq" and self._has_groq():
+            if provider == "groq" and self._has_groq(credentials):
                 provider_chains.extend(("groq", model_name) for model_name in groq_models)
         return provider_chains
 
@@ -603,8 +612,10 @@ class AIService:
         model_name: str,
         contents: list,
         generation_config: genai.GenerationConfig,
+        api_key: str,
     ) -> Any:
         """Run the blocking Gemini SDK call synchronously."""
+        genai.configure(api_key=api_key)
         model = genai.GenerativeModel(model_name)
         return model.generate_content(
             contents,
@@ -616,10 +627,11 @@ class AIService:
         model_name: str,
         contents: list[Any],
         generation_config: genai.GenerationConfig,
+        api_key: str,
     ) -> str:
         """Generate content using Groq's OpenAI-compatible chat API."""
         headers = {
-            "Authorization": f"Bearer {settings.groq_api_key}",
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
         payload: dict[str, Any] = {
@@ -673,6 +685,7 @@ class AIService:
         contents: list[Any],
         generation_config: genai.GenerationConfig,
         vision_only: bool = False,
+        credentials: dict[str, str] | None = None,
     ) -> str:
         """
         Generate content with automatic model fallback on quota errors.
@@ -688,7 +701,7 @@ class AIService:
         Raises:
             Exception: If all models fail
         """
-        provider_chain = self._build_provider_chains(vision_only)
+        provider_chain = self._build_provider_chains(vision_only, credentials)
         last_error = None
 
         for provider_name, model_name in provider_chain:
@@ -700,22 +713,26 @@ class AIService:
                 logger.debug("Trying model %s via provider %s", model_name, provider_name)
 
                 if provider_name == "gemini":
+                    gemini_key = (credentials or {}).get("gemini", self.gemini_api_key)
                     response = await asyncio.wait_for(
                         asyncio.to_thread(
                             self._generate_content_sync,
                             model_name,
                             contents,
                             generation_config,
+                            gemini_key,
                         ),
                         timeout=settings.effective_ai_timeout_seconds,
                     )
                     logger.info("Successfully used model: %s via Gemini", model_name)
                     return response.text
 
+                groq_key = (credentials or {}).get("groq", self.groq_api_key)
                 response_text = await self._generate_content_groq(
                     model_name,
                     contents,
                     generation_config,
+                    groq_key,
                 )
                 logger.info("Successfully used model: %s via Groq", model_name)
                 return response_text
@@ -748,9 +765,14 @@ class AIService:
             raise last_error
         raise Exception("No AI models available")
 
-    async def process_message(self, text: str) -> dict:
+    async def _resolve_provider_credentials(self, user: User | None = None) -> dict[str, str]:
+        """Resolve effective provider credentials for the current user."""
+        return await self.credential_service.resolve_many(["gemini", "groq"], user=user)
+
+    async def process_message(self, text: str, user: User | None = None) -> dict:
         """Process text message and extract intent/data."""
         try:
+            provider_credentials = await self._resolve_provider_credentials(user)
             # Add current date context
             today = date.today()
             context = f"Data atual: {today.strftime('%d/%m/%Y')}\n\nMensagem do usuario: {text}"
@@ -761,6 +783,7 @@ class AIService:
                     response_mime_type="application/json",
                     temperature=0.1,
                 ),
+                credentials=provider_credentials,
             )
 
             # Parse JSON response
@@ -786,9 +809,11 @@ class AIService:
         self,
         image_data: bytes,
         additional_text: str = "",
+        user: User | None = None,
     ) -> dict:
         """Process image (receipt/invoice) and extract data."""
         try:
+            provider_credentials = await self._resolve_provider_credentials(user)
             # Encode image to base64
             image_b64 = base64.b64encode(image_data).decode("utf-8")
 
@@ -811,6 +836,7 @@ class AIService:
                     temperature=0.1,
                 ),
                 vision_only=True,
+                credentials=provider_credentials,
             )
 
             result = json.loads(response_text)
@@ -829,9 +855,11 @@ class AIService:
         self,
         pdf_text: str,
         additional_text: str = "",
+        user: User | None = None,
     ) -> dict:
         """Process extracted PDF text and infer expense data."""
         try:
+            provider_credentials = await self._resolve_provider_credentials(user)
             text_excerpt = pdf_text[:12000]
             prompt = PDF_PROMPT + f"\n\nTexto extraido do PDF:\n{text_excerpt}"
             if additional_text:
@@ -843,6 +871,7 @@ class AIService:
                     response_mime_type="application/json",
                     temperature=0.1,
                 ),
+                credentials=provider_credentials,
             )
 
             result = json.loads(response_text)
@@ -861,6 +890,7 @@ class AIService:
         self,
         expense_summary: str,
         user_response: str,
+        user: User | None = None,
     ) -> dict:
         """
         Evaluate user response to expense confirmation.
@@ -929,6 +959,7 @@ class AIService:
                 expense_summary=expense_summary,
                 user_response=user_response,
             )
+            provider_credentials = await self._resolve_provider_credentials(user)
 
             response_text = await self._generate_with_fallback(
                 contents=[prompt],
@@ -936,6 +967,7 @@ class AIService:
                     response_mime_type="application/json",
                     temperature=0.1,
                 ),
+                credentials=provider_credentials,
             )
 
             logger.debug(f"AI confirmation raw response: {response_text}")
