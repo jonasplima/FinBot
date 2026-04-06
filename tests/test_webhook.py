@@ -843,7 +843,12 @@ class TestWebhookHandlerIntentHandling:
     ):
         """Test confirmed backup restore."""
         handler.backup_service.load_temporary_backup = AsyncMock(
-            return_value={"metadata": {"schema_version": 1}, "expenses": [], "budgets": [], "goals": []}
+            return_value={
+                "metadata": {"schema_version": 1},
+                "expenses": [],
+                "budgets": [],
+                "goals": [],
+            }
         )
         handler.backup_service.delete_temporary_backup = AsyncMock()
         handler.backup_service.restore_user_backup = AsyncMock(

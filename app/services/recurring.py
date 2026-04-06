@@ -88,7 +88,7 @@ class RecurringService:
         normalized_phone = normalize_phone(phone)
         today = date.today()
 
-        upcoming_days = { (today + timedelta(days=i)).day for i in range(days) }
+        upcoming_days = {(today + timedelta(days=i)).day for i in range(days)}
 
         result = await session.execute(
             select(Expense)

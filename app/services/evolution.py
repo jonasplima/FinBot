@@ -16,6 +16,7 @@ settings = get_settings()
 # Format: {message_id: timestamp}
 _sent_message_ids: dict[str, datetime] = {}
 
+
 def _cleanup_old_ids() -> None:
     """Remove IDs older than 1 hour to prevent memory leaks."""
     cutoff = datetime.now() - timedelta(hours=1)

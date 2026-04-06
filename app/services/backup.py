@@ -134,10 +134,7 @@ class BackupService:
             max_mb = settings.effective_max_backup_size_bytes / 1_000_000
             return {
                 "success": False,
-                "error": (
-                    "O arquivo JSON excede o limite seguro do servidor "
-                    f"({max_mb:.1f} MB)."
-                ),
+                "error": (f"O arquivo JSON excede o limite seguro do servidor ({max_mb:.1f} MB)."),
             }
 
         try:
@@ -245,7 +242,9 @@ class BackupService:
                     serialized,
                 )
             except Exception as exc:
-                logger.warning(f"Redis unavailable for temporary backup store, using fallback: {exc}")
+                logger.warning(
+                    f"Redis unavailable for temporary backup store, using fallback: {exc}"
+                )
                 self._fallback_temp_storage[backup_ref] = (
                     serialized,
                     datetime.fromtimestamp(expires_at),
@@ -273,7 +272,9 @@ class BackupService:
             try:
                 serialized = await redis_client.get(backup_ref)
             except Exception as exc:
-                logger.warning(f"Redis unavailable for temporary backup load, using fallback: {exc}")
+                logger.warning(
+                    f"Redis unavailable for temporary backup load, using fallback: {exc}"
+                )
 
         if serialized is None:
             entry = self._fallback_temp_storage.get(backup_ref)
@@ -697,11 +698,15 @@ class BackupService:
             expense.get("installment_current"),
             "Despesa.installment_current",
         )
-        self._ensure_optional_positive_int(expense.get("installment_total"), "Despesa.installment_total")
+        self._ensure_optional_positive_int(
+            expense.get("installment_total"), "Despesa.installment_total"
+        )
         self._ensure_optional_decimal(expense.get("shared_percentage"), "Despesa.shared_percentage")
         self._ensure_optional_decimal(expense.get("original_amount"), "Despesa.original_amount")
         self._ensure_optional_decimal(expense.get("exchange_rate"), "Despesa.exchange_rate")
-        self._ensure_optional_positive_int(expense.get("recurring_day"), "Despesa.recurring_day", 31)
+        self._ensure_optional_positive_int(
+            expense.get("recurring_day"), "Despesa.recurring_day", 31
+        )
         self._ensure_optional_bool(expense.get("is_shared"), "Despesa.is_shared")
         self._ensure_optional_bool(expense.get("is_recurring"), "Despesa.is_recurring")
         self._ensure_optional_bool(expense.get("recurring_active"), "Despesa.recurring_active")
@@ -738,7 +743,11 @@ class BackupService:
     def _validate_goal_item(self, goal: Mapping[str, Any]) -> None:
         self._ensure_mapping(goal, "Meta")
         self._reject_unknown_fields(goal, GOAL_ALLOWED_KEYS, "Meta")
-        self._require_fields(goal, ("description", "target_amount", "current_amount", "deadline", "start_date"), "Meta")
+        self._require_fields(
+            goal,
+            ("description", "target_amount", "current_amount", "deadline", "start_date"),
+            "Meta",
+        )
         self._ensure_decimal(goal["target_amount"], "Meta.target_amount")
         self._ensure_decimal(goal["current_amount"], "Meta.current_amount")
         self._ensure_date(goal["deadline"], "Meta.deadline")
@@ -759,7 +768,9 @@ class BackupService:
     def _validate_goal_update_item(self, update: Mapping[str, Any]) -> None:
         self._ensure_mapping(update, "Atualizacao de meta")
         self._reject_unknown_fields(update, GOAL_UPDATE_ALLOWED_KEYS, "Atualizacao de meta")
-        self._require_fields(update, ("previous_amount", "new_amount", "update_type"), "Atualizacao de meta")
+        self._require_fields(
+            update, ("previous_amount", "new_amount", "update_type"), "Atualizacao de meta"
+        )
         self._ensure_decimal(update["previous_amount"], "GoalUpdate.previous_amount")
         self._ensure_decimal(update["new_amount"], "GoalUpdate.new_amount")
         if str(update["update_type"]) not in GOAL_UPDATE_ALLOWED_TYPES:

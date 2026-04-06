@@ -278,7 +278,9 @@ class TestGeminiServiceProcessMessage:
 
         with (
             patch("app.services.gemini.genai") as mock_genai,
-            patch("app.services.gemini.asyncio.to_thread", side_effect=fake_to_thread) as mock_to_thread,
+            patch(
+                "app.services.gemini.asyncio.to_thread", side_effect=fake_to_thread
+            ) as mock_to_thread,
         ):
             mock_genai.GenerativeModel.return_value = mock_model
 
