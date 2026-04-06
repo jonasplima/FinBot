@@ -160,9 +160,10 @@ class TestEvolutionWebhookAuthentication:
         """Test webhook is rejected if authentication is not configured."""
         request = self._build_request(headers={"Authorization": "Bearer anything"})
 
-        with patch("app.main.settings.webhook_secret", ""), pytest.raises(
-            HTTPException
-        ) as exc_info:
+        with (
+            patch("app.main.settings.webhook_secret", ""),
+            pytest.raises(HTTPException) as exc_info,
+        ):
             await evolution_webhook(request)
 
         assert exc_info.value.status_code == 503
@@ -171,9 +172,11 @@ class TestEvolutionWebhookAuthentication:
         """Test webhook is rejected before processing when auth is invalid."""
         request = self._build_request(headers={"Authorization": "Bearer wrong-secret"})
 
-        with patch("app.main.settings.webhook_secret", "test-webhook-secret"), patch(
-            "app.handlers.webhook.WebhookHandler"
-        ) as mock_handler_cls, pytest.raises(HTTPException) as exc_info:
+        with (
+            patch("app.main.settings.webhook_secret", "test-webhook-secret"),
+            patch("app.handlers.webhook.WebhookHandler") as mock_handler_cls,
+            pytest.raises(HTTPException) as exc_info,
+        ):
             await evolution_webhook(request)
 
         assert exc_info.value.status_code == 401
@@ -183,9 +186,10 @@ class TestEvolutionWebhookAuthentication:
         """Test webhook is processed when the Authorization header is valid."""
         request = self._build_request(headers={"Authorization": "Bearer test-webhook-secret"})
 
-        with patch("app.main.settings.webhook_secret", "test-webhook-secret"), patch(
-            "app.handlers.webhook.WebhookHandler"
-        ) as mock_handler_cls:
+        with (
+            patch("app.main.settings.webhook_secret", "test-webhook-secret"),
+            patch("app.handlers.webhook.WebhookHandler") as mock_handler_cls,
+        ):
             mock_handler = MagicMock()
             mock_handler.handle = AsyncMock()
             mock_handler_cls.return_value = mock_handler
@@ -231,9 +235,10 @@ class TestAdminAuthentication:
             headers={"Authorization": "Bearer wrong-secret"},
         )
 
-        with patch("app.main.settings.admin_secret", "test-secret"), pytest.raises(
-            HTTPException
-        ) as exc_info:
+        with (
+            patch("app.main.settings.admin_secret", "test-secret"),
+            pytest.raises(HTTPException) as exc_info,
+        ):
             await get_qrcode(request)
 
         assert exc_info.value.status_code == 401
@@ -245,9 +250,10 @@ class TestAdminAuthentication:
             headers={"Authorization": "Bearer test-secret"},
         )
 
-        with patch("app.main.settings.admin_secret", "test-secret"), patch(
-            "app.services.evolution.EvolutionService"
-        ) as mock_evolution_cls:
+        with (
+            patch("app.main.settings.admin_secret", "test-secret"),
+            patch("app.services.evolution.EvolutionService") as mock_evolution_cls,
+        ):
             mock_evolution = MagicMock()
             mock_evolution.get_connection_state = AsyncMock(return_value={"instance": "ok"})
             mock_evolution_cls.return_value = mock_evolution
