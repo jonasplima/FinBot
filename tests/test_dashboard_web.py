@@ -123,6 +123,8 @@ class TestDashboardWeb:
 
         payload = await dashboard_state(request)
         assert payload["user"]["base_currency"] == "BRL"
+        assert payload["user"]["decimal_separator"] == ","
+        assert payload["user"]["thousands_separator"] == "."
         assert payload["summary"]["expense_count"] == 0
         assert any(item["code"] == "USD" for item in payload["currencies"])
 

@@ -63,6 +63,8 @@ class UserService:
             preferred_channel="whatsapp",
             timezone="America/Sao_Paulo",
             base_currency="BRL",
+            decimal_separator=",",
+            thousands_separator=".",
             limits_enabled=True,
             daily_text_limit=defaults["daily_text_limit"],
             daily_media_limit=defaults["daily_media_limit"],
@@ -311,6 +313,34 @@ class UserService:
             raise ValueError("Moeda base invalida.")
 
         user.base_currency = normalized_currency
+        user.updated_at = datetime.now()
+        user.last_seen_at = datetime.now()
+        await session.commit()
+        await session.refresh(user)
+        return user
+
+    async def update_number_format_preferences(
+        self,
+        session: AsyncSession,
+        user: User,
+        *,
+        decimal_separator: str,
+        thousands_separator: str,
+    ) -> User:
+        """Update the user's preferred numeric separators."""
+        normalized_decimal = decimal_separator.strip()
+        normalized_thousands = thousands_separator.strip()
+        allowed_separators = {".", ",", " "}
+
+        if normalized_decimal not in allowed_separators:
+            raise ValueError("Separador decimal invalido.")
+        if normalized_thousands not in allowed_separators:
+            raise ValueError("Separador de milhar invalido.")
+        if normalized_decimal == normalized_thousands:
+            raise ValueError("Os separadores decimal e de milhar devem ser diferentes.")
+
+        user.decimal_separator = normalized_decimal
+        user.thousands_separator = normalized_thousands
         user.updated_at = datetime.now()
         user.last_seen_at = datetime.now()
         await session.commit()

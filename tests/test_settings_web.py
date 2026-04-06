@@ -106,6 +106,8 @@ class TestSettingsWeb:
         initial_payload = await settings_state(request)
         assert initial_payload["user"]["phone"] == "5511910101010"
         assert initial_payload["notifications"]["budget_alerts"] is True
+        assert initial_payload["user"]["decimal_separator"] == ","
+        assert initial_payload["user"]["thousands_separator"] == "."
 
         profile_payload = await settings_profile(
             request,
@@ -115,6 +117,8 @@ class TestSettingsWeb:
                 timezone="UTC",
                 email="helena.costa@example.com",
                 base_currency="USD",
+                decimal_separator=".",
+                thousands_separator=",",
             ),
         )
         assert profile_payload["user"]["name"] == "Helena Costa"
@@ -122,6 +126,8 @@ class TestSettingsWeb:
         assert profile_payload["user"]["email"] == "helena.costa@example.com"
         assert profile_payload["user"]["timezone"] == "UTC"
         assert profile_payload["user"]["base_currency"] == "USD"
+        assert profile_payload["user"]["decimal_separator"] == "."
+        assert profile_payload["user"]["thousands_separator"] == ","
 
         notifications_payload = await settings_notifications(
             request,

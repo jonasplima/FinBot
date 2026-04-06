@@ -71,6 +71,8 @@ class User(Base):
     preferred_channel = Column(String(30), default="whatsapp", nullable=False)
     timezone = Column(String(50), nullable=True)
     base_currency = Column(String(3), default="BRL", nullable=False)
+    decimal_separator = Column(String(1), default=",", nullable=False)
+    thousands_separator = Column(String(1), default=".", nullable=False)
     web_access_enabled = Column(Boolean, default=False, nullable=False)
     limits_enabled = Column(Boolean, default=True, nullable=False)
     daily_text_limit = Column(Integer, default=100, nullable=False)

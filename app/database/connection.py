@@ -75,6 +75,22 @@ async def init_db() -> None:
             await conn.execute(
                 text(
                     """
+                    ALTER TABLE users
+                    ADD COLUMN IF NOT EXISTS decimal_separator VARCHAR(1) DEFAULT ',' NOT NULL
+                    """
+                )
+            )
+            await conn.execute(
+                text(
+                    """
+                    ALTER TABLE users
+                    ADD COLUMN IF NOT EXISTS thousands_separator VARCHAR(1) DEFAULT '.' NOT NULL
+                    """
+                )
+            )
+            await conn.execute(
+                text(
+                    """
                     ALTER TABLE expenses
                     ADD COLUMN IF NOT EXISTS goal_id INTEGER NULL
                     """

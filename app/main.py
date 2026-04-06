@@ -103,6 +103,8 @@ class SettingsProfileRequest(BaseModel):
     timezone: str
     email: str | None = None
     base_currency: str = "BRL"
+    decimal_separator: str = ","
+    thousands_separator: str = "."
 
 
 class SettingsNotificationsRequest(BaseModel):
@@ -467,6 +469,8 @@ def _build_settings_payload(
             "email": user.email,
             "timezone": user.timezone,
             "base_currency": getattr(user, "base_currency", "BRL"),
+            "decimal_separator": getattr(user, "decimal_separator", ","),
+            "thousands_separator": getattr(user, "thousands_separator", "."),
             "accepted_terms": user.accepted_terms,
             "accepted_terms_at": user.accepted_terms_at.isoformat()
             if user.accepted_terms_at
@@ -625,6 +629,8 @@ async def _build_dashboard_payload(
             "display_name": user.display_name,
             "timezone": user.timezone,
             "base_currency": getattr(user, "base_currency", "BRL"),
+            "decimal_separator": getattr(user, "decimal_separator", ","),
+            "thousands_separator": getattr(user, "thousands_separator", "."),
         },
         "summary": {
             "income": round(total_income, 2),
@@ -2152,6 +2158,19 @@ async def web_settings_page(request: Request):
                             <label>Moeda base
                                 <select name="base_currency" required></select>
                             </label>
+                            <label>Separador decimal
+                                <select name="decimal_separator" required>
+                                    <option value=",">Vírgula (,)</option>
+                                    <option value=".">Ponto (.)</option>
+                                </select>
+                            </label>
+                            <label>Separador de milhar
+                                <select name="thousands_separator" required>
+                                    <option value=".">Ponto (.)</option>
+                                    <option value=",">Vírgula (,)</option>
+                                    <option value=" ">Espaço</option>
+                                </select>
+                            </label>
                             <button class="primary" type="submit">Salvar perfil</button>
                         </form>
                         <div class="status" id="profile-status"></div>
@@ -2273,6 +2292,10 @@ async def web_settings_page(request: Request):
                         const selected = item.code === (payload.user.base_currency || 'BRL') ? 'selected' : '';
                         return `<option value="${item.code}" ${selected}>${item.name}</option>`;
                     }).join('');
+                    document.querySelector('#profile-form [name="decimal_separator"]').value =
+                        payload.user.decimal_separator || ',';
+                    document.querySelector('#profile-form [name="thousands_separator"]').value =
+                        payload.user.thousands_separator || '.';
                     document.getElementById('terms-summary').innerHTML =
                         `Versão: <strong>${payload.user.terms_version || '-'}</strong><br>` +
                         `Status: <strong>${payload.user.accepted_terms ? 'Aceitos' : 'Pendentes'}</strong><br>` +
@@ -3455,11 +3478,36 @@ async def web_dashboard_page(request: Request):
                     return data ?? {};
                 }
 
+                function currentNumberFormat() {
+                    return {
+                        decimalSeparator: appState.payload?.user?.decimal_separator || ',',
+                        thousandsSeparator: appState.payload?.user?.thousands_separator || '.',
+                    };
+                }
+
+                function formatNumber(value, decimals = 2) {
+                    const numericValue = Number(value || 0);
+                    const { decimalSeparator, thousandsSeparator } = currentNumberFormat();
+                    const sign = numericValue < 0 ? '-' : '';
+                    const fixed = Math.abs(numericValue).toFixed(decimals);
+                    const [integerPart, decimalPart] = fixed.split('.');
+                    const groupedInteger = integerPart.replace(/\\B(?=(\\d{3})+(?!\\d))/g, thousandsSeparator);
+                    if (decimals <= 0) {
+                        return `${sign}${groupedInteger}`;
+                    }
+                    return `${sign}${groupedInteger}${decimalSeparator}${decimalPart}`;
+                }
+
                 function money(value) {
-                    return new Intl.NumberFormat('pt-BR', {
-                        style: 'currency',
-                        currency: 'BRL',
-                    }).format(Number(value || 0));
+                    return `R$ ${formatNumber(value, 2)}`;
+                }
+
+                function percent(value, decimals = 1) {
+                    return `${formatNumber(value, decimals)}%`;
+                }
+
+                function amountWithCurrency(value, currency) {
+                    return `${formatNumber(value, 2)} ${escapeHtml(currency)}`;
                 }
 
                 function escapeHtml(value) {
@@ -3597,7 +3645,7 @@ async def web_dashboard_page(request: Request):
                             <td>${money(item.limit)}</td>
                             <td>${money(item.spent)}</td>
                             <td>${money(item.remaining)}</td>
-                            <td class="mono">${Number(item.percentage).toFixed(1)}%</td>
+                            <td class="mono">${percent(item.percentage)}</td>
                             <td><button class="ghost" type="button" data-remove-budget="${escapeHtml(item.category === 'Geral' ? '' : item.category)}">Remover</button></td>
                         </tr>
                     `).join('');
@@ -3616,7 +3664,7 @@ async def web_dashboard_page(request: Request):
                                 <small>Guardado ${money(item.current_progress)} de ${money(item.target_amount)} • Prazo ${escapeHtml(item.deadline)}</small>
                             </div>
                             <div class="actions">
-                                <span class="mono">${Number(item.percentage).toFixed(1)}%</span>
+                                <span class="mono">${percent(item.percentage)}</span>
                                 <button class="ghost" type="button" data-remove-goal="${escapeHtml(item.description)}">Encerrar</button>
                             </div>
                         </div>
@@ -3673,8 +3721,8 @@ async def web_dashboard_page(request: Request):
                             <td>${escapeHtml(expense.category)}</td>
                             <td>${escapeHtml(expense.payment_method)}</td>
                             <td>${money(expense.amount)}</td>
-                            <td>${expense.is_shared ? `Sim • ${Number(expense.shared_percentage || 0).toFixed(0)}% seu` : 'Nao'}</td>
-                            <td>${expense.original_currency ? `${escapeHtml(expense.original_currency)} ${Number(expense.original_amount || 0).toFixed(2)}` : 'BRL'}</td>
+                            <td>${expense.is_shared ? `Sim • ${percent(expense.shared_percentage || 0, 0)} seu` : 'Nao'}</td>
+                            <td>${expense.original_currency ? amountWithCurrency(expense.original_amount || 0, expense.original_currency) : 'BRL'}</td>
                             <td>
                                 <div class="actions">
                                     <button class="ghost" type="button" data-edit-expense="${expense.id}">Editar</button>
@@ -3971,9 +4019,9 @@ async def web_dashboard_page(request: Request):
                             }),
                         });
                         document.getElementById('currency-result').innerHTML =
-                            `<strong>${Number(payload.original_amount).toFixed(2)} ${escapeHtml(payload.original_currency)}</strong> ` +
-                            `equivale a <strong>${Number(payload.converted_amount).toFixed(2)} ${escapeHtml(payload.target_currency)}</strong><br>` +
-                            `Taxa usada: ${Number(payload.exchange_rate).toFixed(4)}`;
+                            `<strong>${amountWithCurrency(payload.original_amount, payload.original_currency)}</strong> ` +
+                            `equivale a <strong>${amountWithCurrency(payload.converted_amount, payload.target_currency)}</strong><br>` +
+                            `Taxa usada: ${formatNumber(payload.exchange_rate, 4)}`;
                     } catch (error) {
                         document.getElementById('currency-result').textContent = error.message;
                     }
@@ -4123,6 +4171,12 @@ async def settings_profile(request: Request, payload: SettingsProfileRequest):
                 session,
                 updated_user,
                 base_currency=_normalize_currency_code(payload.base_currency),
+            )
+            updated_user = await user_service.update_number_format_preferences(
+                session,
+                updated_user,
+                decimal_separator=payload.decimal_separator,
+                thousands_separator=payload.thousands_separator,
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
