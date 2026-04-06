@@ -70,6 +70,7 @@ class Settings(BaseSettings):
     max_backup_budget_alerts: int = 1_000
     max_backup_goal_updates: int = 1_000
     backup_temp_ttl_seconds: int = 600
+    webhook_idempotency_ttl_seconds: int = 172_800
 
     class Config:
         env_file = ".env"
@@ -142,6 +143,11 @@ class Settings(BaseSettings):
     def effective_backup_temp_ttl_seconds(self) -> int:
         """Clamp temporary backup TTL to a safe server ceiling."""
         return min(max(self.backup_temp_ttl_seconds, 60), 3_600)
+
+    @property
+    def effective_webhook_idempotency_ttl_seconds(self) -> int:
+        """Clamp webhook idempotency TTL to a safe server ceiling."""
+        return min(max(self.webhook_idempotency_ttl_seconds, 3_600), 604_800)
 
 
 @lru_cache

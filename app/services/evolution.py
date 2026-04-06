@@ -16,17 +16,12 @@ settings = get_settings()
 # Format: {message_id: timestamp}
 _sent_message_ids: dict[str, datetime] = {}
 
-# Track processed message IDs to avoid duplicates
-_processed_message_ids: dict[str, datetime] = {}
-
-
 def _cleanup_old_ids() -> None:
     """Remove IDs older than 1 hour to prevent memory leaks."""
     cutoff = datetime.now() - timedelta(hours=1)
 
-    global _sent_message_ids, _processed_message_ids
+    global _sent_message_ids
     _sent_message_ids = {k: v for k, v in _sent_message_ids.items() if v > cutoff}
-    _processed_message_ids = {k: v for k, v in _processed_message_ids.items() if v > cutoff}
 
 
 class EvolutionService:
@@ -379,15 +374,6 @@ class EvolutionService:
                 del _sent_message_ids[msg_id]
                 logger.info(f"Skipping bot's own sent message: {msg_id}")
                 return None
-
-            # Skip if already processed (duplicate webhook)
-            if msg_id in _processed_message_ids:
-                logger.info(f"Skipping already processed message: {msg_id}")
-                return None
-
-            # Track this message as processed
-            if msg_id:
-                _processed_message_ids[msg_id] = datetime.now()
 
             # Get sender phone
             remote_jid = key.get("remoteJid", "")

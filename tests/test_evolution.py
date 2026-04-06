@@ -40,6 +40,32 @@ class TestEvolutionServiceMessageExtraction:
         assert result["text"] == "segue comprovante"
         assert result["has_image"] is False
 
+    def test_extract_message_data_does_not_deduplicate_in_memory(self):
+        """Test message extraction no longer drops duplicates by local memory state."""
+        webhook_data = {
+            "event": "messages.upsert",
+            "data": {
+                "key": {
+                    "id": "dup-123",
+                    "remoteJid": "5511999999999@s.whatsapp.net",
+                },
+                "message": {
+                    "conversation": "teste",
+                },
+            },
+        }
+
+        with patch("app.services.evolution.settings"):
+            service = EvolutionService()
+
+        first = service.extract_message_data(webhook_data)
+        second = service.extract_message_data(webhook_data)
+
+        assert first is not None
+        assert second is not None
+        assert first["message_key"]["id"] == "dup-123"
+        assert second["message_key"]["id"] == "dup-123"
+
 
 class TestEvolutionServiceWebhookSetup:
     """Tests for webhook setup payload sent to Evolution API."""

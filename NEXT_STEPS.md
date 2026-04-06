@@ -153,16 +153,19 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
 ### 0.6 Idempotência, Retry e Confiabilidade do Webhook
 - **Complexidade:** Média/Alta 🔴
 - **Valor:** Alto
-- **Status:** Pendente
+- **Status:** Implementado
 - **Problema identificado:**
   - Em caso de erro a API responde `200`, o que pode mascarar falhas e impedir retry da origem
   - A deduplicação de mensagens está só em memória, perdendo eficácia em restart ou múltiplas instâncias
   - O fluxo de confirmações pendentes depende de replace por usuário e pode sofrer com corridas
-- **Plano de correção:**
-  - Persistir identificadores processados em banco ou Redis com TTL e chave única
-  - Revisar a estratégia de resposta HTTP para não sinalizar sucesso quando o evento falhou internamente
-  - Adicionar proteção transacional e, se necessário, constraint para uma confirmação pendente por usuário
-  - Criar testes de duplicidade, retry e reinício do processo
+- **Implementação:**
+  - ✅ Criação de um serviço dedicado de idempotência do webhook com Redis e fallback em memória
+  - ✅ Reserva do `message_id` na borda HTTP antes de qualquer efeito colateral
+  - ✅ Resposta explícita para duplicatas com `duplicate_ignored`
+  - ✅ Retorno `500` em falha real, com liberação da reserva para permitir retry
+  - ✅ Remoção da deduplicação em memória dentro da extração da Evolution API
+  - ✅ Configuração de TTL da idempotência via ambiente
+  - ✅ Testes cobrindo evento novo, duplicado, mensagem sem `message_id` e liberação da reserva em erro
 - **Critérios de aceite:**
   - O mesmo evento não é processado duas vezes após retry ou reinício
   - Falhas reais não retornam sucesso enganoso para a origem
@@ -170,9 +173,11 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
 - **Arquivos impactados:**
   - `app/main.py`
   - `app/services/evolution.py`
-  - `app/handlers/webhook.py`
-  - `app/database/models.py`
+  - `app/services/webhook_idempotency.py`
   - `tests/test_webhook.py`
+  - `tests/test_evolution.py`
+  - `docker-compose.yml`
+  - `.env.example`
 
 ### 0.7 Isolamento das Chamadas do Gemini do Event Loop
 - **Complexidade:** Média 🟡

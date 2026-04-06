@@ -9,6 +9,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from app.config import get_settings
 from app.database.connection import async_session, init_db
 from app.database.seed import seed_all
+from app.services.webhook_idempotency import WebhookIdempotencyService
 
 # Configure logging
 logging.basicConfig(
@@ -18,6 +19,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 settings = get_settings()
+MESSAGE_EVENTS = {"messages.upsert", "messages_upssert", "message"}
 
 
 def _is_valid_webhook_authorization(authorization: str | None) -> bool:
@@ -36,6 +38,17 @@ def _is_valid_admin_authorization(authorization: str | None) -> bool:
 
     expected = f"Bearer {settings.admin_secret}"
     return authorization == expected
+
+
+def _is_message_event(event: str) -> bool:
+    """Check whether the webhook event carries a user message."""
+    normalized = event.lower()
+    return normalized in MESSAGE_EVENTS or normalized == "messages_upsert"
+
+
+def _extract_webhook_message_id(body: dict) -> str:
+    """Extract message ID from webhook payload when available."""
+    return str(body.get("data", {}).get("key", {}).get("id", "")).strip()
 
 
 @asynccontextmanager
@@ -363,6 +376,23 @@ async def evolution_webhook(request: Request):
         event = body.get("event", "unknown")
         logger.info(f"Webhook event: {event}")
 
+        message_id = ""
+        if _is_message_event(event):
+            message_id = _extract_webhook_message_id(body)
+            if not message_id:
+                logger.warning("Webhook message event rejected due to missing message ID")
+                return JSONResponse(
+                    status_code=400,
+                    content={"status": "error", "message": "Missing webhook message ID"},
+                )
+
+        idempotency_service = WebhookIdempotencyService()
+        if message_id:
+            reserved = await idempotency_service.reserve(message_id)
+            if not reserved:
+                logger.info(f"Duplicate webhook ignored: {message_id}")
+                return {"status": "duplicate_ignored"}
+
         from app.handlers.webhook import WebhookHandler
 
         handler = WebhookHandler()
@@ -371,8 +401,10 @@ async def evolution_webhook(request: Request):
         return {"status": "ok"}
     except Exception as e:
         logger.error(f"Webhook error: {e}")
+        if "message_id" in locals() and message_id and "idempotency_service" in locals():
+            await idempotency_service.release(message_id)
         return JSONResponse(
-            status_code=200,  # Always return 200 to Evolution
+            status_code=500,
             content={"status": "error", "message": str(e)},
         )
 

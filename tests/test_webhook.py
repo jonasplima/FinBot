@@ -129,7 +129,10 @@ class TestEvolutionWebhookAuthentication:
 
     @staticmethod
     def _build_request(headers: dict[str, str] | None = None, body: dict | None = None) -> Request:
-        payload = body or {"event": "messages.upsert", "data": {}}
+        payload = body or {
+            "event": "messages.upsert",
+            "data": {"key": {"id": "msg-123"}},
+        }
         header_pairs = []
         for key, value in (headers or {}).items():
             header_pairs.append((key.lower().encode("latin-1"), value.encode("latin-1")))
@@ -188,8 +191,12 @@ class TestEvolutionWebhookAuthentication:
 
         with (
             patch("app.main.settings.webhook_secret", "test-webhook-secret"),
+            patch("app.main.WebhookIdempotencyService") as mock_idempotency_cls,
             patch("app.handlers.webhook.WebhookHandler") as mock_handler_cls,
         ):
+            mock_idempotency = MagicMock()
+            mock_idempotency.reserve = AsyncMock(return_value=True)
+            mock_idempotency_cls.return_value = mock_idempotency
             mock_handler = MagicMock()
             mock_handler.handle = AsyncMock()
             mock_handler_cls.return_value = mock_handler
@@ -199,6 +206,58 @@ class TestEvolutionWebhookAuthentication:
         assert response == {"status": "ok"}
         mock_handler_cls.assert_called_once()
         mock_handler.handle.assert_awaited_once()
+
+    async def test_ignores_duplicate_webhook(self):
+        """Test duplicate webhook events are ignored safely."""
+        request = self._build_request(headers={"Authorization": "Bearer test-webhook-secret"})
+
+        with (
+            patch("app.main.settings.webhook_secret", "test-webhook-secret"),
+            patch("app.main.WebhookIdempotencyService") as mock_idempotency_cls,
+            patch("app.handlers.webhook.WebhookHandler") as mock_handler_cls,
+        ):
+            mock_idempotency = MagicMock()
+            mock_idempotency.reserve = AsyncMock(return_value=False)
+            mock_idempotency_cls.return_value = mock_idempotency
+
+            response = await evolution_webhook(request)
+
+        assert response == {"status": "duplicate_ignored"}
+        mock_handler_cls.assert_not_called()
+
+    async def test_returns_500_and_releases_reservation_on_failure(self):
+        """Test webhook failure returns 500 and releases reserved message ID."""
+        request = self._build_request(headers={"Authorization": "Bearer test-webhook-secret"})
+
+        with (
+            patch("app.main.settings.webhook_secret", "test-webhook-secret"),
+            patch("app.main.WebhookIdempotencyService") as mock_idempotency_cls,
+            patch("app.handlers.webhook.WebhookHandler") as mock_handler_cls,
+        ):
+            mock_idempotency = MagicMock()
+            mock_idempotency.reserve = AsyncMock(return_value=True)
+            mock_idempotency.release = AsyncMock()
+            mock_idempotency_cls.return_value = mock_idempotency
+            mock_handler = MagicMock()
+            mock_handler.handle = AsyncMock(side_effect=RuntimeError("boom"))
+            mock_handler_cls.return_value = mock_handler
+
+            response = await evolution_webhook(request)
+
+        assert response.status_code == 500
+        mock_idempotency.release.assert_awaited_once_with("msg-123")
+
+    async def test_rejects_message_event_without_message_id(self):
+        """Test message webhooks without a message ID are rejected explicitly."""
+        request = self._build_request(
+            headers={"Authorization": "Bearer test-webhook-secret"},
+            body={"event": "messages.upsert", "data": {"key": {}}},
+        )
+
+        with patch("app.main.settings.webhook_secret", "test-webhook-secret"):
+            response = await evolution_webhook(request)
+
+        assert response.status_code == 400
 
 
 class TestAdminAuthentication:

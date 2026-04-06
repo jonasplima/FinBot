@@ -407,6 +407,7 @@ def mock_settings():
         mock_settings.default_daily_text_limit = 100
         mock_settings.default_daily_media_limit = 20
         mock_settings.default_daily_ai_limit = 50
+        mock_settings.webhook_idempotency_ttl_seconds = 172800
         mock_settings.user_limit_defaults.return_value = {
             "daily_text_limit": 100,
             "daily_media_limit": 20,
