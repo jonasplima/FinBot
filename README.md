@@ -139,6 +139,7 @@ Observação:
 - As credenciais são injetadas no container em runtime pelo `docker-compose`, não copiadas para a imagem
 - As portas publicadas por padrão ficam presas em `127.0.0.1`, reduzindo exposição acidental na rede local
 - O serviço `finbot` roda com filesystem somente leitura, `tmpfs` em `/tmp` e `no-new-privileges`
+- As imagens do Compose e do `Dockerfile` podem ser travadas por digest via `.env`, sem editar o YAML
 
 ### 4. Conecte o WhatsApp
 
@@ -217,7 +218,24 @@ mypy app/
 # Auditoria local de dependências conhecidas
 pip install pip-audit
 pip-audit -r requirements.txt
+
+# Verificação adicional de consistência do ambiente instalado
+pip check
 ```
+
+### Pin por Digest em Produção
+
+Para produção, prefira travar imagens por digest em vez de depender apenas de tags mutáveis. O `docker-compose.yml` e o `Dockerfile` já aceitam isso via variáveis de ambiente:
+
+```env
+POSTGRES_IMAGE=postgres:16-alpine@sha256:...
+REDIS_IMAGE=redis:7-alpine@sha256:...
+EVOLUTION_IMAGE=evoapicloud/evolution-api:v2.3.7@sha256:...
+PYTHON_BUILDER_IMAGE=python:3.12-slim@sha256:...
+PYTHON_RUNTIME_IMAGE=python:3.12-slim@sha256:...
+```
+
+Assim o deploy continua igual, mas com origem de imagem mais reprodutível e auditável.
 
 ---
 

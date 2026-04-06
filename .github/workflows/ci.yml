@@ -48,6 +48,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install mypy types-python-dateutil
+          pip check
 
       - name: Run MyPy
         run: mypy app --ignore-missing-imports
@@ -68,6 +69,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pytest pytest-asyncio pytest-cov aiosqlite
+          pip check
 
       - name: Run tests with coverage
         env:
@@ -106,6 +108,8 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pip-audit
+          pip install -r requirements.txt
+          pip check
 
       - name: Audit dependencies
         run: pip-audit -r requirements.txt

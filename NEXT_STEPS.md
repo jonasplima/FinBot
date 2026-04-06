@@ -359,7 +359,7 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
   - ⏳ Ainda falta avaliar identificador estável de usuário para reduzir dependência exclusiva do telefone
 
 #### 0.9.7 Hardening adicional de Docker e supply chain
-- **Status:** Parcialmente implementado
+- **Status:** Implementado
 - **Problema identificado:**
   - Imagens base e de terceiros não estão fixadas por digest
   - Dependências Python não usam hashes de integridade
@@ -378,7 +378,9 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
   - ✅ Serviço `finbot` endurecido com `read_only`, `tmpfs`, `cap_drop: [ALL]` e `no-new-privileges`
   - ✅ Portas publicadas em `localhost` por padrão no Compose
   - ✅ Job de `pip-audit` adicionado à CI em modo não-bloqueante
-  - ⏳ Ainda faltam pin por digest das imagens e, se desejado, hashes de integridade para dependências Python
+  - ✅ Compose e build Docker parametrizados para permitir pin por digest via ambiente
+  - ✅ CI reforçada com `pip check` para validar consistência das dependências instaladas
+  - ⏳ Ainda faltam hashes de integridade para dependências Python, se o projeto decidir adotar lockfile mais rígido
 
 #### 0.9.8 Proteção adicional dos segredos estáticos
 - **Status:** Implementado
@@ -405,8 +407,8 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
   - Não foi executada auditoria online de CVEs de dependências durante a revisão
 
 #### 0.9.10 Ordem sugerida de execução
-1. Avaliar pin por digest das imagens e hashes de dependências Python
-2. Avaliar identificador estável de usuário para migração de backup entre números
+1. Avaliar identificador estável de usuário para migração de backup entre números
+2. Avaliar lockfile Python com hashes de integridade
 
 ---
 
