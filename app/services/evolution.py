@@ -37,6 +37,11 @@ class EvolutionService:
             "Content-Type": "application/json",
         }
 
+    def _instance_name(self, instance_name: str | None = None) -> str:
+        """Resolve the target Evolution instance name."""
+        normalized = (instance_name or "").strip()
+        return normalized or self.instance
+
     async def _request(
         self,
         method: str,
@@ -62,45 +67,48 @@ class EvolutionService:
 
             return response.json()
 
-    async def setup_instance(self) -> dict:
+    async def setup_instance(self, instance_name: str | None = None) -> dict:
         """Create or verify instance exists."""
+        target_instance = self._instance_name(instance_name)
         # Check if instance exists
         try:
-            state = await self.get_connection_state()
+            state = await self.get_connection_state(target_instance)
             instance_state = state.get("instance", {}).get("state", "unknown")
-            logger.info(f"Instance {self.instance} exists, state: {instance_state}")
-            await self.setup_webhook()
+            logger.info(f"Instance {target_instance} exists, state: {instance_state}")
+            await self.setup_webhook(target_instance)
             return state
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
                 # Instance doesn't exist, create it
-                return await self.create_instance()
+                return await self.create_instance(target_instance)
             raise
 
-    async def create_instance(self) -> dict:
+    async def create_instance(self, instance_name: str | None = None) -> dict:
         """Create a new Evolution API instance."""
-        logger.info(f"Creating instance: {self.instance}")
+        target_instance = self._instance_name(instance_name)
+        logger.info(f"Creating instance: {target_instance}")
 
         data = {
-            "instanceName": self.instance,
+            "instanceName": target_instance,
             "integration": "WHATSAPP-BAILEYS",
             "qrcode": True,
             "token": self.api_key,
         }
-        if settings.owner_phone:
+        if settings.owner_phone and target_instance == self.instance:
             data["number"] = settings.owner_phone
 
         result = await self._request("POST", "/instance/create", json=data)
-        logger.info(f"Instance created successfully: {self.instance}")
+        logger.info(f"Instance created successfully: {target_instance}")
 
         # Setup webhook
-        await self.setup_webhook()
+        await self.setup_webhook(target_instance)
 
         return result
 
-    async def setup_webhook(self) -> dict:
+    async def setup_webhook(self, instance_name: str | None = None) -> dict:
         """Configure webhook for receiving messages."""
         logger.info("Setting up webhook...")
+        target_instance = self._instance_name(instance_name)
 
         if not settings.webhook_secret:
             raise ValueError("WEBHOOK_SECRET is not configured")
@@ -126,37 +134,40 @@ class EvolutionService:
 
         result = await self._request(
             "POST",
-            f"/webhook/set/{self.instance}",
+            f"/webhook/set/{target_instance}",
             json=data,
         )
-        logger.info(f"Webhook configured for instance: {self.instance}")
+        logger.info(f"Webhook configured for instance: {target_instance}")
         return result
 
-    async def get_connection_state(self) -> dict:
+    async def get_connection_state(self, instance_name: str | None = None) -> dict:
         """Get current connection state."""
+        target_instance = self._instance_name(instance_name)
         return await self._request(
             "GET",
-            f"/instance/connectionState/{self.instance}",
+            f"/instance/connectionState/{target_instance}",
         )
 
-    async def logout_instance(self) -> dict:
+    async def logout_instance(self, instance_name: str | None = None) -> dict:
         """Logout the instance to disconnect WhatsApp."""
-        logger.info(f"Logging out instance: {self.instance}")
+        target_instance = self._instance_name(instance_name)
+        logger.info(f"Logging out instance: {target_instance}")
         try:
             return await self._request(
                 "DELETE",
-                f"/instance/logout/{self.instance}",
+                f"/instance/logout/{target_instance}",
             )
         except Exception as e:
             logger.warning(f"Logout failed (may not be connected): {e}")
             return {}
 
-    async def get_qrcode(self) -> dict:
+    async def get_qrcode(self, instance_name: str | None = None) -> dict:
         """Get QR code for connecting WhatsApp."""
+        target_instance = self._instance_name(instance_name)
 
         # First, check instance state
         try:
-            state_result = await self.get_connection_state()
+            state_result = await self.get_connection_state(target_instance)
             state = state_result.get("instance", {}).get("state", "")
             logger.info(f"Current state: {state}")
 
@@ -171,7 +182,7 @@ class EvolutionService:
                 # Instance doesn't exist, create it
                 logger.info("Instance not found, creating...")
                 try:
-                    create_result = await self.create_instance()
+                    create_result = await self.create_instance(target_instance)
 
                     # Check if QR code is in create response
                     if "qrcode" in create_result:
@@ -195,9 +206,9 @@ class EvolutionService:
         try:
             result = await self._request(
                 "GET",
-                f"/instance/connect/{self.instance}",
+                f"/instance/connect/{target_instance}",
             )
-            logger.info(f"Requested connection artifact for instance: {self.instance}")
+            logger.info(f"Requested connection artifact for instance: {target_instance}")
 
             # Return formatted response
             if "base64" in result:

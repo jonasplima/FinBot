@@ -20,6 +20,7 @@ from app.services.onboarding import OnboardingService
 from app.services.operational_status import OperationalStatusService
 from app.services.user import UserService
 from app.services.webhook_idempotency import WebhookIdempotencyService
+from app.services.whatsapp_onboarding import WhatsAppOnboardingService
 
 # Configure logging
 logging.basicConfig(
@@ -34,6 +35,7 @@ operational_status = OperationalStatusService()
 auth_service = AuthService()
 onboarding_service = OnboardingService()
 user_service = UserService()
+whatsapp_onboarding_service = WhatsAppOnboardingService()
 
 
 class RegisterRequest(BaseModel):
@@ -758,6 +760,30 @@ async def web_onboarding_page(request: Request):
                     color: #9f1239;
                     border: 1px solid #fecdd3;
                 }
+                .qr-shell {
+                    display: grid;
+                    gap: 16px;
+                }
+                .qr-frame {
+                    border: 1px dashed var(--line);
+                    border-radius: 20px;
+                    padding: 20px;
+                    min-height: 280px;
+                    display: grid;
+                    place-items: center;
+                    background: #fbfdff;
+                }
+                .qr-frame img {
+                    max-width: min(100%, 320px);
+                    border-radius: 18px;
+                    background: white;
+                    padding: 12px;
+                    border: 1px solid var(--line);
+                }
+                .mono {
+                    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+                    font-size: 0.9rem;
+                }
                 @media (max-width: 960px) {
                     .layout { grid-template-columns: 1fr; }
                     aside { border-right: 0; border-bottom: 1px solid var(--line); }
@@ -793,6 +819,26 @@ async def web_onboarding_page(request: Request):
                     </section>
 
                     <section class="card">
+                        <h2>Conectar WhatsApp</h2>
+                        <p>Esta etapa cria e acompanha a sua sessão dedicada do WhatsApp sem exigir headers manuais nem ferramentas externas no navegador.</p>
+                        <div class="qr-shell">
+                            <div class="controls">
+                                <button class="primary" id="prepare-whatsapp" type="button">Preparar sessão</button>
+                                <button class="ghost" id="generate-qrcode" type="button">Gerar QR Code</button>
+                                <button class="ghost" id="refresh-whatsapp" type="button">Atualizar status</button>
+                            </div>
+                            <div class="grid">
+                                <div class="stat"><strong id="whatsapp-status">pendente</strong><span>Status da conexão</span></div>
+                                <div class="stat"><strong id="whatsapp-instance" class="mono">-</strong><span>Instância Evolution</span></div>
+                            </div>
+                            <div class="qr-frame" id="qr-frame">
+                                <span style="color: var(--muted); text-align: center;">Sua sessão ainda não gerou um QR Code.</span>
+                            </div>
+                            <div class="status" id="whatsapp-status-message"></div>
+                        </div>
+                    </section>
+
+                    <section class="card">
                         <h2>Termos e perfil</h2>
                         <div class="notice">
                             Antes da conexão do WhatsApp, o produto deve deixar claro que a instância é self-hosted e que pode existir acesso técnico/operacional do administrador aos dados trafegados pela stack.
@@ -818,7 +864,7 @@ async def web_onboarding_page(request: Request):
             </div>
 
             <script>
-                const state = { steps: [], currentStep: 'welcome', user: null };
+                const state = { steps: [], currentStep: 'welcome', user: null, whatsapp: null };
                 const stepLabels = {
                     welcome: 'Boas-vindas',
                     terms: 'Termos',
@@ -872,9 +918,37 @@ async def web_onboarding_page(request: Request):
                     renderSteps();
                 }
 
+                function renderWhatsApp(payload) {
+                    state.whatsapp = payload.session;
+                    document.getElementById('whatsapp-status').textContent =
+                        payload.session.connection_status || 'pendente';
+                    document.getElementById('whatsapp-instance').textContent =
+                        payload.session.evolution_instance || '-';
+
+                    const qrFrame = document.getElementById('qr-frame');
+                    if (payload.qrcode) {
+                        qrFrame.innerHTML = `<img alt="QR Code do WhatsApp" src="${payload.qrcode}">`;
+                    } else if (payload.pairingCode) {
+                        qrFrame.innerHTML = `<div><strong>Pairing Code</strong><div class="mono" style="margin-top: 12px;">${payload.pairingCode}</div></div>`;
+                    } else if (payload.session.connection_status === 'connected') {
+                        qrFrame.innerHTML = '<strong>WhatsApp conectado com sucesso.</strong>';
+                    } else {
+                        qrFrame.innerHTML = '<span style="color: var(--muted); text-align: center;">Sua sessão ainda não gerou um QR Code.</span>';
+                    }
+
+                    document.getElementById('whatsapp-status-message').textContent =
+                        payload.message || '';
+                    document.getElementById('whatsapp-status-message').className = 'status';
+                }
+
                 async function loadState() {
                     const payload = await fetchJson('/onboarding/state');
                     renderStats(payload);
+                }
+
+                async function loadWhatsAppStatus() {
+                    const payload = await fetchJson('/onboarding/whatsapp/status');
+                    renderWhatsApp(payload);
                 }
 
                 async function updateStep(nextStep) {
@@ -954,9 +1028,48 @@ async def web_onboarding_page(request: Request):
                     window.location.href = '/web/login';
                 });
 
+                document.getElementById('prepare-whatsapp').addEventListener('click', async () => {
+                    try {
+                        const payload = await fetchJson('/onboarding/whatsapp/prepare', { method: 'POST' });
+                        renderWhatsApp(payload);
+                        await loadState();
+                        document.getElementById('whatsapp-status-message').textContent =
+                            'Sessão preparada. Agora você pode gerar o QR Code.';
+                    } catch (error) {
+                        document.getElementById('whatsapp-status-message').textContent = error.message;
+                        document.getElementById('whatsapp-status-message').className = 'status error';
+                    }
+                });
+
+                document.getElementById('generate-qrcode').addEventListener('click', async () => {
+                    try {
+                        const payload = await fetchJson('/onboarding/whatsapp/qrcode', { method: 'POST' });
+                        renderWhatsApp(payload);
+                        await loadState();
+                    } catch (error) {
+                        document.getElementById('whatsapp-status-message').textContent = error.message;
+                        document.getElementById('whatsapp-status-message').className = 'status error';
+                    }
+                });
+
+                document.getElementById('refresh-whatsapp').addEventListener('click', async () => {
+                    try {
+                        const payload = await fetchJson('/onboarding/whatsapp/refresh', { method: 'POST' });
+                        renderWhatsApp(payload);
+                        await loadState();
+                    } catch (error) {
+                        document.getElementById('whatsapp-status-message').textContent = error.message;
+                        document.getElementById('whatsapp-status-message').className = 'status error';
+                    }
+                });
+
                 loadState().catch((error) => {
                     document.getElementById('flow-status').textContent = error.message;
                     document.getElementById('flow-status').className = 'status error';
+                });
+
+                loadWhatsAppStatus().catch(() => {
+                    // Keep the onboarding screen functional even if the session is not prepared yet.
                 });
             </script>
         </body>
@@ -1064,6 +1177,58 @@ async def onboarding_complete(request: Request):
             raise HTTPException(status_code=401, detail="Sessao web invalida ou expirada.")
         state = await onboarding_service.mark_completed(session, refreshed_user)
         return onboarding_service.build_state_payload(refreshed_user, state)
+
+
+@app.post("/onboarding/whatsapp/prepare")
+async def onboarding_whatsapp_prepare(request: Request):
+    """Prepare a dedicated WhatsApp onboarding session for the authenticated user."""
+    await _get_current_web_user(request)
+    async with async_session() as session:
+        refreshed_user = await auth_service.get_user_by_session_token(
+            session, _get_session_cookie_token(request) or ""
+        )
+        if refreshed_user is None:
+            raise HTTPException(status_code=401, detail="Sessao web invalida ou expirada.")
+        return await whatsapp_onboarding_service.prepare_session(session, refreshed_user)
+
+
+@app.get("/onboarding/whatsapp/status")
+async def onboarding_whatsapp_status(request: Request):
+    """Return the current WhatsApp onboarding status for the authenticated user."""
+    await _get_current_web_user(request)
+    async with async_session() as session:
+        refreshed_user = await auth_service.get_user_by_session_token(
+            session, _get_session_cookie_token(request) or ""
+        )
+        if refreshed_user is None:
+            raise HTTPException(status_code=401, detail="Sessao web invalida ou expirada.")
+        return await whatsapp_onboarding_service.get_status(session, refreshed_user)
+
+
+@app.post("/onboarding/whatsapp/qrcode")
+async def onboarding_whatsapp_qrcode(request: Request):
+    """Generate or refresh the WhatsApp QR code for the authenticated user."""
+    await _get_current_web_user(request)
+    async with async_session() as session:
+        refreshed_user = await auth_service.get_user_by_session_token(
+            session, _get_session_cookie_token(request) or ""
+        )
+        if refreshed_user is None:
+            raise HTTPException(status_code=401, detail="Sessao web invalida ou expirada.")
+        return await whatsapp_onboarding_service.generate_qrcode(session, refreshed_user)
+
+
+@app.post("/onboarding/whatsapp/refresh")
+async def onboarding_whatsapp_refresh(request: Request):
+    """Refresh the WhatsApp connection status for the authenticated user."""
+    await _get_current_web_user(request)
+    async with async_session() as session:
+        refreshed_user = await auth_service.get_user_by_session_token(
+            session, _get_session_cookie_token(request) or ""
+        )
+        if refreshed_user is None:
+            raise HTTPException(status_code=401, detail="Sessao web invalida ou expirada.")
+        return await whatsapp_onboarding_service.refresh_status(session, refreshed_user)
 
 
 @app.get("/admin/qrcode", response_class=HTMLResponse)

@@ -1,11 +1,12 @@
-"""Tests for the protected web onboarding flow."""
+from unittest.mock import AsyncMock, patch
 
 from fastapi import HTTPException, Response
 from sqlalchemy import delete
 from starlette.requests import Request
 
+from app.config import get_settings
 from app.database.connection import async_session, init_db
-from app.database.models import User, UserOnboardingState, UserWebSession
+from app.database.models import User, UserOnboardingState, UserWebSession, UserWhatsAppSession
 from app.main import (
     RegisterRequest,
     auth_register,
@@ -14,6 +15,10 @@ from app.main import (
     onboarding_profile,
     onboarding_state,
     onboarding_step,
+    onboarding_whatsapp_prepare,
+    onboarding_whatsapp_qrcode,
+    onboarding_whatsapp_refresh,
+    onboarding_whatsapp_status,
     web_login_page,
     web_onboarding_page,
 )
@@ -22,11 +27,14 @@ from app.main import (
 class TestOnboardingWeb:
     """Tests for the first web onboarding shell and state endpoints."""
 
+    EVOLUTION_PREFIX = get_settings().evolution_instance
+
     async def _reset_real_db(self) -> None:
         await init_db()
         async with async_session() as session:
             await session.execute(delete(UserWebSession))
             await session.execute(delete(UserOnboardingState))
+            await session.execute(delete(UserWhatsAppSession))
             await session.execute(delete(User))
             await session.commit()
 
@@ -148,3 +156,121 @@ class TestOnboardingWeb:
             assert exc.status_code == 400
         else:
             raise AssertionError("Expected HTTPException for invalid onboarding step")
+
+    async def test_whatsapp_prepare_creates_user_session(self):
+        """Preparing WhatsApp onboarding should create a dedicated session per user."""
+        await self._reset_real_db()
+        register_response = Response()
+        await auth_register(
+            RegisterRequest(
+                name="Nina",
+                email="nina@example.com",
+                password="senha-super-segura",
+                phone="5511922222222",
+            ),
+            register_response,
+        )
+        session_cookie = self._extract_cookie(register_response)
+        request = self._request_with_cookie("/onboarding/whatsapp/prepare", session_cookie)
+
+        payload = await onboarding_whatsapp_prepare(request)
+
+        assert payload["session"]["session_key"].startswith("user-")
+        assert payload["session"]["evolution_instance"].startswith(f"{self.EVOLUTION_PREFIX}-user-")
+        assert payload["session"]["connection_status"] == "pending"
+        assert payload["onboarding_step"] == "whatsapp_prepare"
+
+    async def test_whatsapp_qrcode_uses_user_scoped_instance(self):
+        """Generating QR should use the dedicated Evolution instance for that user."""
+        await self._reset_real_db()
+        register_response = Response()
+        await auth_register(
+            RegisterRequest(
+                name="Lia",
+                email="lia@example.com",
+                password="senha-super-segura",
+                phone="5511911111111",
+            ),
+            register_response,
+        )
+        session_cookie = self._extract_cookie(register_response)
+        request = self._request_with_cookie("/onboarding/whatsapp/qrcode", session_cookie)
+
+        with patch("app.services.whatsapp_onboarding.EvolutionService") as mock_evolution_cls:
+            mock_evolution = mock_evolution_cls.return_value
+            mock_evolution.get_qrcode = AsyncMock(
+                return_value={
+                    "status": "waiting_qrcode",
+                    "qrcode": "data:image/png;base64,abc123",
+                    "message": "Scan the QR code with WhatsApp",
+                }
+            )
+
+            payload = await onboarding_whatsapp_qrcode(request)
+
+        assert payload["session"]["connection_status"] == "pending"
+        assert payload["qrcode"] == "data:image/png;base64,abc123"
+        target_instance = mock_evolution.get_qrcode.await_args.args[0]
+        assert target_instance.startswith(f"{self.EVOLUTION_PREFIX}-user-")
+
+    async def test_whatsapp_refresh_marks_onboarding_connection(self):
+        """Refreshing the status should mark the WhatsApp step as connected when open."""
+        await self._reset_real_db()
+        register_response = Response()
+        await auth_register(
+            RegisterRequest(
+                name="Maya",
+                email="maya@example.com",
+                password="senha-super-segura",
+                phone="5511900000000",
+            ),
+            register_response,
+        )
+        session_cookie = self._extract_cookie(register_response)
+        request = self._request_with_cookie("/onboarding/whatsapp/refresh", session_cookie)
+
+        await onboarding_whatsapp_prepare(request)
+
+        with patch("app.services.whatsapp_onboarding.EvolutionService") as mock_evolution_cls:
+            mock_evolution = mock_evolution_cls.return_value
+            mock_evolution.get_connection_state = AsyncMock(
+                return_value={"instance": {"state": "open"}}
+            )
+
+            payload = await onboarding_whatsapp_refresh(request)
+
+        assert payload["session"]["connection_status"] == "connected"
+
+        state_payload = await onboarding_state(
+            self._request_with_cookie("/onboarding/state", session_cookie)
+        )
+        assert state_payload["onboarding"]["whatsapp_connected_at"] is not None
+
+    async def test_whatsapp_status_returns_existing_session(self):
+        """The onboarding screen should be able to poll current WhatsApp session metadata."""
+        await self._reset_real_db()
+        register_response = Response()
+        await auth_register(
+            RegisterRequest(
+                name="Bia",
+                email="bia@example.com",
+                password="senha-super-segura",
+                phone="5511977777777",
+            ),
+            register_response,
+        )
+        session_cookie = self._extract_cookie(register_response)
+        request = self._request_with_cookie("/onboarding/whatsapp/status", session_cookie)
+
+        await onboarding_whatsapp_prepare(request)
+
+        with patch("app.services.whatsapp_onboarding.EvolutionService") as mock_evolution_cls:
+            mock_evolution = mock_evolution_cls.return_value
+            mock_evolution.get_connection_state = AsyncMock(
+                return_value={"instance": {"state": "connecting"}}
+            )
+
+            payload = await onboarding_whatsapp_status(request)
+
+        assert payload["session"]["connection_status"] == "pending"
+        assert payload["session"]["evolution_instance"].startswith(f"{self.EVOLUTION_PREFIX}-user-")

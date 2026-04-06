@@ -548,6 +548,8 @@ Status: concluída
 
 ### Fase 5. Conexão do WhatsApp
 
+Status: concluída
+
 1. Definir estratégia de múltiplas sessões na Evolution
 2. Criar backend para emissão segura do QR Code
 3. Criar polling ou atualização em tempo real do status da conexão
