@@ -2962,6 +2962,44 @@ async def web_dashboard_page(request: Request):
                     display: grid;
                     gap: 16px;
                 }
+                .section-head {
+                    display: flex;
+                    flex-wrap: wrap;
+                    justify-content: space-between;
+                    align-items: flex-start;
+                    gap: 12px;
+                }
+                .section-copy {
+                    display: grid;
+                    gap: 6px;
+                }
+                .subgrid {
+                    display: grid;
+                    gap: 16px;
+                }
+                .subcard {
+                    padding: 16px;
+                    border-radius: 18px;
+                    border: 1px solid var(--line);
+                    background: rgba(255, 255, 255, 0.72);
+                    display: grid;
+                    gap: 12px;
+                }
+                .subcard h3 {
+                    font-size: 1.02rem;
+                }
+                .eyebrow {
+                    margin: 0;
+                    color: var(--muted);
+                    font-size: 0.76rem;
+                    letter-spacing: 0.08em;
+                    text-transform: uppercase;
+                }
+                .table-note {
+                    margin: 0;
+                    color: var(--muted);
+                    font-size: 0.86rem;
+                }
                 form {
                     display: grid;
                     gap: 12px;
@@ -3026,6 +3064,7 @@ async def web_dashboard_page(request: Request):
                     border: 1px solid var(--line);
                     border-radius: 18px;
                     background: var(--surface);
+                    box-shadow: inset 0 -1px 0 rgba(15, 23, 42, 0.04);
                 }
                 table {
                     width: 100%;
@@ -3086,6 +3125,11 @@ async def web_dashboard_page(request: Request):
                     grid-template-columns: repeat(2, minmax(0, 1fr));
                     gap: 12px;
                 }
+                .compact-grid {
+                    display: grid;
+                    grid-template-columns: repeat(2, minmax(0, 1fr));
+                    gap: 12px;
+                }
                 .chart-button {
                     display: grid;
                     gap: 10px;
@@ -3138,6 +3182,65 @@ async def web_dashboard_page(request: Request):
                     border: 1px solid var(--line);
                     background: white;
                 }
+                @media (max-width: 920px) {
+                    .shell {
+                        padding: 18px 14px 40px;
+                    }
+                    .hero, .card {
+                        border-radius: 20px;
+                    }
+                    .hero {
+                        padding: 22px;
+                    }
+                    .card {
+                        padding: 18px;
+                    }
+                    .stats {
+                        grid-template-columns: repeat(2, minmax(0, 1fr));
+                    }
+                    .compact-grid {
+                        grid-template-columns: 1fr;
+                    }
+                }
+                @media (max-width: 720px) {
+                    .hero-top,
+                    .section-head,
+                    .list-item {
+                        flex-direction: column;
+                        align-items: stretch;
+                    }
+                    .actions,
+                    .toolbar {
+                        align-items: stretch;
+                    }
+                    .actions button,
+                    .toolbar button,
+                    .toolbar label {
+                        width: 100%;
+                    }
+                    .stats,
+                    .grid,
+                    .chart-grid,
+                    .two-col {
+                        grid-template-columns: 1fr;
+                    }
+                    .table-wrap {
+                        border-radius: 16px;
+                    }
+                    table {
+                        min-width: 640px;
+                    }
+                    th, td {
+                        padding: 10px 12px;
+                    }
+                    .modal {
+                        padding: 12px;
+                    }
+                    .modal-card {
+                        padding: 14px;
+                        border-radius: 18px;
+                    }
+                }
                 @media (max-width: 1120px) {
                     .grid, .chart-grid, .two-col, .stats { grid-template-columns: 1fr; }
                 }
@@ -3171,8 +3274,9 @@ async def web_dashboard_page(request: Request):
 
                 <div class="grid">
                     <section class="card wide-card">
-                        <div class="actions" style="justify-content: space-between;">
-                            <div>
+                        <div class="section-head">
+                            <div class="section-copy">
+                                <p class="eyebrow">Registro diário</p>
                                 <h2>Lançamentos</h2>
                                 <p>Registre novas despesas ou receitas e ajuste o que já foi salvo.</p>
                             </div>
@@ -3261,10 +3365,19 @@ async def web_dashboard_page(request: Request):
                     </section>
 
                     <section class="card wide-card">
-                            <h2>Orçamentos, limites por categoria e gráficos</h2>
-                            <p>Defina tetos mensais por categoria e acompanhe como os gastos se distribuem no período.</p>
+                            <div class="section-head">
+                                <div class="section-copy">
+                                    <p class="eyebrow">Planejamento</p>
+                                    <h2>Orçamentos, limites por categoria e gráficos</h2>
+                                    <p>Defina tetos mensais por categoria e acompanhe como os gastos se distribuem no período.</p>
+                                </div>
+                            </div>
                             <div class="two-col" style="align-items: start;">
-                                <div class="stack">
+                                <div class="subgrid">
+                                    <section class="subcard">
+                                        <p class="eyebrow">Cadastro rápido</p>
+                                        <h3>Novo orçamento</h3>
+                                        <p class="table-note">Crie ou atualize limites por categoria sem sair do painel.</p>
                                     <form id="budget-form">
                                         <div class="two-col">
                                             <label>Categoria
@@ -3279,6 +3392,11 @@ async def web_dashboard_page(request: Request):
                                         <button class="primary" type="submit">Salvar orçamento</button>
                                     </form>
                                     <div class="status" id="budget-status"></div>
+                                    </section>
+                                    <section class="subcard">
+                                        <p class="eyebrow">Acompanhamento</p>
+                                        <h3>Tabela de orçamento</h3>
+                                        <p class="table-note">Veja limite, gasto acumulado, saldo restante e percentual consumido.</p>
                                     <div class="table-wrap">
                                         <table>
                                             <thead>
@@ -3294,7 +3412,13 @@ async def web_dashboard_page(request: Request):
                                             <tbody id="budgets-list"></tbody>
                                         </table>
                                     </div>
+                                    </section>
                                 </div>
+                                <div class="subgrid">
+                                    <section class="subcard">
+                                        <p class="eyebrow">Visualizações</p>
+                                        <h3>Gráficos do período</h3>
+                                        <p class="table-note">Toque ou clique em qualquer gráfico para ampliar a leitura.</p>
                                 <div class="chart-grid">
                                     <div class="chart-card">
                                         <button class="chart-button" type="button" data-chart-title="Gastos por categoria" data-chart-target="chart-categories">
@@ -3315,14 +3439,24 @@ async def web_dashboard_page(request: Request):
                                         </button>
                                     </div>
                                 </div>
+                                    </section>
+                                </div>
                             </div>
                         </section>
 
                     <section class="card wide-card">
-                        <h2>Metas</h2>
-                            <p>Cadastre objetivos, faça aportes dedicados e use valores guardados sem misturar com a categorização normal de despesas.</p>
+                            <div class="section-head">
+                                <div class="section-copy">
+                                    <p class="eyebrow">Reserva e objetivos</p>
+                                    <h2>Metas</h2>
+                                    <p>Cadastre objetivos, faça aportes dedicados e use valores guardados sem misturar com a categorização normal de despesas.</p>
+                                </div>
+                            </div>
                             <div class="two-col" style="align-items: start;">
-                                <div class="stack">
+                                <div class="subgrid">
+                                    <section class="subcard">
+                                        <p class="eyebrow">Configuração</p>
+                                        <h3>Nova meta</h3>
                                     <form id="goal-form">
                                         <label>Descrição da meta
                                             <input name="description" required placeholder="Ex.: Reserva de emergência">
@@ -3338,6 +3472,10 @@ async def web_dashboard_page(request: Request):
                                         <button class="primary" type="submit">Salvar meta</button>
                                     </form>
                                     <div class="status" id="goal-status"></div>
+                                    </section>
+                                    <section class="subcard">
+                                        <p class="eyebrow">Movimentar saldo</p>
+                                        <h3>Aportes e usos</h3>
                                     <form id="goal-contribution-form">
                                         <div class="two-col">
                                             <label>Meta para aportar
@@ -3386,9 +3524,18 @@ async def web_dashboard_page(request: Request):
                                         <button class="ghost" type="submit">Usar valor da meta</button>
                                     </form>
                                     <div class="status" id="goal-withdrawal-status"></div>
+                                    </section>
                                 </div>
-                                <div class="stack">
+                                <div class="subgrid">
+                                    <section class="subcard">
+                                        <p class="eyebrow">Resumo atual</p>
+                                        <h3>Metas abertas</h3>
                                     <div class="list" id="goals-list"></div>
+                                    </section>
+                                    <section class="subcard">
+                                        <p class="eyebrow">Histórico</p>
+                                        <h3>Movimentações das metas</h3>
+                                        <p class="table-note">Acompanhe cada aporte e cada uso do saldo reservado.</p>
                                     <div class="table-wrap">
                                         <table>
                                             <thead>
@@ -3404,13 +3551,20 @@ async def web_dashboard_page(request: Request):
                                             <tbody id="goal-transactions-list"></tbody>
                                         </table>
                                     </div>
+                                    </section>
                                 </div>
                             </div>
                         </section>
 
                     <section class="card wide-card">
-                        <h2>Histórico de alterações</h2>
-                        <p>Acompanhe os ajustes feitos em lançamentos já registrados, com resumo do antes e depois.</p>
+                        <div class="section-head">
+                            <div class="section-copy">
+                                <p class="eyebrow">Rastreabilidade</p>
+                                <h2>Histórico de alterações</h2>
+                                <p>Acompanhe os ajustes feitos em lançamentos já registrados, com resumo do antes e depois.</p>
+                            </div>
+                        </div>
+                        <section class="subcard">
                         <div class="table-wrap">
                             <table>
                                 <thead>
@@ -3424,6 +3578,7 @@ async def web_dashboard_page(request: Request):
                                 <tbody id="expense-audits-list"></tbody>
                             </table>
                         </div>
+                        </section>
                     </section>
 
                     <div class="stack">
