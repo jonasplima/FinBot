@@ -65,6 +65,8 @@ class ExpenseService:
                 return "Parcelamento deve ter pelo menos 2 parcelas"
 
         shared_percentage = data.get("shared_percentage")
+        if data.get("is_shared") and shared_percentage in (None, ""):
+            return "Informe o percentual da sua parte para despesas divididas."
         if shared_percentage is not None:
             try:
                 shared_percentage = Decimal(str(shared_percentage))
@@ -115,6 +117,10 @@ class ExpenseService:
             "category": expense.display_category,
             "payment_method": expense.payment_method.name if expense.payment_method else "",
             "date": expense.date.isoformat(),
+            "is_shared": bool(expense.is_shared),
+            "shared_percentage": float(expense.shared_percentage)
+            if expense.shared_percentage is not None
+            else None,
         }
 
     async def create_expense(
@@ -458,6 +464,29 @@ class ExpenseService:
                 return {"success": False, "error": "Data da despesa invalida."}
             expense.date = parsed_date
 
+        new_is_shared = update_data.get("new_is_shared")
+        new_shared_percentage = update_data.get("new_shared_percentage")
+        if new_is_shared is not None:
+            expense.is_shared = bool(new_is_shared)
+            if expense.is_shared:
+                if new_shared_percentage in (None, ""):
+                    return {
+                        "success": False,
+                        "error": "Informe o percentual da sua parte para despesas divididas.",
+                    }
+                try:
+                    shared_percentage_decimal = Decimal(str(new_shared_percentage))
+                except Exception:
+                    return {"success": False, "error": "Percentual compartilhado invalido"}
+                if shared_percentage_decimal <= 0 or shared_percentage_decimal > 100:
+                    return {
+                        "success": False,
+                        "error": "Percentual compartilhado deve estar entre 0 e 100",
+                    }
+                expense.shared_percentage = shared_percentage_decimal
+            else:
+                expense.shared_percentage = None
+
         updated_snapshot = self._build_expense_snapshot(expense)
         if updated_snapshot == previous_snapshot:
             return {
@@ -527,6 +556,9 @@ class ExpenseService:
                 "type": str(expense.type),
                 "installment": expense.installment_display,
                 "is_shared": bool(expense.is_shared),
+                "shared_percentage": float(expense.shared_percentage)
+                if expense.shared_percentage is not None
+                else None,
                 "original_currency": str(expense.original_currency)
                 if expense.original_currency
                 else None,

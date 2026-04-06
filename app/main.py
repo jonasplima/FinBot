@@ -177,6 +177,8 @@ class DashboardExpenseCreateRequest(BaseModel):
     payment_method: str
     expense_date: str | None = None
     currency: str = "BRL"
+    is_shared: bool = False
+    shared_percentage: float | None = None
 
 
 class DashboardExpenseUpdateRequest(BaseModel):
@@ -188,6 +190,8 @@ class DashboardExpenseUpdateRequest(BaseModel):
     payment_method: str | None = None
     expense_date: str | None = None
     currency: str | None = None
+    is_shared: bool | None = None
+    shared_percentage: float | None = None
 
 
 class DashboardExpenseRecognitionRequest(BaseModel):
@@ -3107,6 +3111,15 @@ async def web_dashboard_page(request: Request):
                                     <select name="currency" required></select>
                                 </label>
                             </div>
+                            <div class="two-col">
+                                <label style="align-content: center;">
+                                    <span>Valor dividido</span>
+                                    <input name="is_shared" type="checkbox">
+                                </label>
+                                <label>Percentual da sua parte
+                                    <input name="shared_percentage" type="number" min="0.01" max="100" step="0.01" placeholder="Ex.: 50">
+                                </label>
+                            </div>
                             <div class="actions">
                                 <button class="primary" type="submit" id="expense-submit">Salvar lançamento</button>
                                 <button class="ghost" type="button" id="expense-reset">Limpar</button>
@@ -3142,6 +3155,7 @@ async def web_dashboard_page(request: Request):
                                         <th>Categoria</th>
                                         <th>Pagamento</th>
                                         <th>Valor</th>
+                                        <th>Divisão</th>
                                         <th>Moeda original</th>
                                         <th></th>
                                     </tr>
@@ -3326,6 +3340,8 @@ async def web_dashboard_page(request: Request):
                     document.querySelector('#expense-form [name="payment_method"]').value = expense.payment_method;
                     document.querySelector('#expense-form [name="expense_date"]').value = expense.date;
                     document.querySelector('#expense-form [name="currency"]').value = expense.original_currency || appState.payload.user.base_currency || 'BRL';
+                    document.querySelector('#expense-form [name="is_shared"]').checked = !!expense.is_shared;
+                    document.querySelector('#expense-form [name="shared_percentage"]').value = expense.shared_percentage || '';
                     document.getElementById('expense-submit').textContent = 'Atualizar lançamento';
                     setStatus('expense-status', 'Você está editando um lançamento salvo.');
                 }
@@ -3338,6 +3354,8 @@ async def web_dashboard_page(request: Request):
                     if (appState.payload) {
                         document.querySelector('#expense-form [name="currency"]').value = appState.payload.user.base_currency || 'BRL';
                     }
+                    document.querySelector('#expense-form [name="is_shared"]').checked = false;
+                    document.querySelector('#expense-form [name="shared_percentage"]').value = '';
                     setStatus('expense-status', '');
                 }
 
@@ -3379,6 +3397,8 @@ async def web_dashboard_page(request: Request):
                     if (recognized.currency) {
                         document.querySelector('#expense-form [name="currency"]').value = recognized.currency;
                     }
+                    document.querySelector('#expense-form [name="is_shared"]').checked = !!recognized.is_shared;
+                    document.querySelector('#expense-form [name="shared_percentage"]').value = recognized.shared_percentage || '';
                 }
 
                 function readFileAsDataUrl(file) {
@@ -3433,7 +3453,7 @@ async def web_dashboard_page(request: Request):
                 function renderExpenses(expenses) {
                     const body = document.getElementById('expenses-table');
                     if (!expenses.length) {
-                        body.innerHTML = '<tr><td colspan="7"><div class="empty">Nenhum lançamento encontrado para o período.</div></td></tr>';
+                        body.innerHTML = '<tr><td colspan="8"><div class="empty">Nenhum lançamento encontrado para o período.</div></td></tr>';
                         return;
                     }
                     body.innerHTML = expenses.map((expense) => `
@@ -3443,6 +3463,7 @@ async def web_dashboard_page(request: Request):
                             <td>${escapeHtml(expense.category)}</td>
                             <td>${escapeHtml(expense.payment_method)}</td>
                             <td>${money(expense.amount)}</td>
+                            <td>${expense.is_shared ? `Sim • ${Number(expense.shared_percentage || 0).toFixed(0)}% seu` : 'Nao'}</td>
                             <td>${expense.original_currency ? `${escapeHtml(expense.original_currency)} ${Number(expense.original_amount || 0).toFixed(2)}` : 'BRL'}</td>
                             <td><button class="ghost" type="button" data-edit-expense="${expense.id}">Editar</button></td>
                         </tr>
@@ -3503,6 +3524,8 @@ async def web_dashboard_page(request: Request):
                     event.preventDefault();
                     const form = event.currentTarget;
                     const data = Object.fromEntries(new FormData(form).entries());
+                    const isShared = document.querySelector('#expense-form [name="is_shared"]').checked;
+                    const sharedPercentageRaw = String(data.shared_percentage || '').trim();
                     const payload = {
                         description: data.description,
                         amount: Number(data.amount),
@@ -3510,6 +3533,8 @@ async def web_dashboard_page(request: Request):
                         payment_method: data.payment_method,
                         expense_date: data.expense_date || null,
                         currency: data.currency,
+                        is_shared: isShared,
+                        shared_percentage: isShared && sharedPercentageRaw ? Number(sharedPercentageRaw) : null,
                     };
                     try {
                         if (appState.editingExpenseId) {
@@ -4103,6 +4128,8 @@ async def dashboard_create_expense(
             "category": payload.category,
             "payment_method": payload.payment_method,
             "expense_date": payload.expense_date,
+            "is_shared": payload.is_shared,
+            "shared_percentage": payload.shared_percentage,
         }
 
         if currency_code != "BRL":
@@ -4219,6 +4246,11 @@ async def dashboard_update_expense(
             update_data["new_payment_method"] = payload.payment_method
         if payload.expense_date is not None:
             update_data["new_expense_date"] = payload.expense_date
+        if payload.is_shared is not None:
+            update_data["new_is_shared"] = payload.is_shared
+            update_data["new_shared_percentage"] = (
+                payload.shared_percentage if payload.is_shared else None
+            )
 
         if payload.amount is not None:
             amount_decimal = Decimal(str(payload.amount))

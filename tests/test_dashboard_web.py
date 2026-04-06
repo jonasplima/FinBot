@@ -196,6 +196,48 @@ class TestDashboardWeb:
         assert updated_state["expenses"][0]["description"] == "Hotel em Buenos Aires - ajuste"
         assert updated_state["expenses"][0]["amount"] == 600.0
 
+    async def test_dashboard_create_and_update_shared_expense(self):
+        """Dashboard should persist shared expense metadata and allow updates."""
+        await self._reset_real_db()
+        request = await self._register_dashboard_request(
+            email="shared@example.com",
+            phone="5511911212121",
+        )
+
+        created = await dashboard_create_expense(
+            request,
+            DashboardExpenseCreateRequest(
+                description="Boliche com amigos",
+                amount=100,
+                category="Lazer",
+                payment_method="Pix",
+                expense_date="2026-04-01",
+                currency="BRL",
+                is_shared=True,
+                shared_percentage=50,
+            ),
+        )
+
+        assert created["status"] == "ok"
+        expense_id = created["expense_id"]
+
+        payload = await dashboard_state(request, month=4, year=2026)
+        assert payload["expenses"][0]["is_shared"] is True
+        assert payload["expenses"][0]["shared_percentage"] == 50.0
+
+        updated = await dashboard_update_expense(
+            request,
+            expense_id,
+            DashboardExpenseUpdateRequest(
+                is_shared=True,
+                shared_percentage=60,
+            ),
+        )
+        assert updated["status"] == "ok"
+
+        updated_state = await dashboard_state(request, month=4, year=2026)
+        assert updated_state["expenses"][0]["shared_percentage"] == 60.0
+
     async def test_dashboard_budget_goal_export_and_conversion(self):
         """Dashboard should manage budgets, goals, exports and quick conversions."""
         await self._reset_real_db()
