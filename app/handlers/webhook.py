@@ -2,7 +2,7 @@
 
 import io
 import logging
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from pypdf import PdfReader
 from sqlalchemy import delete, select
@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.database.connection import async_session
-from app.database.models import PendingConfirmation, User
+from app.database.models import PendingConfirmation, User, UserWhatsAppSession
 from app.services.ai import AIService
 from app.services.backup import BackupService
 from app.services.budget import BudgetService
@@ -21,7 +21,8 @@ from app.services.expense import ExpenseService
 from app.services.goal import GoalService
 from app.services.rate_limit import RateLimitService
 from app.services.user import UserService
-from app.utils.validators import is_phone_allowed, mask_phone, normalize_phone, sanitize_for_log
+from app.utils.parser import parse_date
+from app.utils.validators import mask_phone, normalize_phone, sanitize_for_log
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -54,6 +55,29 @@ class WebhookHandler:
         """Mark that the current webhook already produced a persistent side effect."""
         self.processing_committed = True
 
+    def _format_expense_date(self, expense_data: dict) -> str:
+        """Format the expense date displayed in confirmations and summaries."""
+        expense_date = expense_data.get("expense_date")
+        if expense_date in (None, ""):
+            return date.today().strftime("%d/%m/%Y")
+
+        if isinstance(expense_date, date) and not isinstance(expense_date, datetime):
+            return expense_date.strftime("%d/%m/%Y")
+
+        try:
+            return date.fromisoformat(str(expense_date)).strftime("%d/%m/%Y")
+        except ValueError:
+            parsed_expense_date = parse_date(str(expense_date))
+            if parsed_expense_date is not None:
+                return parsed_expense_date.strftime("%d/%m/%Y")
+            return str(expense_date)
+
+    def _build_expense_date_line(self, expense_data: dict) -> str:
+        """Build the user-facing date line for confirmations."""
+        if expense_data.get("expense_date") in (None, ""):
+            return f"Data assumida: hoje ({self._format_expense_date(expense_data)})"
+        return f"Data: {self._format_expense_date(expense_data)}"
+
     async def handle(self, webhook_data: dict) -> None:
         """Process incoming webhook event."""
         self.processing_committed = False
@@ -69,15 +93,13 @@ class WebhookHandler:
 
         logger.info(f"Message received from {safe_phone}: {sanitize_for_log(text)}")
 
-        # Optional allowlist for controlled rollout
-        if settings.allowed_phones and not is_phone_allowed(phone, settings.allowed_phones):
-            logger.warning(f"Unauthorized phone: {safe_phone}")
-            return
-
-        logger.info(f"Phone {safe_phone} accepted for processing")
-
-        # Process message
         async with async_session() as session:
+            is_authorized = await self.user_service.is_phone_authorized(session, phone)
+            if not is_authorized:
+                logger.warning(f"Unauthorized phone: {safe_phone}")
+                return
+
+            logger.info(f"Phone {safe_phone} accepted for processing")
             await self.process_message(session, msg_data)
 
     async def process_message(
@@ -86,61 +108,111 @@ class WebhookHandler:
         msg_data: dict,
     ) -> None:
         """Process a single message."""
-        phone = msg_data["phone"]
+        original_phone = msg_data["phone"]
         text = msg_data["text"].strip().lower()
-        user = await self.user_service.get_or_create_user(session, phone)
-        safe_phone = mask_phone(phone)
+        user = await self.user_service.get_or_create_user(session, original_phone)
+        phone = str(user.phone)
+        msg_data = {**msg_data, "phone": phone}
+        safe_phone = mask_phone(original_phone)
+        reply_instance = await self._resolve_reply_instance(session, user, msg_data)
+        instance_token = self.evolution.set_reply_instance(reply_instance)
+        reply_phone_token = self.evolution.set_reply_phone(original_phone)
 
         logger.info(f"Processing message for {safe_phone}")
-
-        if not self.user_service.has_accepted_current_terms(user):
-            await self.handle_user_onboarding(session, msg_data, user)
-            return
-
-        direct_limit_command = self.user_service.parse_limit_command(msg_data["text"])
-        if direct_limit_command:
-            await self.handle_limit_command(session, phone, user, direct_limit_command)
-            return
-
-        if msg_data["text"]:
-            text_allowed = await self._check_daily_limit(session, phone, user, "daily_text_limit")
-            if not text_allowed:
-                return
-
-        # Check for pending confirmation first
-        pending = await self.get_pending_confirmation(session, phone)
-        logger.info(f"Pending confirmation found for {safe_phone}: {pending is not None}")
-
-        if pending:
-            # User is responding to a confirmation
+        if reply_instance:
+            logger.info(f"Using reply instance {reply_instance} for {safe_phone}")
+        if phone != original_phone:
             logger.info(
-                f"Handling confirmation response for {safe_phone}, type: {pending.data.get('type')}"
+                "Mapped sender %s to primary account %s",
+                safe_phone,
+                mask_phone(phone),
             )
-            await self.handle_confirmation_response(session, phone, text, pending, user)
-            return
 
-        # Check if message is media
-        if msg_data["has_image"]:
-            media_allowed = await self._check_daily_limit(session, phone, user, "daily_media_limit")
-            if not media_allowed:
+        try:
+            if not self.user_service.has_accepted_current_terms(user):
+                await self.handle_user_onboarding(session, msg_data, user)
                 return
-            await self.handle_image_message(session, msg_data, user)
-            return
-        if msg_data.get("has_document") and msg_data.get("document_mimetype") == "application/pdf":
-            media_allowed = await self._check_daily_limit(session, phone, user, "daily_media_limit")
-            if not media_allowed:
-                return
-            await self.handle_pdf_message(session, msg_data, user)
-            return
-        if msg_data.get("has_document") and self._is_json_document(msg_data):
-            media_allowed = await self._check_daily_limit(session, phone, user, "daily_media_limit")
-            if not media_allowed:
-                return
-            await self.handle_backup_document(session, msg_data)
-            return
 
-        # Process text message with the configured AI provider
-        await self.handle_text_message(session, msg_data, user)
+            direct_limit_command = self.user_service.parse_limit_command(msg_data["text"])
+            if direct_limit_command:
+                await self.handle_limit_command(session, phone, user, direct_limit_command)
+                return
+
+            if msg_data["text"]:
+                text_allowed = await self._check_daily_limit(
+                    session, phone, user, "daily_text_limit"
+                )
+                if not text_allowed:
+                    return
+
+            # Check for pending confirmation first
+            pending = await self.get_pending_confirmation(session, phone)
+            logger.info(f"Pending confirmation found for {safe_phone}: {pending is not None}")
+
+            if pending:
+                logger.info(
+                    f"Handling confirmation response for {safe_phone}, type: {pending.data.get('type')}"
+                )
+                await self.handle_confirmation_response(session, phone, text, pending, user)
+                return
+
+            if msg_data["has_image"]:
+                media_allowed = await self._check_daily_limit(
+                    session, phone, user, "daily_media_limit"
+                )
+                if not media_allowed:
+                    return
+                await self.handle_image_message(session, msg_data, user)
+                return
+            if (
+                msg_data.get("has_document")
+                and msg_data.get("document_mimetype") == "application/pdf"
+            ):
+                media_allowed = await self._check_daily_limit(
+                    session, phone, user, "daily_media_limit"
+                )
+                if not media_allowed:
+                    return
+                await self.handle_pdf_message(session, msg_data, user)
+                return
+            if msg_data.get("has_document") and self._is_json_document(msg_data):
+                media_allowed = await self._check_daily_limit(
+                    session, phone, user, "daily_media_limit"
+                )
+                if not media_allowed:
+                    return
+                await self.handle_backup_document(session, msg_data)
+                return
+
+            await self.handle_text_message(session, msg_data, user)
+        finally:
+            self.evolution.reset_reply_phone(reply_phone_token)
+            self.evolution.reset_reply_instance(instance_token)
+
+    async def _resolve_reply_instance(
+        self,
+        session: AsyncSession,
+        user: User,
+        msg_data: dict,
+    ) -> str | None:
+        """Resolve the best Evolution instance to use when replying."""
+        webhook_instance = (msg_data.get("instance_name") or "").strip()
+        if webhook_instance:
+            return webhook_instance
+
+        if getattr(user, "id", None) is None:
+            return None
+
+        result = await session.execute(
+            select(UserWhatsAppSession)
+            .where(UserWhatsAppSession.user_id == user.id)
+            .order_by(UserWhatsAppSession.id.desc())
+        )
+        whatsapp_session = result.scalars().first()
+        if whatsapp_session is None:
+            return None
+
+        return str(whatsapp_session.evolution_instance)
 
     async def handle_text_message(
         self,
@@ -630,7 +702,8 @@ class WebhookHandler:
             msg = "Identifiquei:\n"
             msg += f"- Valor: R$ {amount:.2f}\n"
             msg += f"- Descricao: {description}\n"
-            msg += f"- Categoria: {category}\n\n"
+            msg += f"- Categoria: {category}\n"
+            msg += f"- {self._build_expense_date_line(expense_data)}\n\n"
             msg += "Qual foi a forma de pagamento?\n"
             msg += "1. Cartão de Crédito\n"
             msg += "2. Cartão de Débito\n"
@@ -676,6 +749,7 @@ class WebhookHandler:
         msg += f"- Descricao: {description}\n"
         msg += f"- Categoria: {category}\n"
         msg += f"- Pagamento: {payment_method}\n"
+        msg += f"- {self._build_expense_date_line(expense_data)}\n"
 
         if installments:
             msg += f"- Parcelas: {installments}x\n"
@@ -1585,6 +1659,7 @@ class WebhookHandler:
         summary += f"Descricao: {description}\n"
         summary += f"Categoria: {category}\n"
         summary += f"Pagamento: {payment_method}\n"
+        summary += f"{self._build_expense_date_line(expense_data)}\n"
 
         if installments:
             summary += f"Parcelas: {installments}x\n"
@@ -1610,6 +1685,9 @@ class WebhookHandler:
 
         if adjustments.get("payment_method"):
             updated["payment_method"] = adjustments["payment_method"]
+
+        if adjustments.get("expense_date"):
+            updated["expense_date"] = adjustments["expense_date"]
 
         return updated
 

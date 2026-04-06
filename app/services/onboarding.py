@@ -13,14 +13,11 @@ class OnboardingService:
     """Manage onboarding progress for authenticated web users."""
 
     STEP_ORDER = [
-        "welcome",
         "terms",
-        "ai_keys",
-        "currency_keys",
+        "api_keys",
         "whatsapp_prepare",
         "whatsapp_qrcode",
         "profile",
-        "notifications",
         "categories",
         "review",
         "completed",
@@ -120,8 +117,27 @@ class OnboardingService:
     ) -> UserOnboardingState:
         """Store the timestamp of WhatsApp connection during onboarding."""
         onboarding_state = await self.get_or_create_state(session, user)
+        onboarding_state.current_step = "profile"
         onboarding_state.whatsapp_connected_at = datetime.now()
         onboarding_state.updated_at = datetime.now()
         await session.commit()
         await session.refresh(onboarding_state)
         return onboarding_state
+
+    def next_step(self, current_step: str) -> str:
+        """Return the next supported onboarding step."""
+        normalized_step = current_step.strip().lower()
+        if normalized_step not in self.STEP_ORDER:
+            return "terms"
+
+        index = self.STEP_ORDER.index(normalized_step)
+        return self.STEP_ORDER[min(index + 1, len(self.STEP_ORDER) - 1)]
+
+    def previous_step(self, current_step: str) -> str:
+        """Return the previous supported onboarding step."""
+        normalized_step = current_step.strip().lower()
+        if normalized_step not in self.STEP_ORDER:
+            return "terms"
+
+        index = self.STEP_ORDER.index(normalized_step)
+        return self.STEP_ORDER[max(index - 1, 0)]

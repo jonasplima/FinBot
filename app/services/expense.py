@@ -14,6 +14,7 @@ from sqlalchemy.orm import selectinload
 from app.database.models import Category, Expense, PaymentMethod, User
 from app.services.category import CategoryService
 from app.services.user import UserService
+from app.utils.parser import parse_date
 from app.utils.validators import normalize_phone
 
 logger = logging.getLogger(__name__)
@@ -89,6 +90,23 @@ class ExpenseService:
 
         return None
 
+    def _resolve_expense_date(self, data: dict) -> tuple[date | None, str | None]:
+        """Resolve the effective expense date from the payload."""
+        raw_expense_date = data.get("expense_date")
+        if raw_expense_date in (None, ""):
+            return date.today(), None
+
+        if isinstance(raw_expense_date, date) and not isinstance(raw_expense_date, datetime):
+            return raw_expense_date, None
+
+        try:
+            return date.fromisoformat(str(raw_expense_date)), None
+        except ValueError:
+            parsed_expense_date = parse_date(str(raw_expense_date))
+            if parsed_expense_date is not None:
+                return parsed_expense_date, None
+            return None, "Data da despesa invalida. Use o formato YYYY-MM-DD."
+
     async def create_expense(
         self,
         session: AsyncSession,
@@ -129,6 +147,10 @@ class ExpenseService:
             if validation_error := self._validate_financial_consistency(data):
                 return {"success": False, "error": validation_error}
 
+            expense_date, expense_date_error = self._resolve_expense_date(data)
+            if expense_date_error:
+                return {"success": False, "error": expense_date_error}
+
             # Handle installments
             installments = data.get("installments")
             if installments:
@@ -141,6 +163,7 @@ class ExpenseService:
                     payment_method,
                     amount,
                     installments,
+                    expense_date,
                 )
 
             # Create single expense
@@ -157,7 +180,7 @@ class ExpenseService:
                 is_recurring=data.get("is_recurring", False),
                 recurring_day=data.get("recurring_day"),
                 recurring_active=data.get("is_recurring", False),
-                date=date.today(),
+                date=expense_date or date.today(),
                 # Currency conversion fields
                 original_currency=data.get("original_currency"),
                 original_amount=Decimal(str(data["original_amount"]))
@@ -189,13 +212,14 @@ class ExpenseService:
         payment_method: PaymentMethod,
         total_amount: Decimal,
         installments: int,
+        base_date: date | None,
     ) -> dict:
         """Create multiple expense records for installments."""
         try:
             base_installment_amount = (total_amount / installments).quantize(Decimal("0.01"))
             allocated_amount = base_installment_amount * installments
             remainder = total_amount - allocated_amount
-            today = date.today()
+            today = base_date or date.today()
             expenses_created = []
 
             for i in range(1, installments + 1):

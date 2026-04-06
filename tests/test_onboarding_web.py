@@ -16,6 +16,8 @@ from app.main import (
     onboarding_category_visibility,
     onboarding_complete,
     onboarding_create_category,
+    onboarding_credentials,
+    onboarding_credentials_upsert,
     onboarding_profile,
     onboarding_state,
     onboarding_step,
@@ -111,19 +113,36 @@ class TestOnboardingWeb:
 
         accepted_payload = await onboarding_accept_terms(request)
         assert accepted_payload["user"]["accepted_terms"] is True
-        assert accepted_payload["onboarding"]["current_step"] == "ai_keys"
+        assert accepted_payload["onboarding"]["current_step"] == "api_keys"
+
+        credential_payload = await onboarding_credentials(request)
+        assert "gemini" in credential_payload["credentials"]
+
+        upsert_payload = await onboarding_credentials_upsert(
+            request,
+            payload=type(
+                "CredentialPayload",
+                (),
+                {"provider": "groq", "api_key": "user-groq-key-1234"},
+            )(),
+        )
+        assert upsert_payload["credential"]["provider"] == "groq"
+
+        review_after_credential = await onboarding_state(request)
+        assert review_after_credential["review"]["configured_providers"] == ["Groq"]
 
         profile_payload = await onboarding_profile(
             request,
             payload=type(
                 "ProfilePayload",
                 (),
-                {"name": "Clara Martins", "display_name": "Clara", "timezone": "UTC"},
+                {"display_name": "Clara", "timezone": "UTC", "name": None},
             )(),
         )
-        assert profile_payload["user"]["name"] == "Clara Martins"
+        assert profile_payload["user"]["name"] == "Clara"
         assert profile_payload["user"]["display_name"] == "Clara"
         assert profile_payload["user"]["timezone"] == "UTC"
+        assert profile_payload["onboarding"]["current_step"] == "categories"
 
         stepped_payload = await onboarding_step(
             request,
@@ -178,6 +197,9 @@ class TestOnboardingWeb:
         session_cookie = self._extract_cookie(register_response)
         request = self._request_with_cookie("/onboarding/whatsapp/prepare", session_cookie)
 
+        await onboarding_accept_terms(
+            self._request_with_cookie("/onboarding/terms/accept", session_cookie)
+        )
         payload = await onboarding_whatsapp_prepare(request)
 
         assert payload["session"]["session_key"].startswith("user-")
@@ -201,6 +223,9 @@ class TestOnboardingWeb:
         session_cookie = self._extract_cookie(register_response)
         request = self._request_with_cookie("/onboarding/whatsapp/qrcode", session_cookie)
 
+        await onboarding_accept_terms(
+            self._request_with_cookie("/onboarding/terms/accept", session_cookie)
+        )
         with patch("app.services.whatsapp_onboarding.EvolutionService") as mock_evolution_cls:
             mock_evolution = mock_evolution_cls.return_value
             mock_evolution.get_qrcode = AsyncMock(
@@ -234,6 +259,9 @@ class TestOnboardingWeb:
         session_cookie = self._extract_cookie(register_response)
         request = self._request_with_cookie("/onboarding/whatsapp/refresh", session_cookie)
 
+        await onboarding_accept_terms(
+            self._request_with_cookie("/onboarding/terms/accept", session_cookie)
+        )
         await onboarding_whatsapp_prepare(request)
 
         with patch("app.services.whatsapp_onboarding.EvolutionService") as mock_evolution_cls:
@@ -267,6 +295,9 @@ class TestOnboardingWeb:
         session_cookie = self._extract_cookie(register_response)
         request = self._request_with_cookie("/onboarding/whatsapp/status", session_cookie)
 
+        await onboarding_accept_terms(
+            self._request_with_cookie("/onboarding/terms/accept", session_cookie)
+        )
         await onboarding_whatsapp_prepare(request)
 
         with patch("app.services.whatsapp_onboarding.EvolutionService") as mock_evolution_cls:
@@ -320,3 +351,55 @@ class TestOnboardingWeb:
         updated_payload = await onboarding_categories(request)
         assert any(item["name"] == "Pets" for item in updated_payload["custom"])
         assert any(item["name"] == "Lazer" for item in updated_payload["inactive"])
+
+        review_payload = await onboarding_state(
+            self._request_with_cookie("/onboarding/state", session_cookie)
+        )
+        assert review_payload["review"]["custom_categories"] == ["Pets"]
+        assert review_payload["review"]["hidden_categories"] == ["Lazer"]
+
+    async def test_whatsapp_endpoints_require_terms_acceptance(self):
+        """WhatsApp onboarding must stay blocked until terms are accepted."""
+        await self._reset_real_db()
+        register_response = Response()
+        await auth_register(
+            RegisterRequest(
+                name="Duda",
+                email="duda@example.com",
+                password="senha-super-segura",
+                phone="5511955555555",
+            ),
+            register_response,
+        )
+        session_cookie = self._extract_cookie(register_response)
+        request = self._request_with_cookie("/onboarding/whatsapp/prepare", session_cookie)
+
+        try:
+            await onboarding_whatsapp_prepare(request)
+        except HTTPException as exc:
+            assert exc.status_code == 400
+        else:
+            raise AssertionError("Expected HTTPException when terms are not accepted")
+
+    async def test_credentials_require_terms_acceptance(self):
+        """Credential setup should also stay blocked until the terms are accepted."""
+        await self._reset_real_db()
+        register_response = Response()
+        await auth_register(
+            RegisterRequest(
+                name="Mila",
+                email="mila@example.com",
+                password="senha-super-segura",
+                phone="5511944447777",
+            ),
+            register_response,
+        )
+        session_cookie = self._extract_cookie(register_response)
+        request = self._request_with_cookie("/onboarding/credentials", session_cookie)
+
+        try:
+            await onboarding_credentials(request)
+        except HTTPException as exc:
+            assert exc.status_code == 400
+        else:
+            raise AssertionError("Expected HTTPException when terms are not accepted")

@@ -566,10 +566,19 @@ Status: concluída
 
 ### Fase 7. Refinamento
 
+Status: em andamento
+
 1. Tela de configurações pós-onboarding
 2. Gestão posterior de limites
 3. Gestão posterior de backup/importação
 4. Auditoria administrativa e UX de suporte
+
+Entregas já concluídas nesta fase:
+
+1. Página autenticada `/web/settings` para gestão pós-onboarding
+2. Endpoints protegidos para perfil, notificações e limites diários
+3. Exportação de backup pelo painel web
+4. Preview e aplicação de importação de backup com confirmação explícita de migração
 
 ## Ordem recomendada de execução
 

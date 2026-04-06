@@ -416,6 +416,24 @@ class UserWhatsAppSession(Base):
         )
 
 
+class UserAuthorizedPhone(Base):
+    """Additional WhatsApp numbers authorized to access the same user account."""
+
+    __tablename__ = "user_authorized_phones"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    phone = Column(String(20), nullable=False, unique=True, index=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.now, server_default=func.now())
+
+    __table_args__ = (Index("ix_user_authorized_phones_user_phone", "user_id", "phone"),)
+
+    def __repr__(self) -> str:
+        return (
+            f"<UserAuthorizedPhone(id={self.id}, user_id={self.user_id}, phone='{self.phone}')>"
+        )
+
+
 class UserCategory(Base):
     """Per-user category customization layered over the global category catalog."""
 

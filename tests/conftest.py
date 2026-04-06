@@ -308,6 +308,17 @@ class UserWhatsAppSession(TestBase):
     updated_at = Column(DateTime, nullable=True)
 
 
+class UserAuthorizedPhone(TestBase):
+    """Test additional authorized WhatsApp phone model."""
+
+    __tablename__ = "user_authorized_phones"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    phone = Column(String(20), nullable=False, unique=True, index=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.now)
+
+
 class UserCategory(TestBase):
     """Test per-user category customization model."""
 

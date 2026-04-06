@@ -150,6 +150,35 @@ class TestExpenseServiceCreateExpense:
         assert result["success"] is True
         assert "expense_id" in result
 
+    async def test_create_expense_uses_explicit_expense_date(
+        self, service, seeded_session, test_phone, sample_expense_data
+    ):
+        """Test explicit retroactive expense date is persisted."""
+        data = sample_expense_data.copy()
+        data["expense_date"] = "2026-04-01"
+
+        result = await service.create_expense(seeded_session, test_phone, data)
+
+        assert result["success"] is True
+
+        query = await seeded_session.execute(
+            select(Expense).where(Expense.id == result["expense_id"])
+        )
+        expense = query.scalar_one()
+        assert expense.date == date(2026, 4, 1)
+
+    async def test_create_expense_rejects_invalid_expense_date(
+        self, service, seeded_session, test_phone, sample_expense_data
+    ):
+        """Test invalid explicit expense date is rejected."""
+        data = sample_expense_data.copy()
+        data["expense_date"] = "2026-99-99"
+
+        result = await service.create_expense(seeded_session, test_phone, data)
+
+        assert result["success"] is False
+        assert "data da despesa invalida" in result["error"].lower()
+
     async def test_category_matching_case_insensitive(self, service, seeded_session, test_phone):
         """Test that category matching is case insensitive."""
         data = {

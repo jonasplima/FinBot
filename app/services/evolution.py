@@ -2,6 +2,7 @@
 
 import base64
 import logging
+from contextvars import ContextVar
 from datetime import datetime, timedelta
 
 import httpx
@@ -15,6 +16,8 @@ settings = get_settings()
 # Track message IDs sent by the bot to avoid processing them when received via webhook
 # Format: {message_id: timestamp}
 _sent_message_ids: dict[str, datetime] = {}
+_current_reply_instance: ContextVar[str | None] = ContextVar("current_reply_instance", default=None)
+_current_reply_phone: ContextVar[str | None] = ContextVar("current_reply_phone", default=None)
 
 
 def _cleanup_old_ids() -> None:
@@ -39,8 +42,26 @@ class EvolutionService:
 
     def _instance_name(self, instance_name: str | None = None) -> str:
         """Resolve the target Evolution instance name."""
-        normalized = (instance_name or "").strip()
+        normalized = (instance_name or _current_reply_instance.get() or "").strip()
         return normalized or self.instance
+
+    def set_reply_instance(self, instance_name: str | None):
+        """Bind a reply instance to the current execution context."""
+        normalized = (instance_name or "").strip() or None
+        return _current_reply_instance.set(normalized)
+
+    def reset_reply_instance(self, token) -> None:
+        """Reset the current execution context reply instance."""
+        _current_reply_instance.reset(token)
+
+    def set_reply_phone(self, phone: str | None):
+        """Bind a destination phone override to the current execution context."""
+        normalized = (phone or "").strip() or None
+        return _current_reply_phone.set(normalized)
+
+    def reset_reply_phone(self, token) -> None:
+        """Reset the current execution context reply phone override."""
+        _current_reply_phone.reset(token)
 
     async def _request(
         self,
@@ -244,9 +265,15 @@ class EvolutionService:
                 "message": str(e),
             }
 
-    async def send_text(self, phone: str, message: str) -> dict:
+    async def send_text(
+        self,
+        phone: str,
+        message: str,
+        instance_name: str | None = None,
+    ) -> dict:
         """Send text message to phone number."""
         try:
+            phone = (_current_reply_phone.get() or phone).strip()
             # Ensure phone has WhatsApp suffix
             if not phone.endswith("@s.whatsapp.net"):
                 phone = f"{phone}@s.whatsapp.net"
@@ -258,7 +285,7 @@ class EvolutionService:
 
             result = await self._request(
                 "POST",
-                f"/message/sendText/{self.instance}",
+                f"/message/sendText/{self._instance_name(instance_name)}",
                 json=data,
             )
 
@@ -283,9 +310,11 @@ class EvolutionService:
         filename: str,
         caption: str | None = None,
         mimetype: str = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        instance_name: str | None = None,
     ) -> dict:
         """Send document (file) to phone number."""
         try:
+            phone = (_current_reply_phone.get() or phone).strip()
             if not phone.endswith("@s.whatsapp.net"):
                 phone = f"{phone}@s.whatsapp.net"
 
@@ -302,7 +331,7 @@ class EvolutionService:
 
             return await self._request(
                 "POST",
-                f"/message/sendMedia/{self.instance}",
+                f"/message/sendMedia/{self._instance_name(instance_name)}",
                 json=data,
             )
         except Exception as e:
@@ -315,9 +344,11 @@ class EvolutionService:
         image_bytes: bytes,
         filename: str = "chart.png",
         caption: str | None = None,
+        instance_name: str | None = None,
     ) -> dict:
         """Send image to phone number via WhatsApp."""
         try:
+            phone = (_current_reply_phone.get() or phone).strip()
             if not phone.endswith("@s.whatsapp.net"):
                 phone = f"{phone}@s.whatsapp.net"
 
@@ -337,14 +368,14 @@ class EvolutionService:
 
             return await self._request(
                 "POST",
-                f"/message/sendMedia/{self.instance}",
+                f"/message/sendMedia/{self._instance_name(instance_name)}",
                 json=data,
             )
         except Exception as e:
             logger.error(f"Error sending image message: {e}")
             return {"success": False, "error": "image_send_failed"}
 
-    async def download_media(self, message_key: dict) -> bytes | None:
+    async def download_media(self, message_key: dict, instance_name: str | None = None) -> bytes | None:
         """Download media from a message."""
         try:
             safe_phone = mask_phone(message_key.get("remoteJid", ""))
@@ -363,7 +394,7 @@ class EvolutionService:
 
             result = await self._request(
                 "POST",
-                f"/chat/getBase64FromMediaMessage/{self.instance}",
+                f"/chat/getBase64FromMediaMessage/{self._instance_name(instance_name)}",
                 json=data,
             )
 
@@ -446,6 +477,12 @@ class EvolutionService:
                 "text": text_content,
                 "has_image": has_image,
                 "has_document": has_document,
+                "instance_name": (
+                    str(webhook_data.get("instance"))
+                    if webhook_data.get("instance")
+                    else str(data.get("instanceName") or data.get("instance") or "")
+                )
+                or None,
                 "document_mimetype": document_mimetype,
                 "document_filename": document_message.get("fileName", "") if has_document else "",
                 "message_key": key,

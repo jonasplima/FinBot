@@ -113,6 +113,7 @@ class TestAIServiceProcessMessage:
                 "amount": 45.00,
                 "category": "Alimentação",
                 "payment_method": "Pix",
+                "expense_date": "2026-04-01",
                 "installments": None,
                 "is_shared": False,
                 "shared_percentage": None,
@@ -136,6 +137,7 @@ class TestAIServiceProcessMessage:
             assert result["intent"] == "register_expense"
             assert result["data"]["amount"] == 45.00
             assert result["data"]["category"] == "Alimentação"
+            assert result["data"]["expense_date"] == "2026-04-01"
 
     async def test_process_message_query_month(self, mock_model):
         """Test processing a query month message."""

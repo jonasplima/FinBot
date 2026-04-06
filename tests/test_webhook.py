@@ -36,6 +36,8 @@ class TestWebhookHandlerMessageExtraction:
             mock_evolution.send_text = AsyncMock()
             mock_evolution.send_document = AsyncMock()
             mock_evolution.extract_message_data = MagicMock()
+            mock_evolution.set_reply_instance = MagicMock(return_value=object())
+            mock_evolution.reset_reply_instance = MagicMock()
             MockEvolution.return_value = mock_evolution
 
             mock_ai = MagicMock()
@@ -63,6 +65,8 @@ class TestWebhookHandlerPendingConfirmation:
         ):
             mock_evolution = MagicMock()
             mock_evolution.send_text = AsyncMock()
+            mock_evolution.set_reply_instance = MagicMock(return_value=object())
+            mock_evolution.reset_reply_instance = MagicMock()
             MockEvolution.return_value = mock_evolution
 
             mock_ai = MagicMock()
@@ -751,6 +755,8 @@ class TestWebhookHandlerIntentHandling:
             mock_evolution.send_text = AsyncMock()
             mock_evolution.send_document = AsyncMock()
             mock_evolution.download_media = AsyncMock()
+            mock_evolution.set_reply_instance = MagicMock(return_value=object())
+            mock_evolution.reset_reply_instance = MagicMock()
             MockEvolution.return_value = mock_evolution
 
             mock_ai = MagicMock()
@@ -978,6 +984,7 @@ class TestWebhookHandlerIntentHandling:
                 "amount": 42.50,
                 "category": "Transporte",
                 "payment_method": "Pix",
+                "expense_date": "2026-04-01",
             },
         }
         handler.handle_register_expense = AsyncMock()
@@ -1002,6 +1009,48 @@ class TestWebhookHandlerIntentHandling:
             user=accepted_user_in_db,
         )
         handler.handle_register_expense.assert_awaited_once()
+
+    async def test_handle_register_expense_confirmation_shows_explicit_expense_date(
+        self, handler, seeded_session, test_phone
+    ):
+        """Test confirmation message includes the date that will be stored."""
+        await handler.handle_register_expense(
+            seeded_session,
+            test_phone,
+            {
+                "data": {
+                    "description": "Boliche",
+                    "amount": 100.0,
+                    "category": "Lazer",
+                    "payment_method": "Pix",
+                    "expense_date": "2026-04-01",
+                }
+            },
+        )
+
+        handler.evolution.send_text.assert_awaited_once()
+        assert "01/04/2026" in handler.evolution.send_text.call_args.args[1]
+
+    async def test_handle_register_expense_confirmation_highlights_assumed_today_date(
+        self, handler, seeded_session, test_phone
+    ):
+        """Test confirmation message highlights when today's date is assumed."""
+        await handler.handle_register_expense(
+            seeded_session,
+            test_phone,
+            {
+                "data": {
+                    "description": "Boliche",
+                    "amount": 100.0,
+                    "category": "Lazer",
+                    "payment_method": "Pix",
+                }
+            },
+        )
+
+        handler.evolution.send_text.assert_awaited_once()
+        message = handler.evolution.send_text.call_args.args[1]
+        assert "Data assumida: hoje" in message
 
     async def test_handle_pdf_message_without_extractable_text(
         self, handler, seeded_session, test_phone, accepted_user_in_db

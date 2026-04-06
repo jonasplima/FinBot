@@ -128,6 +128,7 @@ Analise a mensagem do usuario e retorne um JSON com a intencao e dados extraidos
     "amount": 0.00,
     "category": "categoria exata da lista",
     "payment_method": "metodo exato da lista",
+    "expense_date": null ou data da despesa no formato "YYYY-MM-DD",
     "installments": null ou numero de parcelas,
     "is_shared": false ou true,
     "shared_percentage": null ou percentual do usuario,
@@ -156,23 +157,26 @@ Analise a mensagem do usuario e retorne um JSON com a intencao e dados extraidos
 4. Para recorrentes, extraia o dia do mes (ex: "todo dia 15" -> recurring_day: 15)
 5. Para consultas, extraia mes e ano se mencionados
 6. Se nao conseguir identificar algo, use null
-7. Inferir categoria quando nao especificada (ex: "almoco" -> Alimentação)
-8. Inferir metodo de pagamento pelo contexto (ex: "no pix" -> Pix)
-9. Para orcamentos: extraia categoria e limite (budget_limit) em reais
-10. Frases como "definir limite", "orcamento de X reais", "limite de X para Y" indicam set_budget
-11. Para export: se o usuario mencionar PDF, use export_format="pdf"; caso contrario use export_format="xlsx"
-12. Para graficos: "grafico", "visualmente", "evolucao" indicam show_chart. Tipos: pie (pizza), bars (barras), line (linha/evolucao)
-13. Para metas: "quero economizar", "meta de", "guardar X ate" indicam create_goal. Extraia descricao, valor e prazo
-14. Para consultar meta: "como esta minha meta", "progresso da meta" indicam check_goal
-15. Para depositar na meta: "depositar na meta", "guardar na meta", "adicionar a meta" indicam add_to_goal
-16. Moedas estrangeiras: detecte dolares (USD), euros (EUR), libras (GBP), won coreano (KRW), florim hungaro (HUF), etc.
-17. Se o usuario registrar gasto em moeda estrangeira ("gastei 50 dolares"), use register_expense com currency preenchido
-18. Para conversao sem gasto ("quanto e 100 dolares", "converter 50 euros pra reais"), use convert_currency
-19. Frases como "exporta meu backup", "fazer backup dos meus dados" indicam export_backup
-20. Frases como "importar backup", "restaurar backup", "recuperar backup" indicam import_backup
-21. Frases como "meus limites", "mostrar limites", "ver limites" indicam show_limits
-22. Frases como "ajustar limite de ia para 30 por dia" indicam set_user_limit
-23. Mapeamento de limites:
+7. Para despesas/entradas, extraia a data da compra ou do gasto quando o usuario informar explicitamente
+8. Se o usuario nao informar data, deixe expense_date como null
+9. Se o usuario mandar uma nota/comprovante e mencionar outra data a ser considerada, priorize a data informada pelo usuario
+10. Inferir categoria quando nao especificada (ex: "almoco" -> Alimentação)
+11. Inferir metodo de pagamento pelo contexto (ex: "no pix" -> Pix)
+12. Para orcamentos: extraia categoria e limite (budget_limit) em reais
+13. Frases como "definir limite", "orcamento de X reais", "limite de X para Y" indicam set_budget
+14. Para export: se o usuario mencionar PDF, use export_format="pdf"; caso contrario use export_format="xlsx"
+15. Para graficos: "grafico", "visualmente", "evolucao" indicam show_chart. Tipos: pie (pizza), bars (barras), line (linha/evolucao)
+16. Para metas: "quero economizar", "meta de", "guardar X ate" indicam create_goal. Extraia descricao, valor e prazo
+17. Para consultar meta: "como esta minha meta", "progresso da meta" indicam check_goal
+18. Para depositar na meta: "depositar na meta", "guardar na meta", "adicionar a meta" indicam add_to_goal
+19. Moedas estrangeiras: detecte dolares (USD), euros (EUR), libras (GBP), won coreano (KRW), florim hungaro (HUF), etc.
+20. Se o usuario registrar gasto em moeda estrangeira ("gastei 50 dolares"), use register_expense com currency preenchido
+21. Para conversao sem gasto ("quanto e 100 dolares", "converter 50 euros pra reais"), use convert_currency
+22. Frases como "exporta meu backup", "fazer backup dos meus dados" indicam export_backup
+23. Frases como "importar backup", "restaurar backup", "recuperar backup" indicam import_backup
+24. Frases como "meus limites", "mostrar limites", "ver limites" indicam show_limits
+25. Frases como "ajustar limite de ia para 30 por dia" indicam set_user_limit
+26. Mapeamento de limites:
    - texto/mensagem -> daily_text_limit
    - midia/media/arquivo -> daily_media_limit
    - ia/ai -> daily_ai_limit
@@ -180,19 +184,19 @@ Analise a mensagem do usuario e retorne um JSON com a intencao e dados extraidos
 ## Exemplos:
 
 Entrada: "gastei 45 reais no almoco no pix"
-Saida: {"intent": "register_expense", "data": {"description": "almoco", "amount": 45.00, "category": "Alimentação", "payment_method": "Pix", "installments": null, "is_shared": false, "shared_percentage": null, "recurring_day": null, "month": null, "year": null}, "confidence": 0.95}
+Saida: {"intent": "register_expense", "data": {"description": "almoco", "amount": 45.00, "category": "Alimentação", "payment_method": "Pix", "expense_date": null, "installments": null, "is_shared": false, "shared_percentage": null, "recurring_day": null, "month": null, "year": null}, "confidence": 0.95}
 
 Entrada: "comprei um tenis de 300 reais em 3x no cartao"
-Saida: {"intent": "register_expense", "data": {"description": "tenis", "amount": 300.00, "category": "Vestuario", "payment_method": "Cartão de Crédito", "installments": 3, "is_shared": false, "shared_percentage": null, "recurring_day": null, "month": null, "year": null}, "confidence": 0.9}
+Saida: {"intent": "register_expense", "data": {"description": "tenis", "amount": 300.00, "category": "Vestuario", "payment_method": "Cartão de Crédito", "expense_date": null, "installments": 3, "is_shared": false, "shared_percentage": null, "recurring_day": null, "month": null, "year": null}, "confidence": 0.9}
 
 Entrada: "netflix 55 reais todo mes dia 15"
-Saida: {"intent": "register_recurring", "data": {"description": "netflix", "amount": 55.00, "category": "Assinatura", "payment_method": "Cartão de Crédito", "installments": null, "is_shared": false, "shared_percentage": null, "recurring_day": 15, "month": null, "year": null}, "confidence": 0.95}
+Saida: {"intent": "register_recurring", "data": {"description": "netflix", "amount": 55.00, "category": "Assinatura", "payment_method": "Cartão de Crédito", "expense_date": null, "installments": null, "is_shared": false, "shared_percentage": null, "recurring_day": 15, "month": null, "year": null}, "confidence": 0.95}
 
 Entrada: "cancelar netflix"
-Saida: {"intent": "cancel_recurring", "data": {"description": "netflix", "amount": null, "category": null, "payment_method": null, "installments": null, "is_shared": false, "shared_percentage": null, "recurring_day": null, "month": null, "year": null}, "confidence": 0.9}
+Saida: {"intent": "cancel_recurring", "data": {"description": "netflix", "amount": null, "category": null, "payment_method": null, "expense_date": null, "installments": null, "is_shared": false, "shared_percentage": null, "recurring_day": null, "month": null, "year": null}, "confidence": 0.9}
 
 Entrada: "quanto gastei esse mes?"
-Saida: {"intent": "query_month", "data": {"description": null, "amount": null, "category": null, "payment_method": null, "installments": null, "is_shared": false, "shared_percentage": null, "recurring_day": null, "month": null, "year": null}, "confidence": 0.95}
+Saida: {"intent": "query_month", "data": {"description": null, "amount": null, "category": null, "payment_method": null, "expense_date": null, "installments": null, "is_shared": false, "shared_percentage": null, "recurring_day": null, "month": null, "year": null}, "confidence": 0.95}
 
 Entrada: "quais foram minhas despesas esse mes"
 Saida: {"intent": "query_month", "data": {"description": null, "amount": null, "category": null, "payment_method": null, "installments": null, "is_shared": false, "shared_percentage": null, "recurring_day": null, "month": null, "year": null}, "confidence": 0.95}
@@ -213,7 +217,10 @@ Entrada: "exporta pdf de marco"
 Saida: {"intent": "export", "data": {"description": null, "amount": null, "category": null, "payment_method": null, "installments": null, "is_shared": false, "shared_percentage": null, "recurring_day": null, "month": 3, "year": null, "export_format": "pdf"}, "confidence": 0.95}
 
 Entrada: "gastei 200 reais no mercado dividido 60% meu"
-Saida: {"intent": "register_expense", "data": {"description": "mercado", "amount": 200.00, "category": "Mercado", "payment_method": "Pix", "installments": null, "is_shared": true, "shared_percentage": 60.0, "recurring_day": null, "month": null, "year": null}, "confidence": 0.9}
+Saida: {"intent": "register_expense", "data": {"description": "mercado", "amount": 200.00, "category": "Mercado", "payment_method": "Pix", "expense_date": null, "installments": null, "is_shared": true, "shared_percentage": 60.0, "recurring_day": null, "month": null, "year": null}, "confidence": 0.9}
+
+Entrada: "registre esse gasto no dia 01/04/2026"
+Saida: {"intent": "register_expense", "data": {"description": null, "amount": null, "category": null, "payment_method": null, "expense_date": "2026-04-01", "installments": null, "is_shared": false, "shared_percentage": null, "recurring_day": null, "month": null, "year": null}, "confidence": 0.9}
 
 Entrada: "desfaz"
 Saida: {"intent": "undo_last", "data": {}, "confidence": 0.95}
@@ -383,7 +390,8 @@ Classifique a intencao da resposta do usuario:
     "amount": null ou novo valor numerico,
     "description": null ou nova descricao,
     "category": null ou nova categoria (usar nome exato da lista),
-    "payment_method": null ou novo metodo (usar nome exato)
+    "payment_method": null ou novo metodo (usar nome exato),
+    "expense_date": null ou nova data no formato "YYYY-MM-DD"
   }},
   "confidence": 0.0 a 1.0
 }}
@@ -431,6 +439,7 @@ Retorne um JSON no formato:
     "amount": valor_numerico,
     "category": "categoria da lista acima",
     "payment_method": null,
+    "expense_date": "YYYY-MM-DD" ou null,
     "installments": null,
     "is_shared": false,
     "shared_percentage": null,
@@ -440,6 +449,12 @@ Retorne um JSON no formato:
   },
   "confidence": 0.0 a 1.0
 }
+
+## Regras de data:
+- Extraia a data da compra/emissao quando ela estiver visivel na nota
+- Use o formato "YYYY-MM-DD"
+- Se o usuario escrever uma data no texto adicional, priorize a data informada pelo usuario
+- Se nao encontrar uma data confiavel, use null
 
 IMPORTANTE: payment_method deve ser null quando nao identificavel na imagem. O sistema perguntara ao usuario.
 
@@ -477,6 +492,7 @@ Retorne um JSON no formato:
     "amount": valor_numerico,
     "category": "categoria da lista acima",
     "payment_method": null,
+    "expense_date": "YYYY-MM-DD" ou null,
     "installments": null,
     "is_shared": false,
     "shared_percentage": null,
@@ -489,6 +505,12 @@ Retorne um JSON no formato:
 
 Se o texto nao for suficiente para identificar um gasto, retorne:
 {"success": false, "error": "motivo"}
+
+## Regras de data:
+- Extraia a data da compra/emissao quando estiver presente no comprovante
+- Use o formato "YYYY-MM-DD"
+- Se o usuario escrever uma data no texto adicional, priorize a data informada pelo usuario
+- Se nao encontrar uma data confiavel, use null
 
 Responda APENAS com o JSON.
 """

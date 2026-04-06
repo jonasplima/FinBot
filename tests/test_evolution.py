@@ -8,6 +8,30 @@ from app.services.evolution import EvolutionService
 class TestEvolutionServiceMessageExtraction:
     """Tests for extracting data from incoming Evolution webhooks."""
 
+    def test_extract_message_data_includes_instance_name(self):
+        """Test extraction keeps the source Evolution instance for replies."""
+        webhook_data = {
+            "event": "messages.upsert",
+            "instance": "FinBot-user-12-abcdef12",
+            "data": {
+                "key": {
+                    "id": "abc123",
+                    "remoteJid": "5511999999999@s.whatsapp.net",
+                },
+                "message": {
+                    "conversation": "teste",
+                },
+            },
+        }
+
+        with patch("app.services.evolution.settings"):
+            service = EvolutionService()
+
+        result = service.extract_message_data(webhook_data)
+
+        assert result is not None
+        assert result["instance_name"] == "FinBot-user-12-abcdef12"
+
     def test_extract_message_data_document_pdf(self):
         """Test extraction of PDF document metadata from webhook payload."""
         webhook_data = {
@@ -100,5 +124,33 @@ class TestEvolutionServiceWebhookSetup:
                             "CONNECTION_UPDATE",
                         ],
                     },
+                },
+            )
+
+
+class TestEvolutionServiceReplyInstance:
+    """Tests for contextual reply instance selection."""
+
+    async def test_send_text_uses_context_reply_instance(self):
+        """Test send_text targets the contextual instance when one is set."""
+        with patch("app.services.evolution.settings") as mock_settings:
+            mock_settings.evolution_api_url = "http://localhost:8080"
+            mock_settings.evolution_api_key = "test-key"
+            mock_settings.evolution_instance = "default-instance"
+
+            service = EvolutionService()
+            service._request = AsyncMock(return_value={})
+            token = service.set_reply_instance("user-instance-123")
+            try:
+                await service.send_text("5511999999999", "teste")
+            finally:
+                service.reset_reply_instance(token)
+
+            service._request.assert_awaited_once_with(
+                "POST",
+                "/message/sendText/user-instance-123",
+                json={
+                    "number": "5511999999999@s.whatsapp.net",
+                    "text": "teste",
                 },
             )

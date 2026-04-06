@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.database.models import User
+from app.database.models import User, UserAuthorizedPhone
 from app.utils.validators import normalize_phone
 
 logger = logging.getLogger(__name__)
@@ -44,9 +44,7 @@ class UserService:
     ) -> User:
         """Get an existing user or create a new profile with default limits."""
         normalized_phone = normalize_phone(phone)
-
-        result = await session.execute(select(User).where(User.phone == normalized_phone))
-        user = result.scalar_one_or_none()
+        user = await self.get_user_by_phone(session, normalized_phone)
 
         if user:
             if not user.backup_owner_id:
@@ -77,6 +75,121 @@ class UserService:
         await session.refresh(user)
         logger.info(f"Created new user profile for {normalized_phone}")
         return user
+
+    async def get_user_by_phone(
+        self,
+        session: AsyncSession,
+        phone: str,
+    ) -> User | None:
+        """Return a persisted user by normalized phone when it exists."""
+        normalized_phone = normalize_phone(phone)
+        result = await session.execute(select(User).where(User.phone == normalized_phone))
+        user = result.scalar_one_or_none()
+        if user is not None:
+            return user
+
+        alias_result = await session.execute(
+            select(User)
+            .join(UserAuthorizedPhone, UserAuthorizedPhone.user_id == User.id)
+            .where(UserAuthorizedPhone.phone == normalized_phone)
+        )
+        return alias_result.scalar_one_or_none()
+
+    async def list_authorized_phones(
+        self,
+        session: AsyncSession,
+        user: User,
+    ) -> list[dict[str, str | bool]]:
+        """Return primary and additional authorized numbers for a user account."""
+        result = await session.execute(
+            select(UserAuthorizedPhone)
+            .where(UserAuthorizedPhone.user_id == user.id)
+            .order_by(UserAuthorizedPhone.phone.asc())
+        )
+        aliases = result.scalars().all()
+
+        phones: list[dict[str, str | bool]] = [
+            {"phone": str(user.phone), "is_primary": True},
+        ]
+        for alias in aliases:
+            phones.append({"phone": str(alias.phone), "is_primary": False})
+        return phones
+
+    async def add_authorized_phone(
+        self,
+        session: AsyncSession,
+        user: User,
+        phone: str,
+    ) -> list[dict[str, str | bool]]:
+        """Authorize an additional WhatsApp number for the same account."""
+        normalized_phone = normalize_phone(phone)
+        if normalized_phone == normalize_phone(str(user.phone)):
+            return await self.list_authorized_phones(session, user)
+
+        existing_primary = await session.execute(select(User).where(User.phone == normalized_phone))
+        user_by_phone = existing_primary.scalar_one_or_none()
+        if user_by_phone is not None and user_by_phone.id != user.id:
+            raise ValueError("Esse numero ja pertence a outra conta.")
+
+        existing_alias_query = await session.execute(
+            select(UserAuthorizedPhone).where(UserAuthorizedPhone.phone == normalized_phone)
+        )
+        existing_alias = existing_alias_query.scalar_one_or_none()
+        if existing_alias is not None:
+            if existing_alias.user_id != user.id:
+                raise ValueError("Esse numero ja esta autorizado em outra conta.")
+            return await self.list_authorized_phones(session, user)
+
+        session.add(
+            UserAuthorizedPhone(
+                user_id=user.id,
+                phone=normalized_phone,
+                created_at=datetime.now(),
+            )
+        )
+        await session.commit()
+        return await self.list_authorized_phones(session, user)
+
+    async def remove_authorized_phone(
+        self,
+        session: AsyncSession,
+        user: User,
+        phone: str,
+    ) -> list[dict[str, str | bool]]:
+        """Remove an additional authorized number from the account."""
+        normalized_phone = normalize_phone(phone)
+        if normalized_phone == normalize_phone(str(user.phone)):
+            raise ValueError("O numero principal da conta nao pode ser removido.")
+
+        result = await session.execute(
+            select(UserAuthorizedPhone)
+            .where(UserAuthorizedPhone.user_id == user.id)
+            .where(UserAuthorizedPhone.phone == normalized_phone)
+        )
+        alias = result.scalar_one_or_none()
+        if alias is None:
+            return await self.list_authorized_phones(session, user)
+
+        await session.delete(alias)
+        await session.commit()
+        return await self.list_authorized_phones(session, user)
+
+    async def is_phone_authorized(
+        self,
+        session: AsyncSession,
+        phone: str,
+    ) -> bool:
+        """Check whether a phone is authorized by bootstrap list or web onboarding."""
+        normalized_phone = normalize_phone(phone)
+
+        if not self.settings.allowed_phones:
+            return True
+
+        if normalized_phone in {normalize_phone(item) for item in self.settings.allowed_phones}:
+            return True
+
+        user = await self.get_user_by_phone(session, normalized_phone)
+        return bool(user and user.web_access_enabled and user.is_active)
 
     async def adopt_backup_owner_identity(
         self,
@@ -123,6 +236,7 @@ class UserService:
         name: str | None = None,
         display_name: str | None = None,
         timezone: str | None = None,
+        email: str | None = None,
     ) -> User:
         """Update basic profile fields from the web onboarding flow."""
         if name is not None:
@@ -141,6 +255,67 @@ class UserService:
                 raise ValueError("Timezone e obrigatorio.")
             user.timezone = normalized_timezone
 
+        if email is not None:
+            normalized_email = email.strip().lower()
+            if normalized_email:
+                if "@" not in normalized_email or normalized_email.startswith("@"):
+                    raise ValueError("Email invalido.")
+                local_part, _, domain = normalized_email.partition("@")
+                if not local_part or "." not in domain:
+                    raise ValueError("Email invalido.")
+                user.email = normalized_email
+
+        user.updated_at = datetime.now()
+        user.last_seen_at = datetime.now()
+        await session.commit()
+        await session.refresh(user)
+        return user
+
+    async def update_notification_preferences(
+        self,
+        session: AsyncSession,
+        user: User,
+        *,
+        budget_alerts: bool,
+        recurring_reminders: bool,
+        goal_updates: bool,
+    ) -> User:
+        """Update notification preferences exposed in the web settings panel."""
+        current_preferences = dict(user.notification_preferences or {})
+        current_preferences.update(
+            {
+                "whatsapp": True,
+                "budget_alerts": budget_alerts,
+                "recurring_reminders": recurring_reminders,
+                "goal_updates": goal_updates,
+            }
+        )
+        user.notification_preferences = current_preferences
+        user.updated_at = datetime.now()
+        user.last_seen_at = datetime.now()
+        await session.commit()
+        await session.refresh(user)
+        return user
+
+    async def update_limits(
+        self,
+        session: AsyncSession,
+        user: User,
+        *,
+        limits_enabled: bool,
+        daily_text_limit: int,
+        daily_media_limit: int,
+        daily_ai_limit: int,
+    ) -> User:
+        """Update all user daily limits in one operation."""
+        for value in (daily_text_limit, daily_media_limit, daily_ai_limit):
+            if value < 0:
+                raise ValueError("Os limites nao podem ser negativos.")
+
+        user.limits_enabled = limits_enabled
+        user.daily_text_limit = daily_text_limit
+        user.daily_media_limit = daily_media_limit
+        user.daily_ai_limit = daily_ai_limit
         user.updated_at = datetime.now()
         user.last_seen_at = datetime.now()
         await session.commit()

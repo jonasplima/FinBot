@@ -1,5 +1,7 @@
 """Tests for UserService."""
 
+from unittest.mock import patch
+
 from app.services.user import UserService
 from app.utils.validators import mask_phone, sanitize_for_log
 
@@ -34,6 +36,53 @@ class TestUserService:
         assert user.accepted_terms is True
         assert user.terms_version == service.settings.terms_version
         assert user.accepted_terms_at is not None
+
+    async def test_is_phone_authorized_allows_bootstrap_number(self, seeded_session, test_phone):
+        """Test bootstrap allowlist still authorizes explicitly listed phones."""
+        service = UserService()
+
+        with patch.object(service.settings, "allowed_numbers", test_phone):
+            result = await service.is_phone_authorized(seeded_session, test_phone)
+
+        assert result is True
+
+    async def test_is_phone_authorized_allows_web_enabled_user(
+        self, seeded_session, test_phone
+    ):
+        """Test onboarding/web access authorizes a phone even outside bootstrap list."""
+        service = UserService()
+        user = await service.get_or_create_user(seeded_session, test_phone)
+        user.web_access_enabled = True
+        await seeded_session.commit()
+
+        with patch.object(service.settings, "allowed_numbers", "5511888888888"):
+            result = await service.is_phone_authorized(seeded_session, test_phone)
+
+        assert result is True
+
+    async def test_is_phone_authorized_rejects_unknown_phone_when_bootstrap_enabled(
+        self, seeded_session, test_phone
+    ):
+        """Test unknown phones stay blocked while bootstrap allowlist is enabled."""
+        service = UserService()
+
+        with patch.object(service.settings, "allowed_numbers", "5511888888888"):
+            result = await service.is_phone_authorized(seeded_session, test_phone)
+
+        assert result is False
+
+    async def test_get_or_create_user_resolves_authorized_alias_to_same_account(
+        self, seeded_session, test_phone
+    ):
+        """Test an additional authorized number resolves to the same persisted account."""
+        service = UserService()
+        user = await service.get_or_create_user(seeded_session, test_phone)
+        await service.add_authorized_phone(seeded_session, user, "5511888888888")
+
+        resolved_user = await service.get_or_create_user(seeded_session, "5511888888888")
+
+        assert resolved_user.id == user.id
+        assert resolved_user.phone == test_phone
 
     def test_parse_limit_command_show(self):
         """Test parsing direct show limits commands."""
