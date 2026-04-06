@@ -281,3 +281,27 @@ class ExchangeRate(Base):
 
     def __repr__(self) -> str:
         return f"<ExchangeRate(currency={self.currency_code}, rate={self.rate_to_brl}, source='{self.source}')>"
+
+
+class BackupRestoreAudit(Base):
+    """Persistent audit trail for backup restore operations."""
+
+    __tablename__ = "backup_restore_audits"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    target_phone = Column(String(20), nullable=False, index=True)
+    source_phone = Column(String(20), nullable=True, index=True)
+    status = Column(String(30), nullable=False)
+    requires_migration_confirmation = Column(Boolean, default=False, nullable=False)
+    explicit_migration_confirmation = Column(Boolean, default=False, nullable=False)
+    restored_counts = Column(JSON, nullable=True)
+    error_message = Column(String(500), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.now, server_default=func.now())
+
+    __table_args__ = (Index("ix_backup_restore_audits_target_status", "target_phone", "status"),)
+
+    def __repr__(self) -> str:
+        return (
+            f"<BackupRestoreAudit(id={self.id}, target='{self.target_phone}', "
+            f"source='{self.source_phone}', status='{self.status}')>"
+        )

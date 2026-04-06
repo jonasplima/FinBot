@@ -5,9 +5,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy import select
 from starlette.requests import Request
 
-from app.database.models import PendingConfirmation
+from app.database.models import BackupRestoreAudit, PendingConfirmation
 from app.handlers.webhook import WebhookHandler
 from app.main import (
     evolution_webhook,
@@ -17,6 +18,7 @@ from app.main import (
     health_live,
     health_ready,
 )
+from app.services.operational_status import OperationalStatusService
 from app.services.rate_limit import RateLimitService
 
 
@@ -437,12 +439,36 @@ class TestAdminAuthentication:
 class TestHealthEndpoints:
     """Tests for liveness and readiness endpoints."""
 
+    @pytest.fixture(autouse=True)
+    def clear_operational_status(self):
+        """Ensure health endpoint tests do not leak operational events."""
+        OperationalStatusService().clear()
+        yield
+        OperationalStatusService().clear()
+
     async def test_health_live_returns_healthy(self):
         """Test liveness endpoint stays simple and local."""
         response = await health_live()
 
         assert response.status_code == 200
         assert b'"status":"healthy"' in response.body
+
+    async def test_health_live_includes_recent_operational_events(self):
+        """Test liveness exposes recent degraded-mode events for operators."""
+        operational_status = OperationalStatusService()
+        operational_status.record_event(
+            "scheduler",
+            "warning",
+            "Redis unavailable; running scheduler locally in single-instance mode.",
+        )
+
+        response = await health_live()
+
+        assert response.status_code == 200
+        assert b'"recent_events"' in response.body
+        assert b'"deployment_mode"' in response.body
+        assert b'"component":"scheduler"' in response.body
+        assert b'"level":"warning"' in response.body
 
     async def test_health_ready_returns_healthy_when_dependencies_are_available(self):
         """Test readiness endpoint reports healthy dependencies."""
@@ -479,6 +505,7 @@ class TestHealthEndpoints:
         assert b'"database":"healthy"' in response.body
         assert b'"redis":"healthy"' in response.body
         assert b'"evolution":"healthy"' in response.body
+        assert b'"recent_events"' in response.body
 
     async def test_health_check_returns_degraded_when_dependency_fails(self):
         """Test shared health endpoint returns degraded status on dependency failure."""
@@ -514,6 +541,31 @@ class TestHealthEndpoints:
         assert response.status_code == 503
         assert b'"status":"degraded"' in response.body
         assert b'"database":"unhealthy"' in response.body
+
+    async def test_health_live_reflects_admin_protection_degradation_event(self):
+        """Test degraded admin protection becomes visible through operational events."""
+        request = TestAdminAuthentication._build_get_request(
+            "/admin/status",
+            headers={"Authorization": "Bearer test-secret"},
+        )
+
+        with (
+            patch("app.main.settings.admin_secret", "test-secret"),
+            patch("app.main.AdminRateLimitService") as mock_rate_limit_cls,
+            pytest.raises(HTTPException),
+        ):
+            mock_rate_limit = MagicMock()
+            mock_rate_limit.check_request = AsyncMock(
+                side_effect=RuntimeError("Admin rate-limit storage unavailable in multi-instance mode.")
+            )
+            mock_rate_limit_cls.return_value = mock_rate_limit
+            await get_status(request)
+
+        response = await health_live()
+
+        assert response.status_code == 200
+        assert b'"component":"admin_rate_limit"' in response.body
+        assert b'"level":"error"' in response.body
 
 
 class TestWebhookHandlerBuildExpenseSummary:
@@ -1308,6 +1360,13 @@ class TestWebhookHandlerIntentHandling:
             "finbot:backup:test"
         )
         assert handler.processing_committed is True
+
+        result = await seeded_session.execute(select(BackupRestoreAudit))
+        audit = result.scalar_one()
+        assert audit.target_phone == test_phone
+        assert audit.source_phone == "5511888888888"
+        assert audit.status == "restored"
+        assert audit.explicit_migration_confirmation is True
 
     async def test_handle_export_sends_xlsx_by_default(self, handler, seeded_session, test_phone):
         """Test that export uses XLSX by default."""

@@ -15,10 +15,12 @@ from app.config import get_settings
 from app.database.connection import async_session
 from app.database.models import Expense, PendingConfirmation
 from app.services.evolution import EvolutionService
+from app.services.operational_status import OperationalStatusService
 from app.utils.validators import normalize_phone
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+operational_status = OperationalStatusService()
 
 
 class SchedulerService:
@@ -400,11 +402,21 @@ class SchedulerService:
                     "Skipping scheduler job '%s' because Redis is unavailable in multi-instance mode",
                     job_name,
                 )
+                operational_status.record_event(
+                    "scheduler",
+                    "error",
+                    f"Scheduler job '{job_name}' skipped because Redis is unavailable in multi-instance mode.",
+                )
                 return False
 
             logger.warning(
                 "Running scheduler job '%s' without distributed lock because deployment mode is single_instance",
                 job_name,
+            )
+            operational_status.record_event(
+                "scheduler",
+                "warning",
+                f"Scheduler job '{job_name}' running without distributed lock in single-instance mode.",
             )
             return None
 
@@ -424,6 +436,11 @@ class SchedulerService:
                     job_name,
                     exc,
                 )
+                operational_status.record_event(
+                    "scheduler",
+                    "error",
+                    f"Scheduler job '{job_name}' skipped because lock acquisition failed in multi-instance mode.",
+                )
                 return False
 
             logger.warning(
@@ -431,10 +448,20 @@ class SchedulerService:
                 job_name,
                 exc,
             )
+            operational_status.record_event(
+                "scheduler",
+                "warning",
+                f"Scheduler job '{job_name}' running without distributed lock after Redis failure in single-instance mode.",
+            )
             return None
 
         if not acquired:
             logger.info("Skipping scheduler job '%s' because another instance owns the lock", job_name)
+            operational_status.record_event(
+                "scheduler",
+                "info",
+                f"Scheduler job '{job_name}' skipped because another instance owns the lock.",
+            )
             return False
 
         logger.info("Acquired scheduler lock for '%s' on instance %s", job_name, self.instance_id)

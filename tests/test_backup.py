@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from sqlalchemy import select
 
+from app.database.models import BackupRestoreAudit
 from app.services.backup import BACKUP_SCHEMA_VERSION, BackupService
 from app.services.backup import settings as backup_settings
 from tests.conftest import Budget, BudgetAlert, Category, Expense, Goal, GoalUpdate, PaymentMethod
@@ -394,6 +395,36 @@ class TestBackupService:
         assert result["restored"]["budget_alerts"] == 1
         assert result["restored"]["goals"] == 1
         assert result["restored"]["goal_updates"] == 1
+
+    async def test_record_restore_audit_persists_migration_metadata(
+        self, service, seeded_session, test_phone
+    ):
+        """Test restore audit is persisted with migration context."""
+        await service.record_restore_audit(
+            seeded_session,
+            target_phone=test_phone,
+            source_phone="5511888888888",
+            status="restored",
+            requires_migration_confirmation=True,
+            explicit_migration_confirmation=True,
+            restored_counts={
+                "expenses": 2,
+                "budgets": 1,
+                "budget_alerts": 0,
+                "goals": 1,
+                "goal_updates": 3,
+            },
+        )
+
+        result = await seeded_session.execute(select(BackupRestoreAudit))
+        audit = result.scalar_one()
+
+        assert audit.target_phone == test_phone
+        assert audit.source_phone == "5511888888888"
+        assert audit.status == "restored"
+        assert audit.requires_migration_confirmation is True
+        assert audit.explicit_migration_confirmation is True
+        assert audit.restored_counts["expenses"] == 2
 
     async def test_restore_user_backup_rolls_back_on_invalid_reference(
         self, service, seeded_session, test_phone

@@ -215,6 +215,22 @@ class ExchangeRate(TestBase):
     updated_at = Column(DateTime, nullable=False, default=datetime.now)
 
 
+class BackupRestoreAudit(TestBase):
+    """Test audit trail for backup restore operations."""
+
+    __tablename__ = "backup_restore_audits"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    target_phone = Column(String(20), nullable=False, index=True)
+    source_phone = Column(String(20), nullable=True, index=True)
+    status = Column(String(30), nullable=False)
+    requires_migration_confirmation = Column(Boolean, default=False, nullable=False)
+    explicit_migration_confirmation = Column(Boolean, default=False, nullable=False)
+    restored_counts = Column(JSON, nullable=True)
+    error_message = Column(String(500), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.now)
+
+
 @pytest.fixture
 def anyio_backend():
     """Use asyncio for async tests."""

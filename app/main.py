@@ -13,6 +13,7 @@ from app.config import get_settings
 from app.database.connection import async_session, init_db
 from app.database.seed import seed_all
 from app.services.admin_rate_limit import AdminRateLimitService
+from app.services.operational_status import OperationalStatusService
 from app.services.webhook_idempotency import WebhookIdempotencyService
 
 # Configure logging
@@ -24,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 settings = get_settings()
 MESSAGE_EVENTS = {"messages.upsert", "messages_upssert", "message"}
+operational_status = OperationalStatusService()
 
 
 def _bearer_matches(secret_value: str, authorization: str | None) -> bool:
@@ -66,6 +68,11 @@ async def _enforce_admin_rate_limit(request: Request) -> None:
     try:
         result = await service.check_request(identifier)
     except RuntimeError:
+        operational_status.record_event(
+            "admin_rate_limit",
+            "error",
+            "Administrative protection unavailable because shared storage is down.",
+        )
         raise HTTPException(
             status_code=503,
             detail="A protecao administrativa esta temporariamente indisponivel.",
@@ -73,6 +80,11 @@ async def _enforce_admin_rate_limit(request: Request) -> None:
 
     if not result["allowed"]:
         logger.warning("Admin rate limit exceeded for %s", identifier)
+        operational_status.record_event(
+            "admin_rate_limit",
+            "warning",
+            f"Administrative rate limit exceeded for {identifier}.",
+        )
         raise HTTPException(
             status_code=429,
             detail="Muitas tentativas no endpoint administrativo. Tente novamente em instantes.",
@@ -86,8 +98,10 @@ async def _build_health_payload(include_dependencies: bool = True) -> tuple[dict
         "status": "healthy",
         "app": "FinBot",
         "version": "1.0.0",
+        "deployment_mode": settings.normalized_deployment_mode,
     }
     if not include_dependencies:
+        payload["recent_events"] = operational_status.get_recent_events()
         return payload, 200
 
     checks: dict[str, str] = {}
@@ -125,6 +139,7 @@ async def _build_health_payload(include_dependencies: bool = True) -> tuple[dict
 
     payload["checks"] = checks
     payload["status"] = "healthy" if status_code == 200 else "degraded"
+    payload["recent_events"] = operational_status.get_recent_events()
     return payload, status_code
 
 
@@ -151,6 +166,11 @@ async def lifespan(app: FastAPI):
         logger.info("Evolution API instance ready")
     except Exception as e:
         logger.warning(f"Could not setup Evolution instance: {e}")
+        operational_status.record_event(
+            "startup",
+            "warning",
+            "Evolution API setup failed during startup; application is running in degraded mode.",
+        )
 
     # Start scheduler for recurring expenses
     from app.services.scheduler import get_scheduler_service
@@ -500,6 +520,11 @@ async def evolution_webhook(request: Request):
         logger.error(f"Webhook error: {e}")
         if "handler" in locals() and getattr(handler, "processing_committed", False):
             logger.warning("Webhook completed persistence before failing on post-commit side effects")
+            operational_status.record_event(
+                "webhook",
+                "warning",
+                "Webhook finished persistence but failed on post-commit side effects.",
+            )
             return {"status": "ok_committed_with_warnings"}
         if "message_id" in locals() and message_id and "idempotency_service" in locals():
             await idempotency_service.release(message_id)

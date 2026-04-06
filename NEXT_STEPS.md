@@ -295,7 +295,7 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
   - ✅ `healthcheck` do serviço `finbot` no `docker-compose`
 
 #### 0.9.4 Redis como ponto único de consistência distribuída
-- **Status:** Parcialmente implementado
+- **Status:** Implementado
 - **Problema identificado:**
   - Idempotência, rate limit e backup temporário têm fallback em memória local
   - Isso funciona em ambiente simples, mas quebra consistência em múltiplos processos ou múltiplas réplicas
@@ -311,7 +311,8 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
   - ✅ `RateLimitService` passa a falhar de forma explícita em `multi_instance` quando Redis está indisponível
   - ✅ Armazenamento temporário de backup deixa de usar fallback silencioso em `multi_instance`
   - ✅ Webhook agora responde com mensagens claras quando o storage compartilhado está indisponível
-  - ⏳ Ainda falta revisar outros usos de fallback local e definir observabilidade/alertas operacionais
+  - ✅ Eventos operacionais recentes expostos nos health endpoints para tornar fallback/degradação observáveis
+  - ✅ Serviços críticos registram eventos operacionais quando entram em modo degradado
 
 #### 0.9.5 Scheduler com trava distribuída
 - **Status:** Implementado
@@ -333,7 +334,7 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
   - ✅ Testes cobrindo lock adquirido, lock ocupado e indisponibilidade de Redis
 
 #### 0.9.6 Política de restore de backup com migração de número
-- **Status:** Pendente
+- **Status:** Parcialmente implementado
 - **Problema identificado:**
   - Hoje o restore aceita backup de outra origem sem uma política explícita
   - Bloquear rigidamente por `source_phone == target_phone` parece seguro, mas quebra um caso legítimo: usuário que trocou de número e precisa migrar o histórico
@@ -351,6 +352,11 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
   - Um usuário consegue migrar backup do número antigo para o novo com segurança
   - O fluxo reduz o risco de restaurar dados de terceiros por engano
   - A decisão fica documentada como regra de negócio, não como comportamento implícito
+- **Implementação realizada:**
+  - ✅ Confirmação reforçada `sim migrar` quando origem e destino do backup diferem
+  - ✅ Exibição explícita do contexto de migração antes do restore
+  - ✅ Auditoria persistida em banco para restores, com origem, destino, status e confirmação explícita de migração
+  - ⏳ Ainda falta avaliar identificador estável de usuário para reduzir dependência exclusiva do telefone
 
 #### 0.9.7 Hardening adicional de Docker e supply chain
 - **Status:** Parcialmente implementado
@@ -393,15 +399,14 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
 
 #### 0.9.9 Observações de validação
 - **Resultado da revisão local:**
-  - Suíte de testes local executada com sucesso: 289 testes passando
+  - Suíte de testes local executada com sucesso: 292 testes passando
   - `ruff check .` sem achados
   - `python -m compileall app tests` sem erros
   - Não foi executada auditoria online de CVEs de dependências durante a revisão
 
 #### 0.9.10 Ordem sugerida de execução
-1. Revisar observabilidade e alertas para modos degradados em multi-instância
-2. Refinar auditoria persistida do fluxo de migração de backup entre números
-3. Avaliar pin por digest das imagens e hashes de dependências Python
+1. Avaliar pin por digest das imagens e hashes de dependências Python
+2. Avaliar identificador estável de usuário para migração de backup entre números
 
 ---
 

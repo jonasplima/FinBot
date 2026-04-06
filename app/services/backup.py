@@ -17,6 +17,7 @@ from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
 from app.database.models import (
+    BackupRestoreAudit,
     Budget,
     BudgetAlert,
     Category,
@@ -25,10 +26,12 @@ from app.database.models import (
     GoalUpdate,
     PaymentMethod,
 )
+from app.services.operational_status import OperationalStatusService
 from app.utils.validators import normalize_phone
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+operational_status = OperationalStatusService()
 
 BACKUP_SCHEMA_VERSION = 1
 EXPENSE_ALLOWED_KEYS = {
@@ -251,6 +254,11 @@ class BackupService:
                         "Temporary backup storage unavailable in multi-instance mode: %s",
                         exc,
                     )
+                    operational_status.record_event(
+                        "backup_temp_storage",
+                        "error",
+                        "Temporary backup storage unavailable in multi-instance mode.",
+                    )
                     return {
                         "success": False,
                         "error": (
@@ -261,6 +269,11 @@ class BackupService:
                 logger.warning(
                     f"Redis unavailable for temporary backup store, using fallback: {exc}"
                 )
+                operational_status.record_event(
+                    "backup_temp_storage",
+                    "warning",
+                    "Redis unavailable; using local fallback for temporary backup storage in single-instance mode.",
+                )
                 self._fallback_temp_storage[backup_ref] = (
                     serialized,
                     datetime.fromtimestamp(expires_at),
@@ -268,6 +281,11 @@ class BackupService:
         else:
             if not self._allow_local_fallback():
                 logger.error("Temporary backup storage unavailable in multi-instance mode")
+                operational_status.record_event(
+                    "backup_temp_storage",
+                    "error",
+                    "Temporary backup storage unavailable in multi-instance mode.",
+                )
                 return {
                     "success": False,
                     "error": (
@@ -278,6 +296,11 @@ class BackupService:
             self._fallback_temp_storage[backup_ref] = (
                 serialized,
                 datetime.fromtimestamp(expires_at),
+            )
+            operational_status.record_event(
+                "backup_temp_storage",
+                "warning",
+                "Redis unavailable; using local fallback for temporary backup storage in single-instance mode.",
             )
 
         return {
@@ -302,6 +325,11 @@ class BackupService:
                         "Temporary backup load unavailable in multi-instance mode: %s",
                         exc,
                     )
+                    operational_status.record_event(
+                        "backup_temp_storage",
+                        "error",
+                        "Temporary backup load unavailable in multi-instance mode.",
+                    )
                     return {
                         "success": False,
                         "error": (
@@ -312,10 +340,20 @@ class BackupService:
                 logger.warning(
                     f"Redis unavailable for temporary backup load, using fallback: {exc}"
                 )
+                operational_status.record_event(
+                    "backup_temp_storage",
+                    "warning",
+                    "Redis read failed; using local fallback for temporary backup storage in single-instance mode.",
+                )
 
         if serialized is None:
             if not self._allow_local_fallback() and redis_client is None:
                 logger.error("Temporary backup load unavailable in multi-instance mode")
+                operational_status.record_event(
+                    "backup_temp_storage",
+                    "error",
+                    "Temporary backup load unavailable in multi-instance mode.",
+                )
                 return {
                     "success": False,
                     "error": (
@@ -409,6 +447,31 @@ class BackupService:
             logger.error(f"Error restoring backup: {e}")
             await session.rollback()
             return {"success": False, "error": str(e)}
+
+    async def record_restore_audit(
+        self,
+        session: AsyncSession,
+        target_phone: str,
+        source_phone: str | None,
+        status: str,
+        *,
+        requires_migration_confirmation: bool,
+        explicit_migration_confirmation: bool,
+        restored_counts: dict[str, int] | None = None,
+        error_message: str | None = None,
+    ) -> None:
+        """Persist an audit entry for a backup restore attempt or completion."""
+        audit = BackupRestoreAudit(
+            target_phone=normalize_phone(target_phone),
+            source_phone=normalize_phone(source_phone) if source_phone else None,
+            status=status,
+            requires_migration_confirmation=requires_migration_confirmation,
+            explicit_migration_confirmation=explicit_migration_confirmation,
+            restored_counts=restored_counts,
+            error_message=error_message[:500] if error_message else None,
+        )
+        session.add(audit)
+        await session.commit()
 
     async def _get_expenses(self, session: AsyncSession, phone: str) -> list[Expense]:
         result = await session.execute(

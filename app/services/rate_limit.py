@@ -7,10 +7,12 @@ from redis.asyncio import Redis
 
 from app.config import get_settings
 from app.database.models import User
+from app.services.operational_status import OperationalStatusService
 from app.utils.validators import normalize_phone
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+operational_status = OperationalStatusService()
 
 
 class RateLimitService:
@@ -89,7 +91,17 @@ class RateLimitService:
         redis_client = await self._get_redis()
         if redis_client is None:
             if not self._allow_local_fallback():
+                operational_status.record_event(
+                    "rate_limit",
+                    "error",
+                    "User rate-limit storage unavailable in multi-instance mode.",
+                )
                 raise RuntimeError("Rate limit storage unavailable in multi-instance mode.")
+            operational_status.record_event(
+                "rate_limit",
+                "warning",
+                "Redis unavailable; using local fallback for user rate limits in single-instance mode.",
+            )
             return self._fallback_counters.get(key, 0)
 
         try:
@@ -97,8 +109,18 @@ class RateLimitService:
             return int(value) if value is not None else 0
         except Exception as e:
             if not self._allow_local_fallback():
+                operational_status.record_event(
+                    "rate_limit",
+                    "error",
+                    "User rate-limit storage failed in multi-instance mode.",
+                )
                 raise RuntimeError("Rate limit storage unavailable in multi-instance mode.") from e
             logger.warning(f"Redis unavailable for get, using fallback: {e}")
+            operational_status.record_event(
+                "rate_limit",
+                "warning",
+                "Redis read failed; using local fallback for user rate limits in single-instance mode.",
+            )
             return self._fallback_counters.get(key, 0)
 
     async def _increment_value(self, key: str, increment: int) -> int:
@@ -106,7 +128,17 @@ class RateLimitService:
         redis_client = await self._get_redis()
         if redis_client is None:
             if not self._allow_local_fallback():
+                operational_status.record_event(
+                    "rate_limit",
+                    "error",
+                    "User rate-limit storage unavailable in multi-instance mode.",
+                )
                 raise RuntimeError("Rate limit storage unavailable in multi-instance mode.")
+            operational_status.record_event(
+                "rate_limit",
+                "warning",
+                "Redis unavailable; using local fallback for user rate limits in single-instance mode.",
+            )
             self._fallback_counters[key] = self._fallback_counters.get(key, 0) + increment
             return self._fallback_counters[key]
 
@@ -116,8 +148,18 @@ class RateLimitService:
             return int(new_value)
         except Exception as e:
             if not self._allow_local_fallback():
+                operational_status.record_event(
+                    "rate_limit",
+                    "error",
+                    "User rate-limit increment failed in multi-instance mode.",
+                )
                 raise RuntimeError("Rate limit storage unavailable in multi-instance mode.") from e
             logger.warning(f"Redis unavailable for incr, using fallback: {e}")
+            operational_status.record_event(
+                "rate_limit",
+                "warning",
+                "Redis increment failed; using local fallback for user rate limits in single-instance mode.",
+            )
             self._fallback_counters[key] = self._fallback_counters.get(key, 0) + increment
             return self._fallback_counters[key]
 

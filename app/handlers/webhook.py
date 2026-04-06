@@ -1941,6 +1941,14 @@ class WebhookHandler:
         source_phone = normalize_phone(summary.get("source_phone", ""))
         requires_migration_confirmation = bool(source_phone and source_phone != target_phone)
         response_lower = response.lower().strip().rstrip("!.,?")
+        explicit_migration_confirmation = response_lower in {
+            "sim migrar",
+            "confirmo migracao",
+            "confirmo migração",
+            "confirmar migracao",
+            "confirmar migração",
+            "migrar backup",
+        }
 
         positive_responses = (
             "sim",
@@ -2006,6 +2014,15 @@ class WebhookHandler:
             result = await self.backup_service.restore_user_backup(session, phone, backup_data)
             await self.backup_service.delete_temporary_backup(backup_ref)
             if result["success"]:
+                await self.backup_service.record_restore_audit(
+                    session,
+                    target_phone=target_phone,
+                    source_phone=source_phone or None,
+                    status="restored",
+                    requires_migration_confirmation=requires_migration_confirmation,
+                    explicit_migration_confirmation=explicit_migration_confirmation,
+                    restored_counts=result["restored"],
+                )
                 self._mark_processing_committed()
                 if requires_migration_confirmation:
                     logger.warning(
@@ -2024,6 +2041,15 @@ class WebhookHandler:
                     f"- Atualizacoes de metas: {restored['goal_updates']}",
                 )
             else:
+                await self.backup_service.record_restore_audit(
+                    session,
+                    target_phone=target_phone,
+                    source_phone=source_phone or None,
+                    status="failed",
+                    requires_migration_confirmation=requires_migration_confirmation,
+                    explicit_migration_confirmation=explicit_migration_confirmation,
+                    error_message=result.get("error", "Erro desconhecido"),
+                )
                 await self.evolution.send_text(
                     phone,
                     f"Erro ao restaurar backup: {result.get('error', 'Erro desconhecido')}",
@@ -2032,6 +2058,14 @@ class WebhookHandler:
 
         if response_lower in negative_responses:
             await self.backup_service.delete_temporary_backup(backup_ref)
+            await self.backup_service.record_restore_audit(
+                session,
+                target_phone=target_phone,
+                source_phone=source_phone or None,
+                status="cancelled",
+                requires_migration_confirmation=requires_migration_confirmation,
+                explicit_migration_confirmation=False,
+            )
             await self.evolution.send_text(phone, "Restauracao cancelada.")
             return
 

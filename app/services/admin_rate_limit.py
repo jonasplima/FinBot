@@ -6,9 +6,11 @@ from datetime import datetime, timedelta
 from redis.asyncio import Redis
 
 from app.config import get_settings
+from app.services.operational_status import OperationalStatusService
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+operational_status = OperationalStatusService()
 
 
 class AdminRateLimitService:
@@ -38,10 +40,25 @@ class AdminRateLimitService:
                 return self._format_response(int(count))
             except Exception as exc:
                 if not self._allow_local_fallback():
+                    operational_status.record_event(
+                        "admin_rate_limit",
+                        "error",
+                        "Administrative rate-limit storage unavailable in multi-instance mode.",
+                    )
                     raise RuntimeError("Admin rate-limit storage unavailable in multi-instance mode.") from exc
                 logger.warning(f"Redis unavailable for admin rate limit, using fallback: {exc}")
+                operational_status.record_event(
+                    "admin_rate_limit",
+                    "warning",
+                    "Redis unavailable; using local fallback for admin rate limit in single-instance mode.",
+                )
 
         if not self._allow_local_fallback():
+            operational_status.record_event(
+                "admin_rate_limit",
+                "error",
+                "Administrative rate-limit storage unavailable in multi-instance mode.",
+            )
             raise RuntimeError("Admin rate-limit storage unavailable in multi-instance mode.")
 
         now = datetime.now()
