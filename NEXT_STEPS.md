@@ -134,14 +134,27 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
   - `app/handlers/webhook.py` - handler handle_show_chart
   - `tests/test_chart.py` - testes unitários
 
-### 3.2 Exportação PDF
+### 3.2 Exportação PDF ✅
 - **Complexidade:** Baixa 🟢
 - **Valor:** Médio (complementa XLSX existente)
-- **Orientações:**
-  - Usar `ReportLab` ou `WeasyPrint`
-  - Reaproveitar dados de `ExportService.export_month()`
-  - Incluir gráfico de pizza no PDF
-  - Comando: "exporta pdf de março"
+- **Status:** Implementado
+- **Implementação:**
+  - ✅ `ReportLab` integrado para geração de PDFs no backend
+  - ✅ Reaproveitamento dos dados de `ExportService.export_month()`
+  - ✅ Inclusão de gráfico de pizza no PDF via `ChartService`
+  - ✅ Exportação padrão continua em XLSX; PDF apenas quando solicitado
+  - ✅ Integração com Gemini para extrair `export_format` (`xlsx` ou `pdf`)
+  - ✅ Envio via Evolution API com `mimetype` correto para PDF
+  - ✅ 5 testes adicionais cobrindo PDF e roteamento no webhook
+- **Comandos:**
+  - "exportar meus gastos de março" → envia XLSX
+  - "exporta pdf de março" → envia PDF
+- **Arquivos:**
+  - `app/services/export.py` - geração de XLSX e PDF
+  - `app/services/gemini.py` - extração de `export_format`
+  - `app/handlers/webhook.py` - roteamento por formato de exportação
+  - `tests/test_export.py` - testes da exportação PDF
+  - `tests/test_webhook.py` - testes do fluxo de envio
 
 ---
 
@@ -244,7 +257,7 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
 | ~~Alertas/Limites~~ | ✅ | 🟡 | ~~Testes~~ ✅ | ⭐⭐⭐⭐ |
 | ~~Scheduler Recorrentes~~ | ✅ | 🟢 | Nenhuma | ⭐⭐⭐⭐ |
 | ~~Gráficos~~ | ✅ | 🟡 | Nenhuma | ⭐⭐⭐⭐ |
-| PDF Export | 🟡 | 🟢 | XLSX (existe) | ⭐⭐⭐ |
+| ~~PDF Export~~ | ✅ | 🟢 | XLSX (existe) | ⭐⭐⭐ |
 | ~~Metas~~ | ✅ | 🟡 | ~~Alertas~~ ✅ | ⭐⭐⭐ |
 | ~~Conversão Moeda~~ | ✅ | 🟢 | Nenhuma | ⭐⭐⭐ |
 | Multi-Usuários | 🔴 | 🔴 | ~~Testes, CI~~ ✅ | ⭐⭐ |
@@ -257,5 +270,5 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
 1. **Sprint 1:** ~~CI/CD + Testes~~ ✅ + ~~Desfazer Ação~~ ✅
 2. **Sprint 2:** ~~Alertas/Limites~~ ✅ + ~~Scheduler Recorrentes~~ ✅
 3. **Sprint 3:** ~~Gráficos~~ ✅ + ~~Metas~~ ✅
-4. **Sprint 4:** PDF ⬅️ **PRÓXIMO** + ~~Conversão Moeda~~ ✅
-5. **Sprint 5:** Multi-Usuários + Backup
+4. **Sprint 4:** ~~PDF~~ ✅ + ~~Conversão Moeda~~ ✅
+5. **Sprint 5:** Multi-Usuários ⬅️ **PRÓXIMO** + Backup

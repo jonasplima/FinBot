@@ -347,6 +347,80 @@ class TestWebhookHandlerIntentHandling:
         call_args = handler.evolution.send_text.call_args
         assert "forma de pagamento" in call_args[0][1].lower()
 
+    async def test_handle_export_sends_xlsx_by_default(self, handler, seeded_session, test_phone):
+        """Test that export uses XLSX by default."""
+        with patch("app.services.export.ExportService") as MockExportService:
+            export_service = MagicMock()
+            export_service.export_month = AsyncMock(
+                return_value={
+                    "success": True,
+                    "file_base64": "xlsx-base64",
+                    "filename": "gastos_abril_2026.xlsx",
+                    "month_name": "Abril de 2026",
+                }
+            )
+            export_service.export_month_pdf = AsyncMock()
+            MockExportService.return_value = export_service
+
+            data = {"intent": "export", "data": {"month": 4, "year": 2026}}
+
+            await handler.handle_export(seeded_session, test_phone, data)
+
+            export_service.export_month.assert_awaited_once_with(
+                seeded_session,
+                test_phone,
+                4,
+                2026,
+            )
+            export_service.export_month_pdf.assert_not_called()
+            handler.evolution.send_document.assert_awaited_once_with(
+                test_phone,
+                "xlsx-base64",
+                "gastos_abril_2026.xlsx",
+                caption="Seus gastos de Abril de 2026",
+                mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+
+    async def test_handle_export_sends_pdf_when_requested(
+        self, handler, seeded_session, test_phone
+    ):
+        """Test that export uses PDF when explicitly requested."""
+        with patch("app.services.export.ExportService") as MockExportService:
+            export_service = MagicMock()
+            export_service.export_month = AsyncMock()
+            export_service.export_month_pdf = AsyncMock(
+                return_value={
+                    "success": True,
+                    "file_base64": "pdf-base64",
+                    "filename": "gastos_marco_2026.pdf",
+                    "month_name": "Marco de 2026",
+                    "mimetype": "application/pdf",
+                }
+            )
+            MockExportService.return_value = export_service
+
+            data = {
+                "intent": "export",
+                "data": {"month": 3, "year": 2026, "export_format": "pdf"},
+            }
+
+            await handler.handle_export(seeded_session, test_phone, data)
+
+            export_service.export_month_pdf.assert_awaited_once_with(
+                seeded_session,
+                test_phone,
+                3,
+                2026,
+            )
+            export_service.export_month.assert_not_called()
+            handler.evolution.send_document.assert_awaited_once_with(
+                test_phone,
+                "pdf-base64",
+                "gastos_marco_2026.pdf",
+                caption="Seus gastos de Marco de 2026",
+                mimetype="application/pdf",
+            )
+
     async def test_handle_query_month(self, handler, seeded_session, test_phone, expense_in_db):
         """Test handling query month intent."""
         data = {"data": {"month": None, "year": None}}

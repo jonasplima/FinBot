@@ -416,9 +416,13 @@ class WebhookHandler:
         expense_data = data.get("data", {})
         month = expense_data.get("month")
         year = expense_data.get("year")
+        export_format = expense_data.get("export_format", "xlsx")
 
         export_service = ExportService()
-        result = await export_service.export_month(session, phone, month, year)
+        if export_format == "pdf":
+            result = await export_service.export_month_pdf(session, phone, month, year)
+        else:
+            result = await export_service.export_month(session, phone, month, year)
 
         if result["success"]:
             await self.evolution.send_document(
@@ -426,6 +430,10 @@ class WebhookHandler:
                 result["file_base64"],
                 result["filename"],
                 caption=f"Seus gastos de {result['month_name']}",
+                mimetype=result.get(
+                    "mimetype",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                ),
             )
         else:
             await self.evolution.send_text(phone, result["message"])

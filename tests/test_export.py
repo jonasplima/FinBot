@@ -97,6 +97,36 @@ class TestExportServiceExportMonth:
 
         assert found_total
 
+    async def test_export_month_pdf_with_expenses(
+        self, service, seeded_session, test_phone, expense_in_db
+    ):
+        """Test successful PDF export with expenses."""
+        result = await service.export_month_pdf(seeded_session, test_phone)
+
+        assert result["success"] is True
+        assert "file_base64" in result
+        assert result["filename"].endswith(".pdf")
+        assert result["mimetype"] == "application/pdf"
+
+    async def test_export_month_pdf_generates_valid_pdf(
+        self, service, seeded_session, test_phone, expense_in_db
+    ):
+        """Test that the exported file is a valid PDF."""
+        result = await service.export_month_pdf(seeded_session, test_phone)
+
+        assert result["success"] is True
+
+        file_bytes = base64.b64decode(result["file_base64"])
+        assert file_bytes.startswith(b"%PDF")
+        assert len(file_bytes) > 1000
+
+    async def test_export_month_pdf_no_expenses(self, service, seeded_session, test_phone):
+        """Test PDF export when there are no expenses."""
+        result = await service.export_month_pdf(seeded_session, test_phone)
+
+        assert result["success"] is False
+        assert "nao tem gastos" in result["message"].lower()
+
 
 class TestExportServiceWithMultipleExpenses:
     """Tests for ExportService with multiple expenses."""

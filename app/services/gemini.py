@@ -85,7 +85,7 @@ Analise a mensagem do usuario e retorne um JSON com a intencao e dados extraidos
 - register_recurring: registrar despesa recorrente (assinatura, conta mensal)
 - cancel_recurring: cancelar despesa recorrente
 - query_month: consultar resumo do mes
-- export: exportar gastos para planilha
+- export: exportar gastos para arquivo (xlsx por padrao, pdf quando solicitado)
 - list_recurring: listar despesas recorrentes
 - undo_last: desfazer/apagar o ultimo registro
 - set_budget: definir limite de orcamento para uma categoria
@@ -116,6 +116,7 @@ Analise a mensagem do usuario e retorne um JSON com a intencao e dados extraidos
     "month": null ou numero do mes (1-12),
     "year": null ou ano (ex: 2024),
     "budget_limit": null ou limite de orcamento (para set_budget),
+    "export_format": null ou "xlsx" ou "pdf" (para export),
     "chart_type": null ou "pie" ou "bars" ou "line" (para show_chart),
     "goal_description": null ou descricao da meta (para create_goal, check_goal, remove_goal, add_to_goal),
     "goal_amount": null ou valor alvo em reais (para create_goal),
@@ -138,13 +139,14 @@ Analise a mensagem do usuario e retorne um JSON com a intencao e dados extraidos
 8. Inferir metodo de pagamento pelo contexto (ex: "no pix" -> Pix)
 9. Para orcamentos: extraia categoria e limite (budget_limit) em reais
 10. Frases como "definir limite", "orcamento de X reais", "limite de X para Y" indicam set_budget
-11. Para graficos: "grafico", "visualmente", "evolucao" indicam show_chart. Tipos: pie (pizza), bars (barras), line (linha/evolucao)
-12. Para metas: "quero economizar", "meta de", "guardar X ate" indicam create_goal. Extraia descricao, valor e prazo
-13. Para consultar meta: "como esta minha meta", "progresso da meta" indicam check_goal
-14. Para depositar na meta: "depositar na meta", "guardar na meta", "adicionar a meta" indicam add_to_goal
-15. Moedas estrangeiras: detecte dolares (USD), euros (EUR), libras (GBP), won coreano (KRW), florim hungaro (HUF), etc.
-16. Se o usuario registrar gasto em moeda estrangeira ("gastei 50 dolares"), use register_expense com currency preenchido
-17. Para conversao sem gasto ("quanto e 100 dolares", "converter 50 euros pra reais"), use convert_currency
+11. Para export: se o usuario mencionar PDF, use export_format="pdf"; caso contrario use export_format="xlsx"
+12. Para graficos: "grafico", "visualmente", "evolucao" indicam show_chart. Tipos: pie (pizza), bars (barras), line (linha/evolucao)
+13. Para metas: "quero economizar", "meta de", "guardar X ate" indicam create_goal. Extraia descricao, valor e prazo
+14. Para consultar meta: "como esta minha meta", "progresso da meta" indicam check_goal
+15. Para depositar na meta: "depositar na meta", "guardar na meta", "adicionar a meta" indicam add_to_goal
+16. Moedas estrangeiras: detecte dolares (USD), euros (EUR), libras (GBP), won coreano (KRW), florim hungaro (HUF), etc.
+17. Se o usuario registrar gasto em moeda estrangeira ("gastei 50 dolares"), use register_expense com currency preenchido
+18. Para conversao sem gasto ("quanto e 100 dolares", "converter 50 euros pra reais"), use convert_currency
 
 ## Exemplos:
 
@@ -176,7 +178,10 @@ Entrada: "me mostra meus gastos"
 Saida: {"intent": "query_month", "data": {"description": null, "amount": null, "category": null, "payment_method": null, "installments": null, "is_shared": false, "shared_percentage": null, "recurring_day": null, "month": null, "year": null}, "confidence": 0.95}
 
 Entrada: "exportar meus gastos de marco"
-Saida: {"intent": "export", "data": {"description": null, "amount": null, "category": null, "payment_method": null, "installments": null, "is_shared": false, "shared_percentage": null, "recurring_day": null, "month": 3, "year": null}, "confidence": 0.95}
+Saida: {"intent": "export", "data": {"description": null, "amount": null, "category": null, "payment_method": null, "installments": null, "is_shared": false, "shared_percentage": null, "recurring_day": null, "month": 3, "year": null, "export_format": "xlsx"}, "confidence": 0.95}
+
+Entrada: "exporta pdf de marco"
+Saida: {"intent": "export", "data": {"description": null, "amount": null, "category": null, "payment_method": null, "installments": null, "is_shared": false, "shared_percentage": null, "recurring_day": null, "month": 3, "year": null, "export_format": "pdf"}, "confidence": 0.95}
 
 Entrada: "gastei 200 reais no mercado dividido 60% meu"
 Saida: {"intent": "register_expense", "data": {"description": "mercado", "amount": 200.00, "category": "Mercado", "payment_method": "Pix", "installments": null, "is_shared": true, "shared_percentage": 60.0, "recurring_day": null, "month": null, "year": null}, "confidence": 0.9}
@@ -531,6 +536,12 @@ class GeminiService:
             # Parse JSON response
             result = json.loads(response_text)
             logger.debug(f"Gemini response: {result}")
+
+            if result.get("intent") == "export":
+                export_data = result.setdefault("data", {})
+                export_format = export_data.get("export_format")
+                if export_format not in {"xlsx", "pdf"}:
+                    export_data["export_format"] = "xlsx"
 
             return result
 
