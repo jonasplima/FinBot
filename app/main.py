@@ -1,25 +1,35 @@
 """FinBot - WhatsApp Financial Assistant."""
 
+import base64
 import json
 import logging
 import secrets
 from contextlib import asynccontextmanager
+from datetime import date
+from decimal import Decimal
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 from redis.asyncio import Redis
-from sqlalchemy import text
+from sqlalchemy import select, text
 
 from app.config import get_settings
 from app.database.connection import async_session, init_db
+from app.database.models import PaymentMethod
 from app.database.seed import seed_all
 from app.services.admin_rate_limit import AdminRateLimitService
 from app.services.auth import AuthService
 from app.services.backup import BackupService
+from app.services.budget import BudgetService
 from app.services.category import CategoryService
+from app.services.chart import ChartService
 from app.services.credentials import CredentialService
+from app.services.currency import SUPPORTED_CURRENCIES, CurrencyService
+from app.services.expense import ExpenseService
+from app.services.export import ExportService
+from app.services.goal import GoalService
 from app.services.onboarding import OnboardingService
 from app.services.operational_status import OperationalStatusService
 from app.services.rate_limit import RateLimitService
@@ -45,6 +55,12 @@ category_service = CategoryService()
 backup_service = BackupService()
 rate_limit_service = RateLimitService()
 credential_service = CredentialService()
+expense_service = ExpenseService()
+budget_service = BudgetService()
+goal_service = GoalService()
+export_service = ExportService()
+currency_service = CurrencyService()
+chart_service = ChartService()
 
 
 class RegisterRequest(BaseModel):
@@ -84,6 +100,7 @@ class SettingsProfileRequest(BaseModel):
     display_name: str | None = None
     timezone: str
     email: str | None = None
+    base_currency: str = "BRL"
 
 
 class SettingsNotificationsRequest(BaseModel):
@@ -141,6 +158,77 @@ class OnboardingCategoryVisibilityRequest(BaseModel):
 
     category_name: str
     is_active: bool
+
+
+class DashboardBaseCurrencyRequest(BaseModel):
+    """Payload to update the user's preferred base currency."""
+
+    base_currency: str
+
+
+class DashboardExpenseCreateRequest(BaseModel):
+    """Payload to create a new expense or income from the web dashboard."""
+
+    description: str
+    amount: float
+    category: str
+    payment_method: str
+    expense_date: str | None = None
+    currency: str = "BRL"
+
+
+class DashboardExpenseUpdateRequest(BaseModel):
+    """Payload to update an existing expense from the web dashboard."""
+
+    description: str | None = None
+    amount: float | None = None
+    category: str | None = None
+    payment_method: str | None = None
+    expense_date: str | None = None
+    currency: str | None = None
+
+
+class DashboardBudgetRequest(BaseModel):
+    """Payload to create or update a category budget."""
+
+    category_name: str | None = None
+    monthly_limit: float
+
+
+class DashboardBudgetDeleteRequest(BaseModel):
+    """Payload to remove a budget."""
+
+    category_name: str | None = None
+
+
+class DashboardGoalRequest(BaseModel):
+    """Payload to create a new savings goal."""
+
+    description: str
+    target_amount: float
+    deadline: str
+
+
+class DashboardGoalDeleteRequest(BaseModel):
+    """Payload to remove an active goal."""
+
+    description: str
+
+
+class DashboardExportRequest(BaseModel):
+    """Payload to export the selected month in XLSX or PDF."""
+
+    format: str
+    month: int | None = None
+    year: int | None = None
+
+
+class DashboardCurrencyConvertRequest(BaseModel):
+    """Payload to convert values in the web dashboard."""
+
+    amount: float
+    from_currency: str
+    to_currency: str = "BRL"
 
 
 def _bearer_matches(secret_value: str, authorization: str | None) -> bool:
@@ -343,6 +431,7 @@ def _build_settings_payload(
             "display_name": user.display_name,
             "email": user.email,
             "timezone": user.timezone,
+            "base_currency": getattr(user, "base_currency", "BRL"),
             "accepted_terms": user.accepted_terms,
             "accepted_terms_at": user.accepted_terms_at.isoformat()
             if user.accepted_terms_at
@@ -367,6 +456,144 @@ def _build_settings_payload(
             "backup_owner_id": user.backup_owner_id,
         },
         "authorized_phones": authorized_phones or [{"phone": user.phone, "is_primary": True}],
+        "currencies": _supported_currency_options(),
+    }
+
+
+def _supported_currency_options() -> list[dict[str, str]]:
+    """Return the list of currencies available in the dashboard UI."""
+    options = [{"code": "BRL", "name": "Real Brasileiro"}]
+    for code, metadata in sorted(SUPPORTED_CURRENCIES.items()):
+        options.append({"code": code, "name": str(metadata["name"])})
+    return options
+
+
+def _normalize_currency_code(currency_code: str | None, fallback: str = "BRL") -> str:
+    """Normalize and validate a currency code coming from the browser."""
+    normalized_code = (currency_code or fallback).strip().upper()
+    if normalized_code == "BRL":
+        return "BRL"
+    if normalized_code not in SUPPORTED_CURRENCIES:
+        raise HTTPException(status_code=400, detail="Moeda nao suportada.")
+    return normalized_code
+
+
+def _resolve_dashboard_period(
+    month: int | None,
+    year: int | None,
+) -> tuple[int, int]:
+    """Resolve the requested dashboard month/year, defaulting to today."""
+    today = date.today()
+    resolved_month = month or today.month
+    resolved_year = year or today.year
+    if resolved_month < 1 or resolved_month > 12:
+        raise HTTPException(status_code=400, detail="Mes invalido.")
+    if resolved_year < 2000 or resolved_year > 2100:
+        raise HTTPException(status_code=400, detail="Ano invalido.")
+    return resolved_month, resolved_year
+
+
+def _png_data_uri(image_bytes: bytes) -> str:
+    """Encode chart bytes as a PNG data URI for the dashboard."""
+    return f"data:image/png;base64,{base64.b64encode(image_bytes).decode('ascii')}"
+
+
+async def _list_payment_methods(session: Any) -> list[str]:
+    """Return all payment method names for the dashboard forms."""
+    result = await session.execute(select(PaymentMethod).order_by(PaymentMethod.name))
+    return [str(item.name) for item in result.scalars().all()]
+
+
+async def _build_dashboard_payload(
+    session: Any,
+    user: Any,
+    *,
+    month: int | None = None,
+    year: int | None = None,
+) -> dict[str, Any]:
+    """Build the authenticated dashboard state payload."""
+    resolved_month, resolved_year = _resolve_dashboard_period(month, year)
+    expenses = await expense_service.list_expenses(
+        session,
+        user.phone,
+        month=resolved_month,
+        year=resolved_year,
+    )
+    budgets_result = await budget_service.list_budgets(session, user.phone)
+    goals_result = await goal_service.list_goals(session, user.phone)
+    category_payload = await category_service.list_available_categories(
+        session,
+        user,
+        include_inactive=True,
+    )
+    payment_methods = await _list_payment_methods(session)
+    category_chart = _png_data_uri(
+        chart_service.generate_pie_chart(
+            await expense_service.get_expenses_by_category(
+                session,
+                user.phone,
+                month=resolved_month,
+                year=resolved_year,
+            ),
+            title="Gastos por categoria",
+        )
+    )
+    top_expense_chart = _png_data_uri(
+        chart_service.generate_bar_chart(
+            await expense_service.get_top_expenses(
+                session,
+                user.phone,
+                month=resolved_month,
+                year=resolved_year,
+            ),
+            title="Maiores gastos do período",
+        )
+    )
+    daily_chart = _png_data_uri(
+        chart_service.generate_line_chart(
+            await expense_service.get_daily_totals(
+                session,
+                user.phone,
+                month=resolved_month,
+                year=resolved_year,
+            ),
+            title="Evolução diária dos gastos",
+        )
+    )
+
+    total_income = sum(
+        float(item.get("amount") or 0) for item in expenses if str(item.get("type")) == "Positivo"
+    )
+    total_expenses = sum(
+        float(item.get("amount") or 0) for item in expenses if str(item.get("type")) == "Negativo"
+    )
+
+    return {
+        "period": {"month": resolved_month, "year": resolved_year},
+        "user": {
+            "phone": user.phone,
+            "name": user.name,
+            "display_name": user.display_name,
+            "timezone": user.timezone,
+            "base_currency": getattr(user, "base_currency", "BRL"),
+        },
+        "summary": {
+            "income": round(total_income, 2),
+            "expenses": round(total_expenses, 2),
+            "balance": round(total_income - total_expenses, 2),
+            "expense_count": len(expenses),
+        },
+        "expenses": expenses,
+        "budgets": budgets_result.get("budgets", []),
+        "goals": goals_result.get("goals", []),
+        "categories": category_payload,
+        "payment_methods": payment_methods,
+        "charts": {
+            "categories": category_chart,
+            "top_expenses": top_expense_chart,
+            "daily": daily_chart,
+        },
+        "currencies": _supported_currency_options(),
     }
 
 
@@ -760,11 +987,22 @@ async def web_login_page():
                         body: JSON.stringify(payload),
                         credentials: 'same-origin',
                     });
-                    const data = await response.json();
-                    if (!response.ok) {
-                        throw new Error(data.detail || data.message || 'Erro inesperado.');
+                    const rawText = await response.text();
+                    let data = null;
+                    if (rawText) {
+                        try {
+                            data = JSON.parse(rawText);
+                        } catch {
+                            data = null;
+                        }
                     }
-                    return data;
+                    if (!response.ok) {
+                        const fallbackMessage = rawText && !data
+                            ? `Erro interno ao processar a solicitação (${response.status}).`
+                            : `Erro HTTP ${response.status}.`;
+                        throw new Error(data?.detail || data?.message || fallbackMessage);
+                    }
+                    return data ?? {};
                 }
 
                 registerForm.addEventListener('submit', async (event) => {
@@ -809,7 +1047,7 @@ async def web_onboarding_page(request: Request):
     except HTTPException:
         return RedirectResponse(url="/web/login", status_code=303)
     if getattr(user, "onboarding_completed", False):
-        return RedirectResponse(url="/web/settings", status_code=303)
+        return RedirectResponse(url="/web/dashboard", status_code=303)
 
     return HTMLResponse(
         content="""
@@ -1208,11 +1446,22 @@ async def web_onboarding_page(request: Request):
 
                 async function fetchJson(url, options = {}) {
                     const response = await fetch(url, { credentials: 'same-origin', ...options });
-                    const data = await response.json();
-                    if (!response.ok) {
-                        throw new Error(data.detail || data.message || 'Erro inesperado.');
+                    const rawText = await response.text();
+                    let data = null;
+                    if (rawText) {
+                        try {
+                            data = JSON.parse(rawText);
+                        } catch {
+                            data = null;
+                        }
                     }
-                    return data;
+                    if (!response.ok) {
+                        const fallbackMessage = rawText && !data
+                            ? `Erro interno ao processar a solicitação (${response.status}).`
+                            : `Erro HTTP ${response.status}.`;
+                        throw new Error(data?.detail || data?.message || fallbackMessage);
+                    }
+                    return data ?? {};
                 }
 
                 function uiStep(step) {
@@ -1584,7 +1833,7 @@ async def web_onboarding_page(request: Request):
                         document.getElementById('flow-status').textContent = 'Onboarding concluído. Redirecionando para configurações...';
                         document.getElementById('flow-status').className = 'status';
                         setTimeout(() => {
-                            window.location.href = '/web/settings';
+                            window.location.href = '/web/dashboard';
                         }, 900);
                     } catch (error) {
                         document.getElementById('flow-status').textContent = error.message;
@@ -1593,7 +1842,7 @@ async def web_onboarding_page(request: Request):
                 });
 
                 document.getElementById('open-settings').addEventListener('click', () => {
-                    window.location.href = '/web/settings';
+                    window.location.href = '/web/dashboard';
                 });
 
                 document.getElementById('completed-logout').addEventListener('click', async () => {
@@ -1811,6 +2060,7 @@ async def web_settings_page(request: Request):
                             <h1>Configure sua conta depois do onboarding.</h1>
                         </div>
                         <div class="actions">
+                            <button class="ghost" id="open-dashboard" type="button">Painel</button>
                             <button class="ghost" id="logout" type="button">Sair</button>
                         </div>
                     </div>
@@ -1835,7 +2085,7 @@ async def web_settings_page(request: Request):
 
                     <section class="card">
                         <h2>Perfil</h2>
-                        <p>Atualize os dados básicos usados no painel web e no suporte futuro da conta.</p>
+                        <p>Atualize os dados básicos usados no painel web, a moeda base e o suporte futuro da conta.</p>
                         <form id="profile-form">
                             <label>Nome
                                 <input name="name" required>
@@ -1848,6 +2098,9 @@ async def web_settings_page(request: Request):
                             </label>
                             <label>Timezone
                                 <input name="timezone" required>
+                            </label>
+                            <label>Moeda base
+                                <select name="base_currency" required></select>
                             </label>
                             <button class="primary" type="submit">Salvar perfil</button>
                         </form>
@@ -1932,11 +2185,22 @@ async def web_settings_page(request: Request):
 
                 async function fetchJson(url, options = {}) {
                     const response = await fetch(url, { credentials: 'same-origin', ...options });
-                    const data = await response.json();
-                    if (!response.ok) {
-                        throw new Error(data.detail || data.message || 'Erro inesperado.');
+                    const rawText = await response.text();
+                    let data = null;
+                    if (rawText) {
+                        try {
+                            data = JSON.parse(rawText);
+                        } catch {
+                            data = null;
+                        }
                     }
-                    return data;
+                    if (!response.ok) {
+                        const fallbackMessage = rawText && !data
+                            ? `Erro interno ao processar a solicitação (${response.status}).`
+                            : `Erro HTTP ${response.status}.`;
+                        throw new Error(data?.detail || data?.message || fallbackMessage);
+                    }
+                    return data ?? {};
                 }
 
                 function formToObject(form) {
@@ -1953,6 +2217,12 @@ async def web_settings_page(request: Request):
                     document.querySelector('#profile-form [name="display_name"]').value = payload.user.display_name || '';
                     document.querySelector('#profile-form [name="email"]').value = payload.user.email || '';
                     document.querySelector('#profile-form [name="timezone"]').value = payload.user.timezone || 'America/Sao_Paulo';
+                    document.querySelector('#profile-form [name="base_currency"]').innerHTML = (
+                        payload.currencies || []
+                    ).map((item) => {
+                        const selected = item.code === (payload.user.base_currency || 'BRL') ? 'selected' : '';
+                        return `<option value="${item.code}" ${selected}>${item.name}</option>`;
+                    }).join('');
                     document.getElementById('terms-summary').innerHTML =
                         `Versão: <strong>${payload.user.terms_version || '-'}</strong><br>` +
                         `Status: <strong>${payload.user.accepted_terms ? 'Aceitos' : 'Pendentes'}</strong><br>` +
@@ -2194,6 +2464,10 @@ async def web_settings_page(request: Request):
                 document.getElementById('logout').addEventListener('click', async () => {
                     await fetchJson('/auth/logout', { method: 'POST' });
                     window.location.href = '/web/login';
+                });
+
+                document.getElementById('open-dashboard').addEventListener('click', () => {
+                    window.location.href = '/web/dashboard';
                 });
 
                 loadState().catch((error) => {
@@ -2499,6 +2773,813 @@ async def onboarding_whatsapp_refresh(request: Request):
         return await whatsapp_onboarding_service.refresh_status(session, refreshed_user)
 
 
+@app.get("/web/dashboard", response_class=HTMLResponse)
+async def web_dashboard_page(request: Request):
+    """Render the authenticated financial dashboard after onboarding."""
+    try:
+        user = await _get_current_web_user(request)
+    except HTTPException:
+        return RedirectResponse(url="/web/login", status_code=303)
+    if not getattr(user, "onboarding_completed", False):
+        return RedirectResponse(url="/web/onboarding", status_code=303)
+
+    return HTMLResponse(
+        content="""
+        <!DOCTYPE html>
+        <html lang="pt-BR">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>FinBot • Painel Financeiro</title>
+            <link rel="preconnect" href="https://fonts.googleapis.com">
+            <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+            <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+            <style>
+                :root {
+                    --bg: #eef4f7;
+                    --card: rgba(255, 255, 255, 0.9);
+                    --line: #d9e2ec;
+                    --text: #0f172a;
+                    --muted: #64748b;
+                    --accent: #0f766e;
+                    --accent-soft: #ccfbf1;
+                    --surface: #fbfdff;
+                    --danger: #be123c;
+                }
+                * { box-sizing: border-box; }
+                body {
+                    margin: 0;
+                    font-family: 'Outfit', sans-serif;
+                    color: var(--text);
+                    background:
+                        radial-gradient(circle at top right, rgba(15, 118, 110, 0.10), transparent 18%),
+                        radial-gradient(circle at left center, rgba(14, 116, 144, 0.06), transparent 20%),
+                        linear-gradient(180deg, #f8fafc 0%, var(--bg) 100%);
+                }
+                .shell {
+                    max-width: 1380px;
+                    margin: 0 auto;
+                    padding: 28px 20px 56px;
+                    display: grid;
+                    gap: 20px;
+                }
+                .hero, .card {
+                    background: var(--card);
+                    backdrop-filter: blur(16px);
+                    border: 1px solid var(--line);
+                    border-radius: 24px;
+                    box-shadow: 0 18px 50px rgba(15, 23, 42, 0.06);
+                }
+                .hero {
+                    padding: 28px;
+                    display: grid;
+                    gap: 16px;
+                }
+                .hero h1, .card h2, .card h3 { margin: 0; }
+                .hero p, .card p {
+                    margin: 0;
+                    color: var(--muted);
+                    line-height: 1.7;
+                }
+                .actions, .toolbar {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 12px;
+                    align-items: center;
+                }
+                .hero-top {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 16px;
+                    justify-content: space-between;
+                    align-items: flex-start;
+                }
+                .stats {
+                    display: grid;
+                    grid-template-columns: repeat(4, minmax(0, 1fr));
+                    gap: 12px;
+                }
+                .stat, .panel {
+                    padding: 16px;
+                    border-radius: 18px;
+                    border: 1px solid var(--line);
+                    background: var(--surface);
+                }
+                .stat strong {
+                    display: block;
+                    font-size: 1.15rem;
+                    margin-bottom: 8px;
+                }
+                .grid {
+                    display: grid;
+                    grid-template-columns: repeat(2, minmax(0, 1fr));
+                    gap: 20px;
+                }
+                .stack {
+                    display: grid;
+                    gap: 20px;
+                }
+                .wide-card {
+                    grid-column: 1 / -1;
+                }
+                .card {
+                    padding: 22px;
+                    display: grid;
+                    gap: 16px;
+                }
+                form {
+                    display: grid;
+                    gap: 12px;
+                }
+                .two-col {
+                    display: grid;
+                    grid-template-columns: repeat(2, minmax(0, 1fr));
+                    gap: 12px;
+                }
+                label {
+                    display: grid;
+                    gap: 8px;
+                    color: var(--muted);
+                    font-size: 0.93rem;
+                }
+                input, select {
+                    width: 100%;
+                    border: 1px solid var(--line);
+                    border-radius: 14px;
+                    padding: 13px 14px;
+                    font: inherit;
+                    background: white;
+                }
+                button {
+                    border: 0;
+                    border-radius: 14px;
+                    padding: 12px 16px;
+                    font: inherit;
+                    font-weight: 700;
+                    cursor: pointer;
+                }
+                .primary { background: var(--accent); color: white; }
+                .ghost { background: #e2e8f0; color: var(--text); }
+                .danger { background: var(--danger); color: white; }
+                .status {
+                    min-height: 22px;
+                    font-size: 0.92rem;
+                    color: var(--muted);
+                }
+                .status.error { color: var(--danger); }
+                .list {
+                    display: grid;
+                    gap: 10px;
+                }
+                .list-item {
+                    display: flex;
+                    justify-content: space-between;
+                    gap: 12px;
+                    align-items: center;
+                    padding: 12px 14px;
+                    border: 1px solid var(--line);
+                    border-radius: 16px;
+                    background: var(--surface);
+                }
+                .list-item small {
+                    display: block;
+                    color: var(--muted);
+                    margin-top: 4px;
+                }
+                .table-wrap {
+                    overflow-x: auto;
+                    border: 1px solid var(--line);
+                    border-radius: 18px;
+                    background: var(--surface);
+                }
+                table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    min-width: 760px;
+                }
+                th, td {
+                    padding: 12px 14px;
+                    border-bottom: 1px solid var(--line);
+                    text-align: left;
+                    vertical-align: top;
+                }
+                th {
+                    color: var(--muted);
+                    font-size: 0.88rem;
+                    text-transform: uppercase;
+                    letter-spacing: 0.04em;
+                }
+                tbody tr:last-child td { border-bottom: 0; }
+                .mono {
+                    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+                }
+                .notice {
+                    padding: 14px 16px;
+                    border-radius: 16px;
+                    border: 1px solid #99f6e4;
+                    background: var(--accent-soft);
+                    color: #115e59;
+                }
+                .empty {
+                    padding: 18px;
+                    border: 1px dashed var(--line);
+                    border-radius: 18px;
+                    text-align: center;
+                    color: var(--muted);
+                    background: rgba(255, 255, 255, 0.55);
+                }
+                .chart-grid {
+                    display: grid;
+                    grid-template-columns: repeat(2, minmax(0, 1fr));
+                    gap: 12px;
+                }
+                .chart-card img {
+                    width: 100%;
+                    border-radius: 18px;
+                    border: 1px solid var(--line);
+                    background: white;
+                }
+                @media (max-width: 1120px) {
+                    .grid, .chart-grid, .two-col, .stats { grid-template-columns: 1fr; }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="shell">
+                <section class="hero">
+                    <div class="hero-top">
+                        <div>
+                            <p style="letter-spacing: 0.12em; text-transform: uppercase; font-size: 0.78rem;">FinBot Dashboard</p>
+                            <h1 id="hero-title">Seu painel financeiro completo.</h1>
+                            <p>Acompanhe lançamentos, ajuste despesas, gerencie metas, orçamento por categoria, exportação e conversão em um só lugar.</p>
+                        </div>
+                        <div class="actions">
+                            <button class="ghost" id="open-settings" type="button">Configurações</button>
+                            <button class="ghost" id="logout" type="button">Sair</button>
+                        </div>
+                    </div>
+                    <form id="period-form" class="toolbar">
+                        <label>Mês
+                            <input name="month" type="number" min="1" max="12" required>
+                        </label>
+                        <label>Ano
+                            <input name="year" type="number" min="2000" max="2100" required>
+                        </label>
+                        <button class="primary" type="submit">Atualizar visão</button>
+                    </form>
+                    <div class="stats" id="summary-stats"></div>
+                </section>
+
+                <div class="grid">
+                    <section class="card wide-card">
+                        <div class="actions" style="justify-content: space-between;">
+                            <div>
+                                <h2>Lançamentos</h2>
+                                <p>Registre novas despesas ou receitas e ajuste o que já foi salvo.</p>
+                            </div>
+                            <div class="notice">
+                                Moeda base atual: <strong id="base-currency-label">BRL</strong>
+                            </div>
+                        </div>
+                        <form id="expense-form">
+                            <input name="expense_id" type="hidden">
+                            <div class="two-col">
+                                <label>Descrição
+                                    <input name="description" required placeholder="Ex.: Boliche com amigos">
+                                </label>
+                                <label>Valor na moeda selecionada
+                                    <input name="amount" type="number" step="0.01" min="0.01" required>
+                                </label>
+                            </div>
+                            <div class="two-col">
+                                <label>Categoria
+                                    <select name="category" required></select>
+                                </label>
+                                <label>Forma de pagamento
+                                    <select name="payment_method" required></select>
+                                </label>
+                            </div>
+                            <div class="two-col">
+                                <label>Data do lançamento
+                                    <input name="expense_date" type="date">
+                                </label>
+                                <label>Moeda informada
+                                    <select name="currency" required></select>
+                                </label>
+                            </div>
+                            <div class="actions">
+                                <button class="primary" type="submit" id="expense-submit">Salvar lançamento</button>
+                                <button class="ghost" type="button" id="expense-reset">Limpar</button>
+                            </div>
+                        </form>
+                        <div class="status" id="expense-status"></div>
+                        <div class="table-wrap">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Data</th>
+                                        <th>Descrição</th>
+                                        <th>Categoria</th>
+                                        <th>Pagamento</th>
+                                        <th>Valor</th>
+                                        <th>Moeda original</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="expenses-table"></tbody>
+                            </table>
+                        </div>
+                    </section>
+
+                    <div class="stack">
+                        <section class="card">
+                            <h2>Orçamentos, limites por categoria e gráficos</h2>
+                            <p>Defina tetos mensais por categoria e acompanhe como os gastos se distribuem no período.</p>
+                            <form id="budget-form">
+                                <div class="two-col">
+                                    <label>Categoria
+                                        <select name="category_name">
+                                            <option value="">Geral</option>
+                                        </select>
+                                    </label>
+                                    <label>Limite mensal
+                                        <input name="monthly_limit" type="number" step="0.01" min="0.01" required>
+                                    </label>
+                                </div>
+                                <button class="primary" type="submit">Salvar orçamento</button>
+                            </form>
+                            <div class="status" id="budget-status"></div>
+                            <div class="list" id="budgets-list"></div>
+                            <div class="chart-grid">
+                                <div class="chart-card">
+                                    <h3>Gastos por categoria</h3>
+                                    <img id="chart-categories" alt="Gastos por categoria">
+                                </div>
+                                <div class="chart-card">
+                                    <h3>Maiores gastos</h3>
+                                    <img id="chart-top-expenses" alt="Maiores gastos">
+                                </div>
+                                <div class="chart-card" style="grid-column: 1 / -1;">
+                                    <h3>Evolução diária</h3>
+                                    <img id="chart-daily" alt="Evolução diária">
+                                </div>
+                            </div>
+                        </section>
+                    </div>
+
+                    <div class="stack">
+                        <section class="card">
+                            <h2>Metas</h2>
+                            <p>Cadastre objetivos de economia e acompanhe o progresso.</p>
+                            <form id="goal-form">
+                                <label>Descrição da meta
+                                    <input name="description" required placeholder="Ex.: Reserva de emergência">
+                                </label>
+                                <div class="two-col">
+                                    <label>Valor alvo
+                                        <input name="target_amount" type="number" step="0.01" min="0.01" required>
+                                    </label>
+                                    <label>Prazo
+                                        <input name="deadline" type="date" required>
+                                    </label>
+                                </div>
+                                <button class="primary" type="submit">Salvar meta</button>
+                            </form>
+                            <div class="status" id="goal-status"></div>
+                            <div class="list" id="goals-list"></div>
+                        </section>
+
+                        <section class="card">
+                            <h2>Conversão de moeda</h2>
+                            <p>Use a moeda base definida em configurações e faça conversões rápidas sem sair do painel.</p>
+                            <form id="currency-form">
+                                <div class="two-col">
+                                    <label>Valor
+                                        <input name="amount" type="number" step="0.01" min="0.01" required>
+                                    </label>
+                                    <label>De
+                                        <select name="from_currency" required></select>
+                                    </label>
+                                </div>
+                                <label>Para
+                                    <select name="to_currency" required></select>
+                                </label>
+                                <button class="ghost" type="submit">Converter valor</button>
+                            </form>
+                            <div class="notice" id="currency-result">A conversão aparecerá aqui.</div>
+                        </section>
+
+                        <section class="card">
+                            <h2>Exportação</h2>
+                            <p>Exporte o período selecionado em planilha ou PDF com resumo visual.</p>
+                            <div class="actions">
+                                <button class="primary" id="export-xlsx" type="button">Exportar XLSX</button>
+                                <button class="ghost" id="export-pdf" type="button">Exportar PDF</button>
+                            </div>
+                            <div class="status" id="export-status"></div>
+                        </section>
+                    </div>
+                </div>
+            </div>
+
+            <script>
+                const appState = {
+                    period: { month: new Date().getMonth() + 1, year: new Date().getFullYear() },
+                    payload: null,
+                    editingExpenseId: null,
+                };
+
+                async function fetchJson(url, options = {}) {
+                    const response = await fetch(url, { credentials: 'same-origin', ...options });
+                    const rawText = await response.text();
+                    let data = null;
+                    if (rawText) {
+                        try {
+                            data = JSON.parse(rawText);
+                        } catch {
+                            data = null;
+                        }
+                    }
+                    if (!response.ok) {
+                        const fallbackMessage = rawText && !data
+                            ? `Erro interno ao processar a solicitação (${response.status}).`
+                            : `Erro HTTP ${response.status}.`;
+                        throw new Error(data?.detail || data?.message || fallbackMessage);
+                    }
+                    return data ?? {};
+                }
+
+                function money(value) {
+                    return new Intl.NumberFormat('pt-BR', {
+                        style: 'currency',
+                        currency: 'BRL',
+                    }).format(Number(value || 0));
+                }
+
+                function escapeHtml(value) {
+                    return String(value ?? '')
+                        .replaceAll('&', '&amp;')
+                        .replaceAll('<', '&lt;')
+                        .replaceAll('>', '&gt;')
+                        .replaceAll('"', '&quot;');
+                }
+
+                function selectOptions(items, selectedValue, labelKey = 'name', valueKey = 'code') {
+                    return items.map((item) => {
+                        const value = item[valueKey];
+                        const selected = value === selectedValue ? 'selected' : '';
+                        return `<option value="${escapeHtml(value)}" ${selected}>${escapeHtml(item[labelKey])}</option>`;
+                    }).join('');
+                }
+
+                function categoryOptions(categories, selectedValue) {
+                    return (categories.active || []).map((item) => {
+                        const value = item.name;
+                        const label = `${item.name} • ${item.type === 'Negativo' ? 'Gasto' : 'Entrada'}`;
+                        const selected = value === selectedValue ? 'selected' : '';
+                        return `<option value="${escapeHtml(value)}" ${selected}>${escapeHtml(label)}</option>`;
+                    }).join('');
+                }
+
+                function setStatus(id, message, isError = false) {
+                    const element = document.getElementById(id);
+                    element.textContent = message;
+                    element.className = isError ? 'status error' : 'status';
+                }
+
+                function downloadBase64(filename, base64Content, mimeType) {
+                    const link = document.createElement('a');
+                    link.href = `data:${mimeType};base64,${base64Content}`;
+                    link.download = filename;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                }
+
+                function populateExpenseForm(expense) {
+                    appState.editingExpenseId = expense.id;
+                    document.querySelector('#expense-form [name="expense_id"]').value = expense.id;
+                    document.querySelector('#expense-form [name="description"]').value = expense.description;
+                    document.querySelector('#expense-form [name="amount"]').value = expense.original_amount || expense.amount;
+                    document.querySelector('#expense-form [name="category"]').value = expense.category;
+                    document.querySelector('#expense-form [name="payment_method"]').value = expense.payment_method;
+                    document.querySelector('#expense-form [name="expense_date"]').value = expense.date;
+                    document.querySelector('#expense-form [name="currency"]').value = expense.original_currency || appState.payload.user.base_currency || 'BRL';
+                    document.getElementById('expense-submit').textContent = 'Atualizar lançamento';
+                    setStatus('expense-status', 'Você está editando um lançamento salvo.');
+                }
+
+                function resetExpenseForm() {
+                    appState.editingExpenseId = null;
+                    document.getElementById('expense-form').reset();
+                    document.querySelector('#expense-form [name="expense_id"]').value = '';
+                    document.getElementById('expense-submit').textContent = 'Salvar lançamento';
+                    if (appState.payload) {
+                        document.querySelector('#expense-form [name="currency"]').value = appState.payload.user.base_currency || 'BRL';
+                    }
+                    setStatus('expense-status', '');
+                }
+
+                function renderBudgets(budgets) {
+                    const container = document.getElementById('budgets-list');
+                    if (!budgets.length) {
+                        container.innerHTML = '<div class="empty">Nenhum orçamento ativo neste momento.</div>';
+                        return;
+                    }
+                    container.innerHTML = budgets.map((item) => `
+                        <div class="list-item">
+                            <div>
+                                <strong>${escapeHtml(item.category)}</strong>
+                                <small>Limite ${money(item.limit)} • Gasto ${money(item.spent)} • Restante ${money(item.remaining)}</small>
+                            </div>
+                            <div class="actions">
+                                <span class="mono">${Number(item.percentage).toFixed(1)}%</span>
+                                <button class="ghost" type="button" data-remove-budget="${escapeHtml(item.category === 'Geral' ? '' : item.category)}">Remover</button>
+                            </div>
+                        </div>
+                    `).join('');
+                }
+
+                function renderGoals(goals) {
+                    const container = document.getElementById('goals-list');
+                    if (!goals.length) {
+                        container.innerHTML = '<div class="empty">Nenhuma meta ativa cadastrada.</div>';
+                        return;
+                    }
+                    container.innerHTML = goals.map((item) => `
+                        <div class="list-item">
+                            <div>
+                                <strong>${escapeHtml(item.description)}</strong>
+                                <small>Progresso ${money(item.current_progress)} de ${money(item.target_amount)} • Prazo ${escapeHtml(item.deadline)}</small>
+                            </div>
+                            <div class="actions">
+                                <span class="mono">${Number(item.percentage).toFixed(1)}%</span>
+                                <button class="ghost" type="button" data-remove-goal="${escapeHtml(item.description)}">Encerrar</button>
+                            </div>
+                        </div>
+                    `).join('');
+                }
+
+                function renderExpenses(expenses) {
+                    const body = document.getElementById('expenses-table');
+                    if (!expenses.length) {
+                        body.innerHTML = '<tr><td colspan="7"><div class="empty">Nenhum lançamento encontrado para o período.</div></td></tr>';
+                        return;
+                    }
+                    body.innerHTML = expenses.map((expense) => `
+                        <tr>
+                            <td>${escapeHtml(expense.date_label)}</td>
+                            <td><strong>${escapeHtml(expense.description)}</strong><br><small>${escapeHtml(expense.type)}</small></td>
+                            <td>${escapeHtml(expense.category)}</td>
+                            <td>${escapeHtml(expense.payment_method)}</td>
+                            <td>${money(expense.amount)}</td>
+                            <td>${expense.original_currency ? `${escapeHtml(expense.original_currency)} ${Number(expense.original_amount || 0).toFixed(2)}` : 'BRL'}</td>
+                            <td><button class="ghost" type="button" data-edit-expense="${expense.id}">Editar</button></td>
+                        </tr>
+                    `).join('');
+                }
+
+                function renderState(payload) {
+                    appState.payload = payload;
+                    document.getElementById('hero-title').textContent = `Painel de ${payload.user.display_name || payload.user.name || 'sua conta'}`;
+                    document.querySelector('#period-form [name="month"]').value = payload.period.month;
+                    document.querySelector('#period-form [name="year"]').value = payload.period.year;
+                    document.getElementById('summary-stats').innerHTML = `
+                        <div class="stat"><strong>${money(payload.summary.expenses)}</strong><span>Saídas no período</span></div>
+                        <div class="stat"><strong>${money(payload.summary.income)}</strong><span>Entradas no período</span></div>
+                        <div class="stat"><strong>${money(payload.summary.balance)}</strong><span>Saldo do período</span></div>
+                        <div class="stat"><strong>${payload.summary.expense_count}</strong><span>Lançamentos no período</span></div>
+                    `;
+                    document.getElementById('base-currency-label').textContent = payload.user.base_currency || 'BRL';
+
+                    const currencyOptions = selectOptions(payload.currencies, payload.user.base_currency || 'BRL');
+                    document.querySelector('#expense-form [name="currency"]').innerHTML = currencyOptions;
+                    document.querySelector('#currency-form [name="from_currency"]').innerHTML = selectOptions(
+                        payload.currencies,
+                        payload.user.base_currency || 'BRL',
+                    );
+                    document.querySelector('#currency-form [name="to_currency"]').innerHTML = selectOptions(payload.currencies, 'BRL');
+
+                    const categoryHtml = categoryOptions(payload.categories, '');
+                    document.querySelector('#expense-form [name="category"]').innerHTML = categoryHtml;
+                    document.querySelector('#budget-form [name="category_name"]').innerHTML = '<option value="">Geral</option>' + categoryHtml;
+
+                    const paymentMethodOptions = payload.payment_methods.map((item) => `<option value="${escapeHtml(item)}">${escapeHtml(item)}</option>`).join('');
+                    document.querySelector('#expense-form [name="payment_method"]').innerHTML = paymentMethodOptions;
+
+                    renderExpenses(payload.expenses || []);
+                    renderBudgets(payload.budgets || []);
+                    renderGoals(payload.goals || []);
+                    document.getElementById('chart-categories').src = payload.charts.categories;
+                    document.getElementById('chart-top-expenses').src = payload.charts.top_expenses;
+                    document.getElementById('chart-daily').src = payload.charts.daily;
+
+                    resetExpenseForm();
+                }
+
+                async function loadState() {
+                    const payload = await fetchJson(`/dashboard/state?month=${appState.period.month}&year=${appState.period.year}`);
+                    renderState(payload);
+                }
+
+                document.getElementById('period-form').addEventListener('submit', async (event) => {
+                    event.preventDefault();
+                    appState.period.month = Number(document.querySelector('#period-form [name="month"]').value);
+                    appState.period.year = Number(document.querySelector('#period-form [name="year"]').value);
+                    await loadState();
+                });
+
+                document.getElementById('expense-form').addEventListener('submit', async (event) => {
+                    event.preventDefault();
+                    const form = event.currentTarget;
+                    const data = Object.fromEntries(new FormData(form).entries());
+                    const payload = {
+                        description: data.description,
+                        amount: Number(data.amount),
+                        category: data.category,
+                        payment_method: data.payment_method,
+                        expense_date: data.expense_date || null,
+                        currency: data.currency,
+                    };
+                    try {
+                        if (appState.editingExpenseId) {
+                            await fetchJson(`/dashboard/expenses/${appState.editingExpenseId}`, {
+                                method: 'PATCH',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify(payload),
+                            });
+                            setStatus('expense-status', 'Lançamento atualizado com sucesso.');
+                        } else {
+                            await fetchJson('/dashboard/expenses', {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify(payload),
+                            });
+                            setStatus('expense-status', 'Lançamento salvo com sucesso.');
+                        }
+                        await loadState();
+                    } catch (error) {
+                        setStatus('expense-status', error.message, true);
+                    }
+                });
+
+                document.getElementById('expense-reset').addEventListener('click', resetExpenseForm);
+
+                document.getElementById('budget-form').addEventListener('submit', async (event) => {
+                    event.preventDefault();
+                    const form = event.currentTarget;
+                    const data = Object.fromEntries(new FormData(form).entries());
+                    try {
+                        await fetchJson('/dashboard/budgets', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({
+                                category_name: data.category_name || null,
+                                monthly_limit: Number(data.monthly_limit),
+                            }),
+                        });
+                        setStatus('budget-status', 'Orçamento salvo com sucesso.');
+                        form.reset();
+                        await loadState();
+                    } catch (error) {
+                        setStatus('budget-status', error.message, true);
+                    }
+                });
+
+                document.getElementById('goal-form').addEventListener('submit', async (event) => {
+                    event.preventDefault();
+                    const form = event.currentTarget;
+                    const data = Object.fromEntries(new FormData(form).entries());
+                    try {
+                        await fetchJson('/dashboard/goals', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({
+                                description: data.description,
+                                target_amount: Number(data.target_amount),
+                                deadline: data.deadline,
+                            }),
+                        });
+                        setStatus('goal-status', 'Meta salva com sucesso.');
+                        form.reset();
+                        applyGoalDateConstraints();
+                        await loadState();
+                    } catch (error) {
+                        setStatus('goal-status', error.message, true);
+                    }
+                });
+
+                document.getElementById('currency-form').addEventListener('submit', async (event) => {
+                    event.preventDefault();
+                    const data = Object.fromEntries(new FormData(event.currentTarget).entries());
+                    try {
+                        const payload = await fetchJson('/dashboard/currency/convert', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({
+                                amount: Number(data.amount),
+                                from_currency: data.from_currency,
+                                to_currency: data.to_currency,
+                            }),
+                        });
+                        document.getElementById('currency-result').innerHTML =
+                            `<strong>${Number(payload.original_amount).toFixed(2)} ${escapeHtml(payload.original_currency)}</strong> ` +
+                            `equivale a <strong>${Number(payload.converted_amount).toFixed(2)} ${escapeHtml(payload.target_currency)}</strong><br>` +
+                            `Taxa usada: ${Number(payload.exchange_rate).toFixed(4)}`;
+                    } catch (error) {
+                        document.getElementById('currency-result').textContent = error.message;
+                    }
+                });
+
+                async function exportPeriod(format) {
+                    try {
+                        const payload = await fetchJson('/dashboard/export', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({
+                                format,
+                                month: appState.period.month,
+                                year: appState.period.year,
+                            }),
+                        });
+                        downloadBase64(payload.filename, payload.file_base64, payload.mimetype);
+                        setStatus('export-status', `Arquivo ${payload.filename} gerado com sucesso.`);
+                    } catch (error) {
+                        setStatus('export-status', error.message, true);
+                    }
+                }
+
+                document.getElementById('export-xlsx').addEventListener('click', () => exportPeriod('xlsx'));
+                document.getElementById('export-pdf').addEventListener('click', () => exportPeriod('pdf'));
+
+                document.body.addEventListener('click', async (event) => {
+                    const target = event.target.closest('button');
+                    if (!target) return;
+                    if (target.dataset.editExpense) {
+                        const expense = (appState.payload.expenses || []).find((item) => String(item.id) === target.dataset.editExpense);
+                        if (expense) populateExpenseForm(expense);
+                        return;
+                    }
+                    if (target.dataset.removeBudget !== undefined) {
+                        try {
+                            await fetchJson('/dashboard/budgets', {
+                                method: 'DELETE',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({ category_name: target.dataset.removeBudget || null }),
+                            });
+                            setStatus('budget-status', 'Orçamento removido.');
+                            await loadState();
+                        } catch (error) {
+                            setStatus('budget-status', error.message, true);
+                        }
+                        return;
+                    }
+                    if (target.dataset.removeGoal) {
+                        try {
+                            await fetchJson('/dashboard/goals', {
+                                method: 'DELETE',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({ description: target.dataset.removeGoal }),
+                            });
+                            setStatus('goal-status', 'Meta encerrada.');
+                            await loadState();
+                        } catch (error) {
+                            setStatus('goal-status', error.message, true);
+                        }
+                    }
+                });
+
+                document.getElementById('open-settings').addEventListener('click', () => {
+                    window.location.href = '/web/settings';
+                });
+
+                document.getElementById('logout').addEventListener('click', async () => {
+                    await fetchJson('/auth/logout', { method: 'POST' });
+                    window.location.href = '/web/login';
+                });
+
+                function applyGoalDateConstraints() {
+                    const deadlineInput = document.querySelector('#goal-form [name="deadline"]');
+                    const tomorrow = new Date();
+                    tomorrow.setDate(tomorrow.getDate() + 1);
+                    const isoDate = tomorrow.toISOString().slice(0, 10);
+                    deadlineInput.min = isoDate;
+                    if (!deadlineInput.value || deadlineInput.value < isoDate) {
+                        deadlineInput.value = isoDate;
+                    }
+                }
+
+                loadState().catch((error) => {
+                    document.getElementById('summary-stats').innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
+                });
+                applyGoalDateConstraints();
+            </script>
+        </body>
+        </html>
+        """
+    )
+
+
 @app.get("/settings/state")
 async def settings_state(request: Request):
     """Return the current state for the authenticated settings panel."""
@@ -2526,6 +3607,11 @@ async def settings_profile(request: Request, payload: SettingsProfileRequest):
                 display_name=payload.display_name,
                 timezone=payload.timezone,
                 email=payload.email,
+            )
+            updated_user = await user_service.update_base_currency(
+                session,
+                updated_user,
+                base_currency=_normalize_currency_code(payload.base_currency),
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
@@ -2762,6 +3848,303 @@ async def settings_backup_import_apply(
                     session, refreshed_user
                 ),
             ),
+        }
+
+
+@app.get("/dashboard/state")
+async def dashboard_state(
+    request: Request,
+    month: int | None = None,
+    year: int | None = None,
+):
+    """Return the authenticated dashboard state."""
+    await _get_current_web_user(request)
+    async with async_session() as session:
+        refreshed_user = await _get_current_web_user_in_session(session, request)
+        return await _build_dashboard_payload(
+            session,
+            refreshed_user,
+            month=month,
+            year=year,
+        )
+
+
+@app.post("/dashboard/profile/base-currency")
+async def dashboard_update_base_currency(
+    request: Request,
+    payload: DashboardBaseCurrencyRequest,
+):
+    """Update the preferred base currency for the authenticated user."""
+    await _get_current_web_user(request)
+    normalized_currency = _normalize_currency_code(payload.base_currency)
+    async with async_session() as session:
+        refreshed_user = await _get_current_web_user_in_session(session, request)
+        try:
+            updated_user = await user_service.update_base_currency(
+                session,
+                refreshed_user,
+                base_currency=normalized_currency,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {
+            "status": "ok",
+            "base_currency": updated_user.base_currency,
+        }
+
+
+@app.post("/dashboard/expenses")
+async def dashboard_create_expense(
+    request: Request,
+    payload: DashboardExpenseCreateRequest,
+):
+    """Create a new expense or income from the web dashboard."""
+    await _get_current_web_user(request)
+    async with async_session() as session:
+        refreshed_user = await _get_current_web_user_in_session(session, request)
+        currency_code = _normalize_currency_code(payload.currency, refreshed_user.base_currency)
+        amount_decimal = Decimal(str(payload.amount))
+        if amount_decimal <= 0:
+            raise HTTPException(status_code=400, detail="Valor invalido.")
+
+        expense_data: dict[str, Any] = {
+            "description": payload.description,
+            "amount": amount_decimal,
+            "category": payload.category,
+            "payment_method": payload.payment_method,
+            "expense_date": payload.expense_date,
+        }
+
+        if currency_code != "BRL":
+            conversion_result = await currency_service.convert_to_brl(
+                amount_decimal,
+                currency_code,
+                user=refreshed_user,
+            )
+            if not conversion_result["success"]:
+                raise HTTPException(status_code=400, detail=conversion_result["error"])
+            expense_data.update(
+                {
+                    "amount": conversion_result["converted_amount"],
+                    "original_currency": currency_code,
+                    "original_amount": amount_decimal,
+                    "exchange_rate": conversion_result["exchange_rate"],
+                }
+            )
+
+        result = await expense_service.create_expense(session, refreshed_user.phone, expense_data)
+        if not result["success"]:
+            raise HTTPException(status_code=400, detail=result["error"])
+        return {"status": "ok", **result}
+
+
+@app.patch("/dashboard/expenses/{expense_id}")
+async def dashboard_update_expense(
+    request: Request,
+    expense_id: int,
+    payload: DashboardExpenseUpdateRequest,
+):
+    """Update an existing expense from the web dashboard."""
+    await _get_current_web_user(request)
+    async with async_session() as session:
+        refreshed_user = await _get_current_web_user_in_session(session, request)
+        update_data: dict[str, Any] = {}
+
+        if payload.description is not None:
+            update_data["new_description"] = payload.description
+        if payload.category is not None:
+            update_data["new_category"] = payload.category
+        if payload.payment_method is not None:
+            update_data["new_payment_method"] = payload.payment_method
+        if payload.expense_date is not None:
+            update_data["new_expense_date"] = payload.expense_date
+
+        if payload.amount is not None:
+            amount_decimal = Decimal(str(payload.amount))
+            if amount_decimal <= 0:
+                raise HTTPException(status_code=400, detail="Valor invalido.")
+            requested_currency = payload.currency or refreshed_user.base_currency
+            currency_code = _normalize_currency_code(
+                requested_currency, refreshed_user.base_currency
+            )
+            if currency_code == "BRL":
+                update_data["new_amount"] = amount_decimal
+                update_data["new_original_currency"] = ""
+            else:
+                conversion_result = await currency_service.convert_to_brl(
+                    amount_decimal,
+                    currency_code,
+                    user=refreshed_user,
+                )
+                if not conversion_result["success"]:
+                    raise HTTPException(status_code=400, detail=conversion_result["error"])
+                update_data.update(
+                    {
+                        "new_amount": conversion_result["converted_amount"],
+                        "new_original_currency": currency_code,
+                        "new_original_amount": amount_decimal,
+                        "new_exchange_rate": conversion_result["exchange_rate"],
+                    }
+                )
+        elif payload.currency is not None:
+            currency_code = _normalize_currency_code(payload.currency, refreshed_user.base_currency)
+            if currency_code == "BRL":
+                update_data["new_original_currency"] = ""
+
+        result = await expense_service.update_expense(
+            session,
+            refreshed_user.phone,
+            expense_id,
+            update_data,
+        )
+        if not result["success"]:
+            raise HTTPException(status_code=400, detail=result["error"])
+        return {"status": "ok", **result}
+
+
+@app.post("/dashboard/budgets")
+async def dashboard_create_budget(
+    request: Request,
+    payload: DashboardBudgetRequest,
+):
+    """Create or update a category budget from the web dashboard."""
+    await _get_current_web_user(request)
+    async with async_session() as session:
+        refreshed_user = await _get_current_web_user_in_session(session, request)
+        result = await budget_service.create_budget(
+            session,
+            refreshed_user.phone,
+            payload.category_name,
+            Decimal(str(payload.monthly_limit)),
+        )
+        if not result["success"]:
+            raise HTTPException(status_code=400, detail=result["error"])
+        return {"status": "ok", **result}
+
+
+@app.delete("/dashboard/budgets")
+async def dashboard_delete_budget(
+    request: Request,
+    payload: DashboardBudgetDeleteRequest,
+):
+    """Remove a category budget from the web dashboard."""
+    await _get_current_web_user(request)
+    async with async_session() as session:
+        refreshed_user = await _get_current_web_user_in_session(session, request)
+        result = await budget_service.remove_budget(
+            session,
+            refreshed_user.phone,
+            payload.category_name,
+        )
+        if not result["success"]:
+            raise HTTPException(status_code=400, detail=result["error"])
+        return {"status": "ok", **result}
+
+
+@app.post("/dashboard/goals")
+async def dashboard_create_goal(
+    request: Request,
+    payload: DashboardGoalRequest,
+):
+    """Create a savings goal from the web dashboard."""
+    await _get_current_web_user(request)
+    try:
+        deadline = date.fromisoformat(payload.deadline)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Prazo invalido.")
+
+    async with async_session() as session:
+        refreshed_user = await _get_current_web_user_in_session(session, request)
+        result = await goal_service.create_goal(
+            session,
+            refreshed_user.phone,
+            payload.description,
+            Decimal(str(payload.target_amount)),
+            deadline,
+        )
+        if not result["success"]:
+            raise HTTPException(status_code=400, detail=result["error"])
+        return {"status": "ok", **result}
+
+
+@app.delete("/dashboard/goals")
+async def dashboard_delete_goal(
+    request: Request,
+    payload: DashboardGoalDeleteRequest,
+):
+    """Remove an active goal from the web dashboard."""
+    await _get_current_web_user(request)
+    async with async_session() as session:
+        refreshed_user = await _get_current_web_user_in_session(session, request)
+        result = await goal_service.remove_goal(session, refreshed_user.phone, payload.description)
+        if not result["success"]:
+            raise HTTPException(status_code=400, detail=result["error"])
+        return {"status": "ok", **result}
+
+
+@app.post("/dashboard/export")
+async def dashboard_export(
+    request: Request,
+    payload: DashboardExportRequest,
+):
+    """Export the selected period as XLSX or PDF."""
+    await _get_current_web_user(request)
+    normalized_format = payload.format.strip().lower()
+    async with async_session() as session:
+        refreshed_user = await _get_current_web_user_in_session(session, request)
+        if normalized_format == "xlsx":
+            result = await export_service.export_month(
+                session,
+                refreshed_user.phone,
+                month=payload.month,
+                year=payload.year,
+            )
+            mimetype = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        elif normalized_format == "pdf":
+            result = await export_service.export_month_pdf(
+                session,
+                refreshed_user.phone,
+                month=payload.month,
+                year=payload.year,
+            )
+            mimetype = "application/pdf"
+        else:
+            raise HTTPException(status_code=400, detail="Formato de exportacao invalido.")
+
+        if not result["success"]:
+            raise HTTPException(status_code=400, detail=result.get("message", "Erro ao exportar."))
+        return {
+            "status": "ok",
+            "filename": result["filename"],
+            "file_base64": result["file_base64"],
+            "mimetype": mimetype,
+        }
+
+
+@app.post("/dashboard/currency/convert")
+async def dashboard_currency_convert(
+    request: Request,
+    payload: DashboardCurrencyConvertRequest,
+):
+    """Convert values between supported currencies in the web dashboard."""
+    await _get_current_web_user(request)
+    async with async_session() as session:
+        refreshed_user = await _get_current_web_user_in_session(session, request)
+        result = await currency_service.convert_currency(
+            Decimal(str(payload.amount)),
+            _normalize_currency_code(payload.from_currency),
+            _normalize_currency_code(payload.to_currency),
+            user=refreshed_user,
+        )
+        if not result["success"]:
+            raise HTTPException(status_code=400, detail=result["error"])
+        return {
+            "status": "ok",
+            "original_amount": float(result["original_amount"]),
+            "original_currency": result["original_currency"],
+            "converted_amount": float(result["converted_amount"]),
+            "target_currency": result["target_currency"],
+            "exchange_rate": float(result["exchange_rate"]),
         }
 
 

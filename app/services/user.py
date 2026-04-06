@@ -62,6 +62,7 @@ class UserService:
             is_active=True,
             preferred_channel="whatsapp",
             timezone="America/Sao_Paulo",
+            base_currency="BRL",
             limits_enabled=True,
             daily_text_limit=defaults["daily_text_limit"],
             daily_media_limit=defaults["daily_media_limit"],
@@ -291,6 +292,25 @@ class UserService:
             }
         )
         user.notification_preferences = current_preferences
+        user.updated_at = datetime.now()
+        user.last_seen_at = datetime.now()
+        await session.commit()
+        await session.refresh(user)
+        return user
+
+    async def update_base_currency(
+        self,
+        session: AsyncSession,
+        user: User,
+        *,
+        base_currency: str,
+    ) -> User:
+        """Update the user's preferred base currency for web registration and conversion."""
+        normalized_currency = base_currency.strip().upper()
+        if len(normalized_currency) != 3 or not normalized_currency.isalpha():
+            raise ValueError("Moeda base invalida.")
+
+        user.base_currency = normalized_currency
         user.updated_at = datetime.now()
         user.last_seen_at = datetime.now()
         await session.commit()

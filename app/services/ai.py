@@ -97,6 +97,7 @@ Analise a mensagem do usuario e retorne um JSON com a intencao e dados extraidos
 
 ## Intencoes possiveis:
 - register_expense: registrar gasto ou entrada unica
+- update_expense: ajustar um gasto/entrada ja registrado
 - register_recurring: registrar despesa recorrente (assinatura, conta mensal)
 - cancel_recurring: cancelar despesa recorrente
 - query_month: consultar resumo do mes
@@ -122,13 +123,21 @@ Analise a mensagem do usuario e retorne um JSON com a intencao e dados extraidos
 
 ## Formato de resposta (JSON):
 {
-  "intent": "register_expense|register_recurring|cancel_recurring|query_month|export|list_recurring|undo_last|set_budget|check_budget|list_budgets|remove_budget|show_chart|create_goal|check_goal|list_goals|remove_goal|add_to_goal|convert_currency|export_backup|import_backup|show_limits|set_user_limit|unknown",
+  "intent": "register_expense|update_expense|register_recurring|cancel_recurring|query_month|export|list_recurring|undo_last|set_budget|check_budget|list_budgets|remove_budget|show_chart|create_goal|check_goal|list_goals|remove_goal|add_to_goal|convert_currency|export_backup|import_backup|show_limits|set_user_limit|unknown",
   "data": {
     "description": "descricao do gasto",
     "amount": 0.00,
     "category": "categoria exata da lista",
     "payment_method": "metodo exato da lista",
     "expense_date": null ou data da despesa no formato "YYYY-MM-DD",
+    "target_description": null ou descricao da despesa ja registrada que deve ser ajustada,
+    "target_amount": null ou valor da despesa ja registrada,
+    "target_date": null ou data da despesa ja registrada no formato "YYYY-MM-DD",
+    "new_description": null ou nova descricao,
+    "new_amount": null ou novo valor,
+    "new_category": null ou nova categoria exata da lista,
+    "new_payment_method": null ou novo metodo exato da lista,
+    "new_expense_date": null ou nova data no formato "YYYY-MM-DD",
     "installments": null ou numero de parcelas,
     "is_shared": false ou true,
     "shared_percentage": null ou percentual do usuario,
@@ -160,23 +169,26 @@ Analise a mensagem do usuario e retorne um JSON com a intencao e dados extraidos
 7. Para despesas/entradas, extraia a data da compra ou do gasto quando o usuario informar explicitamente
 8. Se o usuario nao informar data, deixe expense_date como null
 9. Se o usuario mandar uma nota/comprovante e mencionar outra data a ser considerada, priorize a data informada pelo usuario
-10. Inferir categoria quando nao especificada (ex: "almoco" -> Alimentação)
-11. Inferir metodo de pagamento pelo contexto (ex: "no pix" -> Pix)
-12. Para orcamentos: extraia categoria e limite (budget_limit) em reais
-13. Frases como "definir limite", "orcamento de X reais", "limite de X para Y" indicam set_budget
-14. Para export: se o usuario mencionar PDF, use export_format="pdf"; caso contrario use export_format="xlsx"
-15. Para graficos: "grafico", "visualmente", "evolucao" indicam show_chart. Tipos: pie (pizza), bars (barras), line (linha/evolucao)
-16. Para metas: "quero economizar", "meta de", "guardar X ate" indicam create_goal. Extraia descricao, valor e prazo
-17. Para consultar meta: "como esta minha meta", "progresso da meta" indicam check_goal
-18. Para depositar na meta: "depositar na meta", "guardar na meta", "adicionar a meta" indicam add_to_goal
-19. Moedas estrangeiras: detecte dolares (USD), euros (EUR), libras (GBP), won coreano (KRW), florim hungaro (HUF), etc.
-20. Se o usuario registrar gasto em moeda estrangeira ("gastei 50 dolares"), use register_expense com currency preenchido
-21. Para conversao sem gasto ("quanto e 100 dolares", "converter 50 euros pra reais"), use convert_currency
-22. Frases como "exporta meu backup", "fazer backup dos meus dados" indicam export_backup
-23. Frases como "importar backup", "restaurar backup", "recuperar backup" indicam import_backup
-24. Frases como "meus limites", "mostrar limites", "ver limites" indicam show_limits
-25. Frases como "ajustar limite de ia para 30 por dia" indicam set_user_limit
-26. Mapeamento de limites:
+10. Frases como "ajustar", "editar", "corrigir", "mudar" um gasto ja registrado indicam update_expense
+11. Para update_expense, preencha os campos target_* para identificar o lancamento antigo e os campos new_* com o que deve mudar
+12. Se o usuario disser "mudar para 120 reais" ou "trocar a categoria para Lazer", use os campos new_*
+13. Inferir categoria quando nao especificada (ex: "almoco" -> Alimentação)
+14. Inferir metodo de pagamento pelo contexto (ex: "no pix" -> Pix)
+15. Para orcamentos: extraia categoria e limite (budget_limit) em reais
+16. Frases como "definir limite", "orcamento de X reais", "limite de X para Y" indicam set_budget
+17. Para export: se o usuario mencionar PDF, use export_format="pdf"; caso contrario use export_format="xlsx"
+18. Para graficos: "grafico", "visualmente", "evolucao" indicam show_chart. Tipos: pie (pizza), bars (barras), line (linha/evolucao)
+19. Para metas: "quero economizar", "meta de", "guardar X ate" indicam create_goal. Extraia descricao, valor e prazo
+20. Para consultar meta: "como esta minha meta", "progresso da meta" indicam check_goal
+21. Para depositar na meta: "depositar na meta", "guardar na meta", "adicionar a meta" indicam add_to_goal
+22. Moedas estrangeiras: detecte dolares (USD), euros (EUR), libras (GBP), won coreano (KRW), florim hungaro (HUF), etc.
+23. Se o usuario registrar gasto em moeda estrangeira ("gastei 50 dolares"), use register_expense com currency preenchido
+24. Para conversao sem gasto ("quanto e 100 dolares", "converter 50 euros pra reais"), use convert_currency
+25. Frases como "exporta meu backup", "fazer backup dos meus dados" indicam export_backup
+26. Frases como "importar backup", "restaurar backup", "recuperar backup" indicam import_backup
+27. Frases como "meus limites", "mostrar limites", "ver limites" indicam show_limits
+28. Frases como "ajustar limite de ia para 30 por dia" indicam set_user_limit
+29. Mapeamento de limites:
    - texto/mensagem -> daily_text_limit
    - midia/media/arquivo -> daily_media_limit
    - ia/ai -> daily_ai_limit
@@ -221,6 +233,12 @@ Saida: {"intent": "register_expense", "data": {"description": "mercado", "amount
 
 Entrada: "registre esse gasto no dia 01/04/2026"
 Saida: {"intent": "register_expense", "data": {"description": null, "amount": null, "category": null, "payment_method": null, "expense_date": "2026-04-01", "installments": null, "is_shared": false, "shared_percentage": null, "recurring_day": null, "month": null, "year": null}, "confidence": 0.9}
+
+Entrada: "ajustar a compra do boliche de 1 de abril para 120 reais"
+Saida: {"intent": "update_expense", "data": {"target_description": "boliche", "target_date": "2026-04-01", "target_amount": null, "new_amount": 120.00, "new_description": null, "new_category": null, "new_payment_method": null, "new_expense_date": null}, "confidence": 0.92}
+
+Entrada: "mudar a categoria da compra do uber de ontem para Lazer"
+Saida: {"intent": "update_expense", "data": {"target_description": "uber", "target_date": "2026-04-05", "target_amount": null, "new_amount": null, "new_description": null, "new_category": "Lazer", "new_payment_method": null, "new_expense_date": null}, "confidence": 0.9}
 
 Entrada: "desfaz"
 Saida: {"intent": "undo_last", "data": {}, "confidence": 0.95}

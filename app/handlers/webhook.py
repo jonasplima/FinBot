@@ -235,75 +235,7 @@ class WebhookHandler:
 
             # Process with the configured AI provider
             result = await self.ai.process_message(text, user=user)
-
-            intent = result.get("intent", "unknown")
-
-            if intent == "register_expense":
-                await self.handle_register_expense(session, phone, result)
-            elif intent == "register_recurring":
-                await self.handle_register_recurring(session, phone, result)
-            elif intent == "cancel_recurring":
-                await self.handle_cancel_recurring(session, phone, result)
-            elif intent == "query_month":
-                await self.handle_query_month(session, phone, result)
-            elif intent == "export":
-                await self.handle_export(session, phone, result)
-            elif intent == "list_recurring":
-                await self.handle_list_recurring(session, phone)
-            elif intent == "undo_last":
-                await self.handle_undo_last(session, phone)
-            elif intent == "set_budget":
-                await self.handle_set_budget(session, phone, result)
-            elif intent == "check_budget":
-                await self.handle_check_budget(session, phone, result)
-            elif intent == "list_budgets":
-                await self.handle_list_budgets(session, phone)
-            elif intent == "remove_budget":
-                await self.handle_remove_budget(session, phone, result)
-            elif intent == "show_chart":
-                await self.handle_show_chart(session, phone, result)
-            elif intent == "create_goal":
-                await self.handle_create_goal(session, phone, result)
-            elif intent == "check_goal":
-                await self.handle_check_goal(session, phone, result)
-            elif intent == "list_goals":
-                await self.handle_list_goals(session, phone)
-            elif intent == "remove_goal":
-                await self.handle_remove_goal(session, phone, result)
-            elif intent == "add_to_goal":
-                await self.handle_add_to_goal(session, phone, result)
-            elif intent == "convert_currency":
-                await self.handle_convert_currency(session, phone, result)
-            elif intent == "show_limits":
-                await self.handle_show_limits(phone, user)
-            elif intent == "set_user_limit":
-                await self.handle_set_user_limit(session, phone, user, result)
-            elif intent == "export_backup":
-                await self.handle_export_backup(session, phone)
-            elif intent == "import_backup":
-                await self.evolution.send_text(
-                    phone,
-                    "Envie o arquivo JSON do backup para eu validar e pedir sua confirmacao.",
-                )
-            else:
-                # Unknown intent - ask for clarification
-                await self.evolution.send_text(
-                    phone,
-                    "Desculpe, nao entendi. Voce pode:\n"
-                    "- Registrar gasto: 'gastei 50 reais no almoco no pix'\n"
-                    "- Registrar recorrente: 'netflix 55 reais todo mes dia 15'\n"
-                    "- Cancelar recorrente: 'cancelar netflix'\n"
-                    "- Ver resumo: 'quanto gastei esse mes?'\n"
-                    "- Exportar: 'exportar meus gastos de marco'\n"
-                    "- Desfazer: 'desfaz' ou 'apaga o ultimo'\n"
-                    "- Definir orcamento: 'definir limite alimentacao 500 reais'\n"
-                    "- Ver orcamentos: 'meus limites de gasto'\n"
-                    "- Ver grafico: 'mostra grafico de pizza'\n"
-                    "- Criar meta: 'quero economizar 1000 reais ate dezembro'\n"
-                    "- Ver metas: 'minhas metas'\n"
-                    "- Ver limites: 'meus limites'\n"
-                    "- Backup: 'exporta meu backup'",
-                )
+            await self._dispatch_intent_result(session, phone, result, user)
 
         except Exception as e:
             logger.error(
@@ -321,6 +253,85 @@ class WebhookHandler:
                 error_msg = "Ocorreu um erro ao processar sua mensagem. Tente novamente."
 
             await self.evolution.send_text(phone, error_msg)
+
+    async def _dispatch_intent_result(
+        self,
+        session: AsyncSession,
+        phone: str,
+        result: dict,
+        user: User,
+    ) -> None:
+        """Dispatch a parsed AI intent result to the correct handler."""
+        intent = result.get("intent", "unknown")
+
+        if intent == "register_expense":
+            await self.handle_register_expense(session, phone, result)
+        elif intent == "register_recurring":
+            await self.handle_register_recurring(session, phone, result)
+        elif intent == "update_expense":
+            await self.handle_update_expense(session, phone, result)
+        elif intent == "cancel_recurring":
+            await self.handle_cancel_recurring(session, phone, result)
+        elif intent == "query_month":
+            await self.handle_query_month(session, phone, result)
+        elif intent == "export":
+            await self.handle_export(session, phone, result)
+        elif intent == "list_recurring":
+            await self.handle_list_recurring(session, phone)
+        elif intent == "undo_last":
+            await self.handle_undo_last(session, phone)
+        elif intent == "set_budget":
+            await self.handle_set_budget(session, phone, result)
+        elif intent == "check_budget":
+            await self.handle_check_budget(session, phone, result)
+        elif intent == "list_budgets":
+            await self.handle_list_budgets(session, phone)
+        elif intent == "remove_budget":
+            await self.handle_remove_budget(session, phone, result)
+        elif intent == "show_chart":
+            await self.handle_show_chart(session, phone, result)
+        elif intent == "create_goal":
+            await self.handle_create_goal(session, phone, result)
+        elif intent == "check_goal":
+            await self.handle_check_goal(session, phone, result)
+        elif intent == "list_goals":
+            await self.handle_list_goals(session, phone)
+        elif intent == "remove_goal":
+            await self.handle_remove_goal(session, phone, result)
+        elif intent == "add_to_goal":
+            await self.handle_add_to_goal(session, phone, result)
+        elif intent == "convert_currency":
+            await self.handle_convert_currency(session, phone, result)
+        elif intent == "show_limits":
+            await self.handle_show_limits(phone, user)
+        elif intent == "set_user_limit":
+            await self.handle_set_user_limit(session, phone, user, result)
+        elif intent == "export_backup":
+            await self.handle_export_backup(session, phone)
+        elif intent == "import_backup":
+            await self.evolution.send_text(
+                phone,
+                "Envie o arquivo JSON do backup para eu validar e pedir sua confirmacao.",
+            )
+        else:
+            await self.evolution.send_text(
+                phone,
+                "Desculpe, nao entendi. Voce pode:\n"
+                "- Registrar gasto: 'gastei 50 reais no almoco no pix'\n"
+                "- Editar gasto: 'ajustar a compra do boliche de 1 de abril para 120 reais'\n"
+                "- Registrar recorrente: 'netflix 55 reais todo mes dia 15'\n"
+                "- Cancelar recorrente: 'cancelar netflix'\n"
+                "- Ver resumo: 'quanto gastei esse mes?'\n"
+                "- Exportar: 'exportar meus gastos de marco'\n"
+                "- Desfazer: 'desfaz' ou 'apaga o ultimo'\n"
+                "- Definir orcamento: 'definir limite alimentacao 500 reais'\n"
+                "- Ver orcamentos: 'meus limites de gasto'\n"
+                "- Ver grafico: 'mostra grafico de pizza'\n"
+                "- Criar meta: 'quero economizar 1000 reais ate dezembro'\n"
+                "- Ver metas: 'minhas metas'\n"
+                "- Ver limites: 'meus limites'\n"
+                "- Backup: 'exporta meu backup'",
+            )
 
     async def handle_user_onboarding(
         self,
@@ -805,6 +816,61 @@ class WebhookHandler:
         )
 
         await self.evolution.send_text(phone, msg)
+
+    async def handle_update_expense(
+        self,
+        session: AsyncSession,
+        phone: str,
+        data: dict,
+    ) -> None:
+        """Handle update request for an already registered expense."""
+        update_data = data.get("data", {})
+        if not any(
+            update_data.get(field)
+            for field in (
+                "new_amount",
+                "new_description",
+                "new_category",
+                "new_payment_method",
+                "new_expense_date",
+            )
+        ):
+            await self.evolution.send_text(
+                phone,
+                "Entendi que voce quer ajustar um lancamento, mas nao identifiquei o que deve mudar.",
+            )
+            return
+
+        candidates = await self.expense_service.find_expenses_for_update(session, phone, update_data)
+        if not candidates:
+            await self.evolution.send_text(
+                phone,
+                "Nao encontrei um lancamento correspondente para ajustar. "
+                "Tente informar descricao, data ou valor da compra original.",
+            )
+            return
+
+        if len(candidates) > 1:
+            msg = "Encontrei mais de um lancamento parecido. Responda com o numero correto:\n\n"
+            for index, expense in enumerate(candidates, start=1):
+                msg += (
+                    f"{index}. {expense.date.strftime('%d/%m/%Y')} - {expense.description} - "
+                    f"R$ {float(expense.amount):.2f} - {expense.display_category}\n"
+                )
+            msg += "\nOu responda 'cancela' para desistir."
+            await self.save_pending_confirmation(
+                session,
+                phone,
+                {
+                    "type": "expense_update_selection",
+                    "candidate_ids": [expense.id for expense in candidates],
+                    "update_data": update_data,
+                },
+            )
+            await self.evolution.send_text(phone, msg)
+            return
+
+        await self._prompt_expense_update_confirmation(session, phone, candidates[0].id, update_data)
 
     async def handle_cancel_recurring(
         self,
@@ -1427,6 +1493,16 @@ class WebhookHandler:
             )
             return
 
+        if pending_type == "expense_update_selection":
+            await self._handle_expense_update_selection(session, phone, response, pending_data)
+            return
+
+        if pending_type == "expense_update_confirmation":
+            await self._handle_expense_update_confirmation(
+                session, phone, response, pending_data, user
+            )
+            return
+
         # Handle recurring expense confirmation
         if pending_type == "recurring_confirmation":
             await self._handle_recurring_confirmation(session, phone, response, pending_data, user)
@@ -1549,7 +1625,18 @@ class WebhookHandler:
             await self.save_pending_confirmation(session, phone, pending_data)
 
         else:
-            # Unknown action - ask for clarification
+            # If the user started a new clear request, cancel the pending flow and continue.
+            new_result = await self.ai.process_message(response, user=user)
+            if new_result.get("intent") not in {"unknown", None}:
+                await session.delete(pending)
+                await session.commit()
+                await self.evolution.send_text(
+                    phone,
+                    "Ok, cancelei a solicitacao anterior e vou considerar essa nova mensagem.",
+                )
+                await self._dispatch_intent_result(session, phone, new_result, user)
+                return
+
             await self.evolution.send_text(
                 phone,
                 "Nao entendi. Voce pode:\n"
@@ -1569,6 +1656,8 @@ class WebhookHandler:
         expense_data: dict,
     ) -> None:
         """Handle payment method selection from user."""
+        response_lower = response.lower().strip()
+
         # Clean up pending
         await session.execute(
             delete(PendingConfirmation).where(
@@ -1576,6 +1665,24 @@ class WebhookHandler:
             )
         )
         await session.commit()
+
+        cancel_keywords = (
+            "nao",
+            "não",
+            "n",
+            "cancela",
+            "cancelar",
+            "desisto",
+            "deixa pra la",
+            "deixa pra lá",
+            "esquece",
+        )
+        if response_lower in cancel_keywords:
+            await self.evolution.send_text(
+                phone,
+                "Cancelado. Quando quiser, pode me mandar uma nova solicitacao.",
+            )
+            return
 
         # Map response to payment method
         payment_map = {
@@ -1601,14 +1708,25 @@ class WebhookHandler:
             "vale alimentação": "Vale Alimentação",
         }
 
-        payment_method = payment_map.get(response.lower().strip())
+        payment_method = payment_map.get(response_lower)
 
         if not payment_method:
+            user = await self.user_service.get_or_create_user(session, phone)
+
+            new_result = await self.ai.process_message(response, user=user)
+            if new_result.get("intent") not in {"unknown", None}:
+                await self.evolution.send_text(
+                    phone,
+                    "Ok, cancelei a solicitacao anterior e vou considerar essa nova mensagem.",
+                )
+                await self._dispatch_intent_result(session, phone, new_result, user)
+                return
+
             # Try using LLM to understand the payment method
             evaluation = await self.ai.evaluate_confirmation_response(
                 "Selecao de forma de pagamento",
                 response,
-                user=await self.user_service.get_or_create_user(session, phone),
+                user=user,
             )
             if evaluation.get("action") == "list_payment_methods":
                 methods_list = await self.expense_service.get_payment_methods_list(session)
@@ -1640,6 +1758,192 @@ class WebhookHandler:
 
         # Now show confirmation
         await self.handle_register_expense(session, phone, {"data": expense_data})
+
+    async def _prompt_expense_update_confirmation(
+        self,
+        session: AsyncSession,
+        phone: str,
+        expense_id: int,
+        update_data: dict,
+    ) -> None:
+        """Show before/after confirmation for an expense update."""
+        expense = await self.expense_service.get_expense_by_id(session, phone, expense_id)
+        if expense is None:
+            await self.evolution.send_text(phone, "Nao encontrei o lancamento para ajustar.")
+            return
+
+        before = (
+            f"{expense.date.strftime('%d/%m/%Y')} - {expense.description} - "
+            f"R$ {float(expense.amount):.2f} - {expense.display_category} - "
+            f"{expense.payment_method.name if expense.payment_method else ''}"
+        )
+
+        after_description = update_data.get("new_description") or expense.description
+        after_amount = update_data.get("new_amount")
+        after_amount_display = (
+            f"{float(after_amount):.2f}" if after_amount not in (None, "") else f"{float(expense.amount):.2f}"
+        )
+        after_category = update_data.get("new_category") or expense.display_category
+        after_payment_method = update_data.get("new_payment_method") or (
+            expense.payment_method.name if expense.payment_method else ""
+        )
+        after_date_raw = update_data.get("new_expense_date")
+        if after_date_raw in (None, ""):
+            after_date = expense.date.strftime("%d/%m/%Y")
+        else:
+            parsed_after_date = parse_date(str(after_date_raw))
+            after_date = (
+                parsed_after_date.strftime("%d/%m/%Y")
+                if parsed_after_date is not None
+                else str(after_date_raw)
+            )
+
+        after = (
+            f"{after_date} - {after_description} - R$ {after_amount_display} - "
+            f"{after_category} - {after_payment_method}"
+        )
+
+        await self.save_pending_confirmation(
+            session,
+            phone,
+            {
+                "type": "expense_update_confirmation",
+                "expense_id": expense_id,
+                "update_data": update_data,
+            },
+        )
+        await self.evolution.send_text(
+            phone,
+            "Confirme o ajuste do lancamento:\n\n"
+            f"Antes: {before}\n"
+            f"Depois: {after}\n\n"
+            "Responda *sim* para confirmar ou *cancela* para desistir.",
+        )
+
+    async def _handle_expense_update_selection(
+        self,
+        session: AsyncSession,
+        phone: str,
+        response: str,
+        pending_data: dict,
+    ) -> None:
+        """Handle user selection when more than one expense matched the update request."""
+        response_lower = response.lower().strip()
+        if response_lower in {"cancela", "cancelar", "nao", "não", "n", "esquece"}:
+            await session.execute(
+                delete(PendingConfirmation).where(
+                    PendingConfirmation.user_phone == normalize_phone(phone)
+                )
+            )
+            await session.commit()
+            await self.evolution.send_text(phone, "Ajuste cancelado.")
+            return
+
+        try:
+            selected_index = int(response_lower) - 1
+        except ValueError:
+            await self.evolution.send_text(
+                phone,
+                "Responda com o numero do lancamento que deseja ajustar ou 'cancela'.",
+            )
+            await self.save_pending_confirmation(session, phone, pending_data)
+            return
+
+        candidate_ids = pending_data.get("candidate_ids", [])
+        if selected_index < 0 or selected_index >= len(candidate_ids):
+            await self.evolution.send_text(
+                phone,
+                "Numero invalido. Responda com uma das opcoes listadas.",
+            )
+            await self.save_pending_confirmation(session, phone, pending_data)
+            return
+
+        await self._prompt_expense_update_confirmation(
+            session,
+            phone,
+            candidate_ids[selected_index],
+            pending_data.get("update_data", {}),
+        )
+
+    async def _handle_expense_update_confirmation(
+        self,
+        session: AsyncSession,
+        phone: str,
+        response: str,
+        pending_data: dict,
+        user: User,
+    ) -> None:
+        """Handle final confirmation for an expense update."""
+        response_lower = response.lower().strip().rstrip("!.,?")
+        if response_lower in {
+            "sim",
+            "s",
+            "ok",
+            "isso",
+            "confirmo",
+            "pode",
+            "pode salvar",
+            "certo",
+            "correto",
+        }:
+            await session.execute(
+                delete(PendingConfirmation).where(
+                    PendingConfirmation.user_phone == normalize_phone(phone)
+                )
+            )
+            await session.commit()
+            result = await self.expense_service.update_expense(
+                session,
+                phone,
+                int(pending_data["expense_id"]),
+                pending_data.get("update_data", {}),
+            )
+            if result.get("success"):
+                self._mark_processing_committed()
+                expense = result["expense"]
+                await self.evolution.send_text(
+                    phone,
+                    "Lancamento atualizado com sucesso!\n"
+                    f"- {expense['date']}\n"
+                    f"- {expense['description']}\n"
+                    f"- R$ {expense['amount']:.2f}\n"
+                    f"- {expense['category']}\n"
+                    f"- {expense['payment_method']}",
+                )
+            else:
+                await self.evolution.send_text(phone, result.get("error", "Erro ao atualizar."))
+            return
+
+        if response_lower in {"cancela", "cancelar", "nao", "não", "n", "esquece"}:
+            await session.execute(
+                delete(PendingConfirmation).where(
+                    PendingConfirmation.user_phone == normalize_phone(phone)
+                )
+            )
+            await session.commit()
+            await self.evolution.send_text(phone, "Ajuste cancelado.")
+            return
+
+        new_result = await self.ai.process_message(response, user=user)
+        if new_result.get("intent") not in {"unknown", None}:
+            await session.execute(
+                delete(PendingConfirmation).where(
+                    PendingConfirmation.user_phone == normalize_phone(phone)
+                )
+            )
+            await session.commit()
+            await self.evolution.send_text(
+                phone,
+                "Ok, cancelei o ajuste pendente e vou considerar essa nova mensagem.",
+            )
+            await self._dispatch_intent_result(session, phone, new_result, user)
+            return
+
+        await self.evolution.send_text(
+            phone,
+            "Responda *sim* para confirmar o ajuste ou *cancela* para desistir.",
+        )
+        await self.save_pending_confirmation(session, phone, pending_data)
 
     def _build_expense_summary(self, expense_data: dict, pending_type: str) -> str:
         """Build a human-readable expense summary for LLM context."""

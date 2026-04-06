@@ -11,7 +11,7 @@ from sqlalchemy import extract, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.database.models import Category, Expense, PaymentMethod, User
+from app.database.models import Category, Expense, ExpenseUpdateAudit, PaymentMethod, User
 from app.services.category import CategoryService
 from app.services.user import UserService
 from app.utils.parser import parse_date
@@ -106,6 +106,16 @@ class ExpenseService:
             if parsed_expense_date is not None:
                 return parsed_expense_date, None
             return None, "Data da despesa invalida. Use o formato YYYY-MM-DD."
+
+    def _build_expense_snapshot(self, expense: Expense) -> dict[str, str | float]:
+        """Build a normalized snapshot for expense audit records."""
+        return {
+            "description": str(expense.description),
+            "amount": float(expense.amount),
+            "category": expense.display_category,
+            "payment_method": expense.payment_method.name if expense.payment_method else "",
+            "date": expense.date.isoformat(),
+        }
 
     async def create_expense(
         self,
@@ -308,6 +318,227 @@ class ExpenseService:
             logger.error(f"Error cancelling recurring: {e}")
             await session.rollback()
             return {"success": False, "error": str(e)}
+
+    async def find_expenses_for_update(
+        self,
+        session: AsyncSession,
+        phone: str,
+        criteria: dict,
+        limit: int = 5,
+    ) -> list[Expense]:
+        """Find candidate expenses that match update criteria."""
+        normalized_phone = normalize_phone(phone)
+        query = (
+            select(Expense)
+            .options(
+                selectinload(Expense.category),
+                selectinload(Expense.payment_method),
+            )
+            .where(Expense.user_phone == normalized_phone)
+        )
+
+        target_description = (criteria.get("target_description") or "").strip()
+        if target_description:
+            query = query.where(
+                func.lower(Expense.description).contains(target_description.lower())
+            )
+
+        target_amount = criteria.get("target_amount")
+        if target_amount not in (None, ""):
+            query = query.where(Expense.amount == Decimal(str(target_amount)))
+
+        target_date_raw = criteria.get("target_date")
+        if target_date_raw not in (None, ""):
+            if isinstance(target_date_raw, date) and not isinstance(target_date_raw, datetime):
+                target_date = target_date_raw
+            else:
+                target_date = parse_date(str(target_date_raw))
+            if target_date is not None:
+                query = query.where(Expense.date == target_date)
+
+        result = await session.execute(
+            query.order_by(Expense.date.desc(), Expense.created_at.desc())
+        )
+        return result.scalars().all()[:limit]
+
+    async def get_expense_by_id(
+        self,
+        session: AsyncSession,
+        phone: str,
+        expense_id: int,
+    ) -> Expense | None:
+        """Return a single expense by id scoped to the current user."""
+        normalized_phone = normalize_phone(phone)
+        result = await session.execute(
+            select(Expense)
+            .options(selectinload(Expense.category), selectinload(Expense.payment_method))
+            .where(Expense.id == expense_id)
+            .where(Expense.user_phone == normalized_phone)
+        )
+        return result.scalar_one_or_none()
+
+    async def update_expense(
+        self,
+        session: AsyncSession,
+        phone: str,
+        expense_id: int,
+        update_data: dict,
+    ) -> dict:
+        """Update an existing expense owned by the user."""
+        normalized_phone = normalize_phone(phone)
+        expense = await self.get_expense_by_id(session, normalized_phone, expense_id)
+        if expense is None:
+            return {"success": False, "error": "Lancamento nao encontrado."}
+
+        user = await self.user_service.get_or_create_user(session, normalized_phone)
+        previous_snapshot = self._build_expense_snapshot(expense)
+
+        new_amount = update_data.get("new_amount")
+        if new_amount not in (None, ""):
+            amount_decimal = Decimal(str(new_amount))
+            if amount_decimal <= 0:
+                return {"success": False, "error": "Valor deve ser maior que zero"}
+            expense.amount = amount_decimal
+
+        new_original_currency = update_data.get("new_original_currency")
+        if new_original_currency is not None:
+            normalized_original_currency = str(new_original_currency).strip().upper()
+            expense.original_currency = normalized_original_currency or None
+
+        new_original_amount = update_data.get("new_original_amount")
+        if new_original_amount not in (None, ""):
+            expense.original_amount = Decimal(str(new_original_amount))
+        elif new_original_currency is not None and not expense.original_currency:
+            expense.original_amount = None
+
+        new_exchange_rate = update_data.get("new_exchange_rate")
+        if new_exchange_rate not in (None, ""):
+            expense.exchange_rate = Decimal(str(new_exchange_rate))
+        elif new_original_currency is not None and not expense.original_currency:
+            expense.exchange_rate = None
+
+        new_description = update_data.get("new_description")
+        if new_description:
+            expense.description = str(new_description).strip()
+
+        new_category = update_data.get("new_category")
+        if new_category:
+            try:
+                (
+                    category,
+                    custom_category_name,
+                ) = await self.category_service.resolve_category_for_user(
+                    session, user, str(new_category)
+                )
+            except ValueError as exc:
+                return {"success": False, "error": str(exc)}
+            expense.category_id = category.id
+            expense.category = category
+            expense.custom_category_name = custom_category_name
+            expense.type = category.type
+
+        new_payment_method = update_data.get("new_payment_method")
+        if new_payment_method:
+            payment_method = await self._get_payment_method(session, str(new_payment_method))
+            if payment_method is None:
+                return {
+                    "success": False,
+                    "error": f"Metodo de pagamento '{new_payment_method}' nao encontrado",
+                }
+            expense.payment_method_id = payment_method.id
+            expense.payment_method = payment_method
+
+        new_expense_date = update_data.get("new_expense_date")
+        if new_expense_date not in (None, ""):
+            try:
+                parsed_date = date.fromisoformat(str(new_expense_date))
+            except ValueError:
+                parsed_date = parse_date(str(new_expense_date))
+            if parsed_date is None:
+                return {"success": False, "error": "Data da despesa invalida."}
+            expense.date = parsed_date
+
+        updated_snapshot = self._build_expense_snapshot(expense)
+        if updated_snapshot == previous_snapshot:
+            return {
+                "success": False,
+                "error": "Nenhuma alteracao valida foi identificada para esse lancamento.",
+            }
+
+        audit = ExpenseUpdateAudit(
+            expense_id=expense.id,
+            user_phone=normalized_phone,
+            previous_snapshot=previous_snapshot,
+            updated_snapshot=updated_snapshot,
+        )
+        session.add(audit)
+        await session.commit()
+        await session.refresh(expense)
+
+        return {
+            "success": True,
+            "expense": {
+                "id": expense.id,
+                "description": expense.description,
+                "amount": float(expense.amount),
+                "category": expense.display_category,
+                "payment_method": expense.payment_method.name if expense.payment_method else "",
+                "date": expense.date.strftime("%d/%m/%Y"),
+            },
+        }
+
+    async def list_expenses(
+        self,
+        session: AsyncSession,
+        phone: str,
+        month: int | None = None,
+        year: int | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, str | float | int | None | bool]]:
+        """Return recent expenses for the dashboard with category and payment details."""
+        normalized_phone = normalize_phone(phone)
+        query = (
+            select(Expense)
+            .options(
+                selectinload(Expense.category),
+                selectinload(Expense.payment_method),
+            )
+            .where(Expense.user_phone == normalized_phone)
+        )
+
+        if month is not None:
+            query = query.where(extract("month", Expense.date) == month)
+        if year is not None:
+            query = query.where(extract("year", Expense.date) == year)
+
+        result = await session.execute(
+            query.order_by(Expense.date.desc(), Expense.created_at.desc()).limit(limit)
+        )
+        expenses = result.scalars().all()
+        return [
+            {
+                "id": int(expense.id),
+                "description": str(expense.description),
+                "amount": float(expense.amount),
+                "category": expense.display_category,
+                "payment_method": expense.payment_method.name if expense.payment_method else "",
+                "date": expense.date.isoformat(),
+                "date_label": expense.date.strftime("%d/%m/%Y"),
+                "type": str(expense.type),
+                "installment": expense.installment_display,
+                "is_shared": bool(expense.is_shared),
+                "original_currency": str(expense.original_currency)
+                if expense.original_currency
+                else None,
+                "original_amount": float(expense.original_amount)
+                if expense.original_amount is not None
+                else None,
+                "exchange_rate": float(expense.exchange_rate)
+                if expense.exchange_rate is not None
+                else None,
+            }
+            for expense in expenses
+        ]
 
     async def undo_last_expense(
         self,

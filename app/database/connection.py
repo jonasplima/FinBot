@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncGenerator
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.pool import StaticPool
@@ -62,3 +63,12 @@ async def init_db() -> None:
     """Initialize database tables."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        if conn.dialect.name == "postgresql":
+            await conn.execute(
+                text(
+                    """
+                    ALTER TABLE users
+                    ADD COLUMN IF NOT EXISTS base_currency VARCHAR(3) DEFAULT 'BRL' NOT NULL
+                    """
+                )
+            )

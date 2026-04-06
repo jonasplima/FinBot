@@ -114,12 +114,14 @@ class TestSettingsWeb:
                 display_name="Lena",
                 timezone="UTC",
                 email="helena.costa@example.com",
+                base_currency="USD",
             ),
         )
         assert profile_payload["user"]["name"] == "Helena Costa"
         assert profile_payload["user"]["display_name"] == "Lena"
         assert profile_payload["user"]["email"] == "helena.costa@example.com"
         assert profile_payload["user"]["timezone"] == "UTC"
+        assert profile_payload["user"]["base_currency"] == "USD"
 
         notifications_payload = await settings_notifications(
             request,

@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy import select
 
 from app.services.expense import MONTH_NAMES, ExpenseService, remove_accents
-from tests.conftest import Expense
+from tests.conftest import Expense, ExpenseUpdateAudit
 
 
 class TestRemoveAccents:
@@ -265,6 +265,78 @@ class TestExpenseServiceUndoLastExpense:
 
         assert result["success"] is False
         assert "mais de 5 minutos" in result["error"]
+
+
+class TestExpenseServiceUpdateExpense:
+    """Tests for updating previously registered expenses."""
+
+    @pytest.fixture
+    def service(self):
+        return ExpenseService()
+
+    async def test_find_expenses_for_update_by_description(
+        self, service, seeded_session, test_phone, expense_in_db
+    ):
+        """Test finding an expense candidate using its description."""
+        matches = await service.find_expenses_for_update(
+            seeded_session,
+            test_phone,
+            {"target_description": "teste"},
+        )
+
+        assert len(matches) == 1
+        assert matches[0].id == expense_in_db.id
+
+    async def test_update_expense_amount_and_category(
+        self, service, seeded_session, test_phone, expense_in_db
+    ):
+        """Test updating an existing expense fields."""
+        result = await service.update_expense(
+            seeded_session,
+            test_phone,
+            expense_in_db.id,
+            {
+                "new_amount": 75.0,
+                "new_category": "Lazer",
+            },
+        )
+
+        assert result["success"] is True
+        assert result["expense"]["amount"] == 75.0
+        assert result["expense"]["category"] == "Lazer"
+
+        audit_result = await seeded_session.execute(select(ExpenseUpdateAudit))
+        audit = audit_result.scalar_one()
+        assert audit.expense_id == expense_in_db.id
+        assert audit.previous_snapshot["amount"] == 50.0
+        assert audit.updated_snapshot["amount"] == 75.0
+        assert audit.updated_snapshot["category"] == "Lazer"
+
+    async def test_update_expense_not_found(self, service, seeded_session, test_phone):
+        """Test update fails safely when expense does not exist."""
+        result = await service.update_expense(
+            seeded_session,
+            test_phone,
+            999999,
+            {"new_amount": 75.0},
+        )
+
+        assert result["success"] is False
+        assert "nao encontrado" in result["error"].lower()
+
+    async def test_update_expense_rejects_noop_change(
+        self, service, seeded_session, test_phone, expense_in_db
+    ):
+        """Test update fails when no effective change is made."""
+        result = await service.update_expense(
+            seeded_session,
+            test_phone,
+            expense_in_db.id,
+            {"new_description": "Teste expense"},
+        )
+
+        assert result["success"] is False
+        assert "nenhuma alteracao valida" in result["error"].lower()
 
 
 class TestExpenseServiceMonthlySummary:

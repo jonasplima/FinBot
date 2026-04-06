@@ -8,7 +8,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from starlette.requests import Request
 
-from app.database.models import BackupRestoreAudit, PendingConfirmation
+from app.database.models import BackupRestoreAudit, ExpenseUpdateAudit, PendingConfirmation
 from app.handlers.webhook import WebhookHandler
 from app.main import (
     evolution_webhook,
@@ -1605,6 +1605,134 @@ class TestWebhookHandlerIntentHandling:
         )
 
         assert handler.processing_committed is True
+
+    async def test_handle_confirmation_response_switches_to_new_request(
+        self, handler, seeded_session, test_phone, accepted_user_in_db
+    ):
+        """Test a new clear request cancels the pending confirmation and is dispatched."""
+        pending = PendingConfirmation(
+            user_phone=test_phone,
+            data={
+                "type": "expense",
+                "data": {
+                    "description": "Almoco",
+                    "amount": 50.0,
+                    "category": "Alimentação",
+                    "payment_method": "Pix",
+                },
+            },
+            expires_at=datetime.now() + timedelta(minutes=5),
+        )
+        seeded_session.add(pending)
+        await seeded_session.commit()
+
+        handler.ai.evaluate_confirmation_response.return_value = {
+            "action": "unknown",
+            "adjustments": {},
+        }
+        handler.ai.process_message.return_value = {"intent": "undo_last", "data": {}}
+        handler.handle_undo_last = AsyncMock()
+
+        await handler.handle_confirmation_response(
+            seeded_session,
+            test_phone,
+            "desfaz o ultimo",
+            pending,
+            accepted_user_in_db,
+        )
+
+        remaining = await handler.get_pending_confirmation(seeded_session, test_phone)
+        assert remaining is None
+        handler.handle_undo_last.assert_awaited_once_with(seeded_session, test_phone)
+
+    async def test_handle_payment_method_selection_accepts_cancel(
+        self, handler, seeded_session, test_phone
+    ):
+        """Test payment-method selection can be cancelled explicitly."""
+        pending_data = {
+            "type": "asking_payment_method",
+            "data": {
+                "description": "Boliche",
+                "amount": 100.0,
+                "category": "Lazer",
+            },
+        }
+        await handler.save_pending_confirmation(seeded_session, test_phone, pending_data)
+
+        await handler._handle_payment_method_selection(
+            seeded_session,
+            test_phone,
+            "cancela",
+            pending_data,
+            pending_data["data"],
+        )
+
+        remaining = await handler.get_pending_confirmation(seeded_session, test_phone)
+        assert remaining is None
+        handler.evolution.send_text.assert_awaited()
+        assert "cancelado" in handler.evolution.send_text.call_args.args[1].lower()
+
+    async def test_handle_update_expense_requires_change_fields(
+        self, handler, seeded_session, test_phone
+    ):
+        """Test update flow asks for a concrete change when none was parsed."""
+        await handler.handle_update_expense(
+            seeded_session,
+            test_phone,
+            {"data": {"target_description": "boliche"}},
+        )
+
+        handler.evolution.send_text.assert_awaited()
+        assert "nao identifiquei o que deve mudar" in handler.evolution.send_text.call_args.args[
+            1
+        ].lower()
+
+    async def test_handle_update_expense_confirms_single_match(
+        self, handler, seeded_session, test_phone, expense_in_db
+    ):
+        """Test update flow builds a confirmation for a single matched expense."""
+        await handler.handle_update_expense(
+            seeded_session,
+            test_phone,
+            {
+                "data": {
+                    "target_description": "teste expense",
+                    "new_amount": 80.0,
+                }
+            },
+        )
+
+        pending = await handler.get_pending_confirmation(seeded_session, test_phone)
+        assert pending is not None
+        assert pending.data["type"] == "expense_update_confirmation"
+        handler.evolution.send_text.assert_awaited()
+        assert "confirme o ajuste" in handler.evolution.send_text.call_args.args[1].lower()
+
+    async def test_handle_expense_update_confirmation_success(
+        self, handler, seeded_session, test_phone, accepted_user_in_db, expense_in_db
+    ):
+        """Test confirming an already matched expense update."""
+        pending_data = {
+            "type": "expense_update_confirmation",
+            "expense_id": expense_in_db.id,
+            "update_data": {"new_amount": 90.0},
+        }
+
+        await handler._handle_expense_update_confirmation(
+            seeded_session,
+            test_phone,
+            "sim",
+            pending_data,
+            accepted_user_in_db,
+        )
+
+        handler.evolution.send_text.assert_awaited()
+        assert "atualizado com sucesso" in handler.evolution.send_text.call_args.args[1].lower()
+
+        audit_result = await seeded_session.execute(select(ExpenseUpdateAudit))
+        audit = audit_result.scalar_one()
+        assert audit.expense_id == expense_in_db.id
+        assert audit.updated_snapshot["amount"] == 90.0
 
     async def test_handle_query_month(self, handler, seeded_session, test_phone, expense_in_db):
         """Test handling query month intent."""

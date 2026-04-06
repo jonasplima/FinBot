@@ -83,6 +83,7 @@ class User(TestBase):
     is_active = Column(Boolean, default=True, nullable=False)
     preferred_channel = Column(String(30), default="whatsapp", nullable=False)
     timezone = Column(String(50), nullable=True)
+    base_currency = Column(String(3), default="BRL", nullable=False)
     web_access_enabled = Column(Boolean, default=False, nullable=False)
     limits_enabled = Column(Boolean, default=True, nullable=False)
     daily_text_limit = Column(Integer, default=100, nullable=False)
@@ -244,6 +245,19 @@ class BackupRestoreAudit(TestBase):
     explicit_migration_confirmation = Column(Boolean, default=False, nullable=False)
     restored_counts = Column(JSON, nullable=True)
     error_message = Column(String(500), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.now)
+
+
+class ExpenseUpdateAudit(TestBase):
+    """Test audit trail for expense updates."""
+
+    __tablename__ = "expense_update_audits"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    expense_id = Column(Integer, ForeignKey("expenses.id"), nullable=False, index=True)
+    user_phone = Column(String(20), nullable=False, index=True)
+    previous_snapshot = Column(JSON, nullable=False)
+    updated_snapshot = Column(JSON, nullable=False)
     created_at = Column(DateTime, nullable=False, default=datetime.now)
 
 

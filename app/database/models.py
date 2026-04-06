@@ -70,6 +70,7 @@ class User(Base):
     is_active = Column(Boolean, default=True, nullable=False)
     preferred_channel = Column(String(30), default="whatsapp", nullable=False)
     timezone = Column(String(50), nullable=True)
+    base_currency = Column(String(3), default="BRL", nullable=False)
     web_access_enabled = Column(Boolean, default=False, nullable=False)
     limits_enabled = Column(Boolean, default=True, nullable=False)
     daily_text_limit = Column(Integer, default=100, nullable=False)
@@ -321,6 +322,27 @@ class BackupRestoreAudit(Base):
         )
 
 
+class ExpenseUpdateAudit(Base):
+    """Persistent audit trail for expense updates."""
+
+    __tablename__ = "expense_update_audits"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    expense_id = Column(Integer, ForeignKey("expenses.id"), nullable=False, index=True)
+    user_phone = Column(String(20), nullable=False, index=True)
+    previous_snapshot = Column(JSON, nullable=False)
+    updated_snapshot = Column(JSON, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.now, server_default=func.now())
+
+    __table_args__ = (Index("ix_expense_update_audits_expense_user", "expense_id", "user_phone"),)
+
+    def __repr__(self) -> str:
+        return (
+            f"<ExpenseUpdateAudit(id={self.id}, expense_id={self.expense_id}, "
+            f"user_phone='{self.user_phone}')>"
+        )
+
+
 class UserProviderCredential(Base):
     """Encrypted provider credentials stored per user."""
 
@@ -429,9 +451,7 @@ class UserAuthorizedPhone(Base):
     __table_args__ = (Index("ix_user_authorized_phones_user_phone", "user_id", "phone"),)
 
     def __repr__(self) -> str:
-        return (
-            f"<UserAuthorizedPhone(id={self.id}, user_id={self.user_id}, phone='{self.phone}')>"
-        )
+        return f"<UserAuthorizedPhone(id={self.id}, user_id={self.user_id}, phone='{self.phone}')>"
 
 
 class UserCategory(Base):
