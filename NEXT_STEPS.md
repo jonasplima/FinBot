@@ -207,16 +207,17 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
 ### 0.8 Correções de Lógica Financeira e Recorrência
 - **Complexidade:** Baixa/Média 🟡
 - **Valor:** Médio/Alto
-- **Status:** Pendente
+- **Status:** Implementado
 - **Problema identificado:**
   - Parcelamentos podem perder centavos por arredondar todas as parcelas igualmente
   - O preview de recorrências futuras simplifica datas com `min(..., 28)`, gerando resultados incorretos no fim do mês
   - Alguns campos aceitos em restore e confirmação ainda dependem demais de inferência livre
-- **Plano de correção:**
-  - Distribuir resíduo de arredondamento na última parcela
-  - Reescrever cálculo de recorrências futuras usando aritmética correta de calendário
-  - Endurecer validações de campos financeiros críticos antes de persistir
-  - Adicionar testes cobrindo centavos residuais, virada de mês e datas longas
+- **Implementação:**
+  - ✅ Distribuição do resíduo de arredondamento na última parcela para fechar exatamente o total original
+  - ✅ Validações adicionais de consistência financeira no fluxo de criação de despesas
+  - ✅ Reescrita do preview de recorrências futuras com datas reais, incluindo virada de mês
+  - ✅ Endurecimento de combinações financeiras inválidas no restore de backup
+  - ✅ Testes cobrindo centavos residuais, limites de parcelamento, percentual compartilhado inválido, conversão incompleta e recorrência em fim de mês
 - **Critérios de aceite:**
   - A soma das parcelas sempre fecha exatamente com o valor original
   - Recorrências futuras aparecem com dias corretos ao longo dos meses

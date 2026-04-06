@@ -234,6 +234,76 @@ class TestSchedulerService:
             assert "timestamp" in result
 
 
+class TestRecurringService:
+    """Tests for recurring date calculations."""
+
+    @pytest.fixture
+    def recurring_service(self):
+        from app.services.recurring import RecurringService
+
+        return RecurringService()
+
+    async def test_get_upcoming_recurring_handles_month_boundary(
+        self, recurring_service, seeded_session, test_phone
+    ):
+        """Test upcoming recurring preview works across month boundaries."""
+        cat_result = await seeded_session.execute(
+            select(Category).where(Category.name == "Assinatura")
+        )
+        category = cat_result.scalar_one()
+
+        pm_result = await seeded_session.execute(
+            select(PaymentMethod).where(PaymentMethod.name == "Cartão de Crédito")
+        )
+        payment_method = pm_result.scalar_one()
+
+        seeded_session.add_all(
+            [
+                Expense(
+                    user_phone=test_phone,
+                    description="Netflix",
+                    amount=Decimal("55.90"),
+                    category_id=category.id,
+                    payment_method_id=payment_method.id,
+                    type="Negativo",
+                    is_recurring=True,
+                    recurring_day=30,
+                    recurring_active=True,
+                    date=date(2026, 1, 1),
+                    created_at=datetime.now(),
+                ),
+                Expense(
+                    user_phone=test_phone,
+                    description="Spotify",
+                    amount=Decimal("21.90"),
+                    category_id=category.id,
+                    payment_method_id=payment_method.id,
+                    type="Negativo",
+                    is_recurring=True,
+                    recurring_day=2,
+                    recurring_active=True,
+                    date=date(2026, 1, 1),
+                    created_at=datetime.now(),
+                ),
+            ]
+        )
+        await seeded_session.commit()
+
+        class FakeDate(date):
+            @classmethod
+            def today(cls):
+                return cls(2026, 1, 28)
+
+        with patch("app.services.recurring.date", FakeDate):
+            upcoming = await recurring_service.get_upcoming_recurring(
+                seeded_session,
+                test_phone,
+                days=7,
+            )
+
+        assert [item["day"] for item in upcoming] == [2, 30]
+
+
 class TestSchedulerServiceStartStop:
     """Tests for scheduler start/stop functionality."""
 

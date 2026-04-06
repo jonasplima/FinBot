@@ -156,6 +156,120 @@ class TestBackupService:
         assert result["success"] is False
         assert "tipo invalido" in result["error"].lower()
 
+    def test_validate_backup_document_rejects_inconsistent_installments(self, service):
+        """Test validation rejects inconsistent installment fields."""
+        result = service.validate_backup_data(
+            {
+                "metadata": {
+                    "schema_version": BACKUP_SCHEMA_VERSION,
+                    "exported_at": "2026-04-05T10:00:00",
+                    "source_phone": "5511888888888",
+                },
+                "expenses": [
+                    {
+                        "description": "Notebook",
+                        "amount": 1000.0,
+                        "category": "Mercado",
+                        "payment_method": "Pix",
+                        "type": "Negativo",
+                        "installment_current": 4,
+                        "installment_total": 3,
+                        "is_shared": False,
+                        "shared_percentage": None,
+                        "original_currency": None,
+                        "original_amount": None,
+                        "exchange_rate": None,
+                        "is_recurring": False,
+                        "recurring_day": None,
+                        "recurring_active": None,
+                        "date": "2026-04-02",
+                        "created_at": "2026-04-02T09:00:00",
+                    }
+                ],
+                "budgets": [],
+                "goals": [],
+            }
+        )
+
+        assert result["success"] is False
+        assert "parcelamento inconsistente" in result["error"].lower()
+
+    def test_validate_backup_document_rejects_invalid_shared_percentage(self, service):
+        """Test validation rejects invalid shared percentages."""
+        result = service.validate_backup_data(
+            {
+                "metadata": {
+                    "schema_version": BACKUP_SCHEMA_VERSION,
+                    "exported_at": "2026-04-05T10:00:00",
+                    "source_phone": "5511888888888",
+                },
+                "expenses": [
+                    {
+                        "description": "Mercado",
+                        "amount": 100.0,
+                        "category": "Mercado",
+                        "payment_method": "Pix",
+                        "type": "Negativo",
+                        "installment_current": None,
+                        "installment_total": None,
+                        "is_shared": True,
+                        "shared_percentage": 150,
+                        "original_currency": None,
+                        "original_amount": None,
+                        "exchange_rate": None,
+                        "is_recurring": False,
+                        "recurring_day": None,
+                        "recurring_active": None,
+                        "date": "2026-04-02",
+                        "created_at": "2026-04-02T09:00:00",
+                    }
+                ],
+                "budgets": [],
+                "goals": [],
+            }
+        )
+
+        assert result["success"] is False
+        assert "percentual compartilhado invalido" in result["error"].lower()
+
+    def test_validate_backup_document_rejects_incomplete_currency_conversion(self, service):
+        """Test validation rejects incomplete currency conversion payloads."""
+        result = service.validate_backup_data(
+            {
+                "metadata": {
+                    "schema_version": BACKUP_SCHEMA_VERSION,
+                    "exported_at": "2026-04-05T10:00:00",
+                    "source_phone": "5511888888888",
+                },
+                "expenses": [
+                    {
+                        "description": "Uber",
+                        "amount": 50.0,
+                        "category": "Transporte",
+                        "payment_method": "Pix",
+                        "type": "Negativo",
+                        "installment_current": None,
+                        "installment_total": None,
+                        "is_shared": False,
+                        "shared_percentage": None,
+                        "original_currency": "USD",
+                        "original_amount": None,
+                        "exchange_rate": 5.0,
+                        "is_recurring": False,
+                        "recurring_day": None,
+                        "recurring_active": None,
+                        "date": "2026-04-02",
+                        "created_at": "2026-04-02T09:00:00",
+                    }
+                ],
+                "budgets": [],
+                "goals": [],
+            }
+        )
+
+        assert result["success"] is False
+        assert "conversao de moeda incompleta" in result["error"].lower()
+
     async def test_temporary_backup_storage_roundtrip(self, service):
         """Test temporary backup storage roundtrip outside pending confirmations."""
         backup_data = {

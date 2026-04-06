@@ -1,10 +1,13 @@
 """Tests for ExpenseService."""
 
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 
 import pytest
+from sqlalchemy import select
 
 from app.services.expense import MONTH_NAMES, ExpenseService, remove_accents
+from tests.conftest import Expense
 
 
 class TestRemoveAccents:
@@ -107,6 +110,28 @@ class TestExpenseServiceCreateExpense:
         assert result["installments_created"] == 3
         assert result["installment_amount"] == 100.00
 
+    async def test_create_installment_expense_distributes_rounding_remainder(
+        self, service, seeded_session, test_phone, sample_installment_data
+    ):
+        """Test installment rounding residue is added to the last installment."""
+        data = sample_installment_data.copy()
+        data["amount"] = 100.00
+
+        result = await service.create_expense(seeded_session, test_phone, data)
+
+        assert result["success"] is True
+
+        query = await seeded_session.execute(
+            select(Expense)
+            .where(Expense.user_phone == test_phone)
+            .order_by(Expense.installment_current)
+        )
+        expenses = query.scalars().all()
+
+        amounts = [Decimal(str(exp.amount)) for exp in expenses]
+        assert amounts == [Decimal("33.33"), Decimal("33.33"), Decimal("33.34")]
+        assert sum(amounts) == Decimal("100.00")
+
     async def test_create_recurring_expense(
         self, service, seeded_session, test_phone, sample_recurring_data
     ):
@@ -137,6 +162,30 @@ class TestExpenseServiceCreateExpense:
         result = await service.create_expense(seeded_session, test_phone, data)
 
         assert result["success"] is True
+
+    async def test_create_installment_expense_rejects_single_installment(
+        self, service, seeded_session, test_phone, sample_installment_data
+    ):
+        """Test installment flow rejects values lower than 2."""
+        data = sample_installment_data.copy()
+        data["installments"] = 1
+
+        result = await service.create_expense(seeded_session, test_phone, data)
+
+        assert result["success"] is False
+        assert "pelo menos 2 parcelas" in result["error"].lower()
+
+    async def test_create_shared_expense_rejects_invalid_percentage(
+        self, service, seeded_session, test_phone, sample_shared_data
+    ):
+        """Test shared expense rejects invalid percentage values."""
+        data = sample_shared_data.copy()
+        data["shared_percentage"] = 120
+
+        result = await service.create_expense(seeded_session, test_phone, data)
+
+        assert result["success"] is False
+        assert "entre 0 e 100" in result["error"].lower()
 
     async def test_category_matching_accent_insensitive(self, service, seeded_session, test_phone):
         """Test that category matching ignores accents."""

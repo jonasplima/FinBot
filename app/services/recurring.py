@@ -1,7 +1,7 @@
 """Recurring expenses service."""
 
 import logging
-from datetime import date
+from datetime import date, timedelta
 
 from sqlalchemy import extract, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -88,22 +88,14 @@ class RecurringService:
         normalized_phone = normalize_phone(phone)
         today = date.today()
 
-        # Calculate the day numbers to check
-        day_numbers = []
-        for i in range(days):
-            future_date = date(
-                today.year,
-                today.month,
-                min(today.day + i, 28),  # Simplified
-            )
-            day_numbers.append(future_date.day)
+        upcoming_days = { (today + timedelta(days=i)).day for i in range(days) }
 
         result = await session.execute(
             select(Expense)
             .where(Expense.user_phone == normalized_phone)
             .where(Expense.is_recurring == True)
             .where(Expense.recurring_active == True)
-            .where(Expense.recurring_day.in_(day_numbers))
+            .where(Expense.recurring_day.in_(upcoming_days))
             .order_by(Expense.recurring_day)
         )
 

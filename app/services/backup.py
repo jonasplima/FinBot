@@ -705,6 +705,7 @@ class BackupService:
         self._ensure_optional_bool(expense.get("is_shared"), "Despesa.is_shared")
         self._ensure_optional_bool(expense.get("is_recurring"), "Despesa.is_recurring")
         self._ensure_optional_bool(expense.get("recurring_active"), "Despesa.recurring_active")
+        self._validate_expense_combinations(expense)
 
     def _validate_budget_item(self, budget: Mapping[str, Any]) -> None:
         self._ensure_mapping(budget, "Orcamento")
@@ -842,3 +843,34 @@ class BackupService:
         if not isinstance(value, bool):
             raise ValueError(f"{label} invalido no backup.")
         return value
+
+    def _validate_expense_combinations(self, expense: Mapping[str, Any]) -> None:
+        """Validate cross-field consistency for expense backups."""
+        installment_current = expense.get("installment_current")
+        installment_total = expense.get("installment_total")
+        if installment_current in (None, "") and installment_total not in (None, ""):
+            raise ValueError("Despesa com parcelamento inconsistente no backup.")
+        if installment_current not in (None, "") and installment_total in (None, ""):
+            raise ValueError("Despesa com parcelamento inconsistente no backup.")
+        if installment_current not in (None, "") and installment_total not in (None, ""):
+            current = int(installment_current)
+            total = int(installment_total)
+            if current > total:
+                raise ValueError("Despesa com parcelamento inconsistente no backup.")
+
+        shared_percentage = expense.get("shared_percentage")
+        if shared_percentage not in (None, ""):
+            shared_value = Decimal(str(shared_percentage))
+            if shared_value <= 0 or shared_value > 100:
+                raise ValueError("Despesa com percentual compartilhado invalido no backup.")
+
+        original_currency = expense.get("original_currency")
+        original_amount = expense.get("original_amount")
+        exchange_rate = expense.get("exchange_rate")
+        if original_currency and (original_amount in (None, "") or exchange_rate in (None, "")):
+            raise ValueError("Despesa com conversao de moeda incompleta no backup.")
+
+        is_recurring = expense.get("is_recurring")
+        recurring_day = expense.get("recurring_day")
+        if is_recurring and recurring_day in (None, ""):
+            raise ValueError("Despesa recorrente sem recurring_day no backup.")

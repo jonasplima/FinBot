@@ -46,6 +46,43 @@ MONTH_NAMES = {
 class ExpenseService:
     """Service for managing expenses."""
 
+    def _validate_financial_consistency(self, data: dict) -> str | None:
+        """Validate financial field combinations before persisting."""
+        installments = data.get("installments")
+        if installments is not None:
+            try:
+                installments = int(installments)
+            except (TypeError, ValueError):
+                return "Numero de parcelas invalido"
+            if installments < 2:
+                return "Parcelamento deve ter pelo menos 2 parcelas"
+
+        shared_percentage = data.get("shared_percentage")
+        if shared_percentage is not None:
+            try:
+                shared_percentage = Decimal(str(shared_percentage))
+            except Exception:
+                return "Percentual compartilhado invalido"
+            if shared_percentage <= 0 or shared_percentage > 100:
+                return "Percentual compartilhado deve estar entre 0 e 100"
+
+        original_currency = data.get("original_currency")
+        original_amount = data.get("original_amount")
+        exchange_rate = data.get("exchange_rate")
+        if original_currency and (original_amount in (None, "") or exchange_rate in (None, "")):
+            return "Conversao de moeda incompleta"
+
+        recurring_day = data.get("recurring_day")
+        if data.get("is_recurring") and recurring_day is not None:
+            try:
+                recurring_day = int(recurring_day)
+            except (TypeError, ValueError):
+                return "Dia da recorrencia invalido"
+            if recurring_day < 1 or recurring_day > 31:
+                return "Dia da recorrencia deve estar entre 1 e 31"
+
+        return None
+
     async def create_expense(
         self,
         session: AsyncSession,
@@ -75,6 +112,9 @@ class ExpenseService:
             amount = Decimal(str(data.get("amount", 0)))
             if amount <= 0:
                 return {"success": False, "error": "Valor deve ser maior que zero"}
+
+            if validation_error := self._validate_financial_consistency(data):
+                return {"success": False, "error": validation_error}
 
             # Handle installments
             installments = data.get("installments")
@@ -136,7 +176,9 @@ class ExpenseService:
     ) -> dict:
         """Create multiple expense records for installments."""
         try:
-            installment_amount = (total_amount / installments).quantize(Decimal("0.01"))
+            base_installment_amount = (total_amount / installments).quantize(Decimal("0.01"))
+            allocated_amount = base_installment_amount * installments
+            remainder = total_amount - allocated_amount
             today = date.today()
             expenses_created = []
 
@@ -152,6 +194,10 @@ class ExpenseService:
                     # Handle day overflow
                     day = min(today.day, monthrange(year, month)[1])
                     expense_date = date(year, month, day)
+
+                installment_amount = base_installment_amount
+                if i == installments:
+                    installment_amount += remainder
 
                 expense = Expense(
                     user_phone=phone,
@@ -177,7 +223,7 @@ class ExpenseService:
             return {
                 "success": True,
                 "installments_created": installments,
-                "installment_amount": float(installment_amount),
+                "installment_amount": float(base_installment_amount),
             }
 
         except Exception as e:
