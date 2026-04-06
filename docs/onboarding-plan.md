@@ -508,6 +508,8 @@ Campos mínimos:
 
 ### Fase 1. Fundamentos de dados e segurança
 
+Status: concluída
+
 1. Estender modelo de usuário para autenticação web
 2. Definir hash seguro de senha
 3. Criar tabela de sessões web
@@ -518,6 +520,8 @@ Campos mínimos:
 8. Criar tabela de categorias personalizadas por usuário
 
 ### Fase 2. Autenticação web
+
+Status: concluída
 
 1. Criar registro, login e logout
 2. Implementar sessão segura com cookie ou token de sessão

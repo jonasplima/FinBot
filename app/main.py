@@ -5,8 +5,9 @@ import secrets
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse
+from pydantic import BaseModel
 from redis.asyncio import Redis
 from sqlalchemy import text
 
@@ -14,6 +15,7 @@ from app.config import get_settings
 from app.database.connection import async_session, init_db
 from app.database.seed import seed_all
 from app.services.admin_rate_limit import AdminRateLimitService
+from app.services.auth import AuthService
 from app.services.operational_status import OperationalStatusService
 from app.services.webhook_idempotency import WebhookIdempotencyService
 
@@ -27,6 +29,23 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 MESSAGE_EVENTS = {"messages.upsert", "messages_upssert", "message"}
 operational_status = OperationalStatusService()
+auth_service = AuthService()
+
+
+class RegisterRequest(BaseModel):
+    """Payload for registering web access."""
+
+    name: str
+    email: str
+    password: str
+    phone: str
+
+
+class LoginRequest(BaseModel):
+    """Payload for authenticating web access."""
+
+    email: str
+    password: str
 
 
 def _bearer_matches(secret_value: str, authorization: str | None) -> bool:
@@ -146,6 +165,49 @@ async def _build_health_payload(
     return payload, status_code
 
 
+def _get_session_cookie_token(request: Request) -> str | None:
+    """Read the authenticated browser session token from cookies."""
+    cookie_value = request.cookies.get(auth_service.build_session_cookie_settings()["key"], "")
+    normalized = cookie_value.strip()
+    return normalized or None
+
+
+async def _get_current_web_user(request: Request) -> Any:
+    """Resolve the current authenticated web user from the session cookie."""
+    session_token = _get_session_cookie_token(request)
+    if not session_token:
+        raise HTTPException(status_code=401, detail="Sessao web nao autenticada.")
+
+    async with async_session() as session:
+        user = await auth_service.get_user_by_session_token(session, session_token)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Sessao web invalida ou expirada.")
+    return user
+
+
+def _set_web_session_cookie(response: Response, session_token: str) -> None:
+    """Attach the FinBot web session cookie to a response."""
+    cookie_settings = auth_service.build_session_cookie_settings()
+    response.set_cookie(
+        cookie_settings["key"],
+        session_token,
+        httponly=cookie_settings["httponly"],
+        samesite=cookie_settings["samesite"],
+        secure=cookie_settings["secure"],
+        max_age=cookie_settings["max_age"],
+        path=cookie_settings["path"],
+    )
+
+
+def _clear_web_session_cookie(response: Response) -> None:
+    """Clear the FinBot web session cookie."""
+    cookie_settings = auth_service.build_session_cookie_settings()
+    response.delete_cookie(
+        cookie_settings["key"],
+        path=cookie_settings["path"],
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
@@ -218,6 +280,69 @@ async def health_ready():
     """Explicit readiness endpoint with dependency checks."""
     payload, status_code = await _build_health_payload(include_dependencies=True)
     return JSONResponse(status_code=status_code, content=payload)
+
+
+@app.post("/auth/register")
+async def auth_register(payload: RegisterRequest, response: Response):
+    """Register web access for a user and open a browser session."""
+    async with async_session() as session:
+        try:
+            user, session_token = await auth_service.register_user(
+                session,
+                name=payload.name,
+                email=payload.email,
+                password=payload.password,
+                phone=payload.phone,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    _set_web_session_cookie(response, session_token)
+    return {
+        "status": "ok",
+        "user": auth_service.serialize_user(user),
+    }
+
+
+@app.post("/auth/login")
+async def auth_login(payload: LoginRequest, response: Response):
+    """Authenticate a web user and open a browser session."""
+    async with async_session() as session:
+        try:
+            user, session_token = await auth_service.login_user(
+                session,
+                email=payload.email,
+                password=payload.password,
+            )
+        except ValueError:
+            raise HTTPException(status_code=401, detail="Email ou senha invalidos.")
+
+    _set_web_session_cookie(response, session_token)
+    return {
+        "status": "ok",
+        "user": auth_service.serialize_user(user),
+    }
+
+
+@app.post("/auth/logout")
+async def auth_logout(request: Request, response: Response):
+    """Revoke the current browser session."""
+    session_token = _get_session_cookie_token(request)
+    if session_token:
+        async with async_session() as session:
+            await auth_service.logout_session(session, session_token)
+    _clear_web_session_cookie(response)
+    return {"status": "ok"}
+
+
+@app.get("/auth/me")
+async def auth_me(request: Request):
+    """Return the current authenticated web user."""
+    user = await _get_current_web_user(request)
+    return {
+        "status": "ok",
+        "user": auth_service.serialize_user(user),
+    }
 
 
 @app.get("/admin/qrcode", response_class=HTMLResponse)
