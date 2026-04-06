@@ -20,6 +20,7 @@ from app.database.connection import async_session, init_db
 from app.database.models import PaymentMethod
 from app.database.seed import seed_all
 from app.services.admin_rate_limit import AdminRateLimitService
+from app.services.ai import AIService
 from app.services.auth import AuthService
 from app.services.backup import BackupService
 from app.services.budget import BudgetService
@@ -61,6 +62,7 @@ goal_service = GoalService()
 export_service = ExportService()
 currency_service = CurrencyService()
 chart_service = ChartService()
+ai_service = AIService()
 
 
 class RegisterRequest(BaseModel):
@@ -186,6 +188,13 @@ class DashboardExpenseUpdateRequest(BaseModel):
     payment_method: str | None = None
     expense_date: str | None = None
     currency: str | None = None
+
+
+class DashboardExpenseRecognitionRequest(BaseModel):
+    """Payload to recognize expense data from an uploaded or pasted image."""
+
+    image_base64: str
+    additional_text: str | None = None
 
 
 class DashboardBudgetRequest(BaseModel):
@@ -476,6 +485,19 @@ def _normalize_currency_code(currency_code: str | None, fallback: str = "BRL") -
     if normalized_code not in SUPPORTED_CURRENCIES:
         raise HTTPException(status_code=400, detail="Moeda nao suportada.")
     return normalized_code
+
+
+def _decode_base64_media_payload(data_url_or_base64: str) -> bytes:
+    """Decode a base64 payload sent by the browser, supporting data URLs."""
+    normalized = (data_url_or_base64 or "").strip()
+    if not normalized:
+        raise HTTPException(status_code=400, detail="Imagem nao enviada.")
+    if "," in normalized and normalized.startswith("data:"):
+        normalized = normalized.split(",", maxsplit=1)[1]
+    try:
+        return base64.b64decode(normalized, validate=True)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Imagem invalida ou corrompida.") from exc
 
 
 def _resolve_dashboard_period(
@@ -2980,6 +3002,24 @@ async def web_dashboard_page(request: Request):
                     background: var(--accent-soft);
                     color: #115e59;
                 }
+                .dropzone {
+                    display: grid;
+                    gap: 12px;
+                    padding: 16px;
+                    border: 1px dashed #8fb9b3;
+                    border-radius: 18px;
+                    background: rgba(255, 255, 255, 0.72);
+                }
+                .dropzone.is-active {
+                    border-color: var(--accent);
+                    background: rgba(204, 251, 241, 0.45);
+                }
+                .preview {
+                    max-width: 240px;
+                    border-radius: 16px;
+                    border: 1px solid var(--line);
+                    background: white;
+                }
                 .empty {
                     padding: 18px;
                     border: 1px dashed var(--line);
@@ -3072,6 +3112,26 @@ async def web_dashboard_page(request: Request):
                                 <button class="ghost" type="button" id="expense-reset">Limpar</button>
                             </div>
                         </form>
+                        <section class="dropzone" id="receipt-dropzone" tabindex="0">
+                            <div>
+                                <strong>Ler comprovante por imagem</strong>
+                                <p>Cole uma imagem nesta área ou selecione um arquivo para preencher o lançamento automaticamente.</p>
+                            </div>
+                            <div class="two-col">
+                                <label>Selecionar imagem
+                                    <input id="receipt-file" type="file" accept="image/*">
+                                </label>
+                                <label>Observação opcional
+                                    <input id="receipt-note" placeholder="Ex.: considerar a data do dia 01/04/2026">
+                                </label>
+                            </div>
+                            <div class="actions">
+                                <button class="ghost" id="recognize-receipt" type="button">Ler comprovante</button>
+                                <button class="ghost" id="clear-receipt" type="button">Remover imagem</button>
+                            </div>
+                            <img id="receipt-preview" class="preview" alt="Pré-visualização do comprovante" style="display: none;">
+                            <div class="status" id="recognition-status"></div>
+                        </section>
                         <div class="status" id="expense-status"></div>
                         <div class="table-wrap">
                             <table>
@@ -3187,6 +3247,7 @@ async def web_dashboard_page(request: Request):
                     period: { month: new Date().getMonth() + 1, year: new Date().getFullYear() },
                     payload: null,
                     editingExpenseId: null,
+                    receiptImageDataUrl: '',
                 };
 
                 async function fetchJson(url, options = {}) {
@@ -3278,6 +3339,55 @@ async def web_dashboard_page(request: Request):
                         document.querySelector('#expense-form [name="currency"]').value = appState.payload.user.base_currency || 'BRL';
                     }
                     setStatus('expense-status', '');
+                }
+
+                function setReceiptPreview(dataUrl) {
+                    appState.receiptImageDataUrl = dataUrl || '';
+                    const preview = document.getElementById('receipt-preview');
+                    if (!appState.receiptImageDataUrl) {
+                        preview.style.display = 'none';
+                        preview.removeAttribute('src');
+                        return;
+                    }
+                    preview.src = appState.receiptImageDataUrl;
+                    preview.style.display = 'block';
+                }
+
+                function clearReceiptImage() {
+                    document.getElementById('receipt-file').value = '';
+                    document.getElementById('receipt-note').value = '';
+                    setReceiptPreview('');
+                    setStatus('recognition-status', '');
+                }
+
+                function fillExpenseFormFromRecognition(recognized) {
+                    if (recognized.description) {
+                        document.querySelector('#expense-form [name="description"]').value = recognized.description;
+                    }
+                    if (recognized.amount) {
+                        document.querySelector('#expense-form [name="amount"]').value = recognized.amount;
+                    }
+                    if (recognized.category) {
+                        document.querySelector('#expense-form [name="category"]').value = recognized.category;
+                    }
+                    if (recognized.payment_method) {
+                        document.querySelector('#expense-form [name="payment_method"]').value = recognized.payment_method;
+                    }
+                    if (recognized.expense_date) {
+                        document.querySelector('#expense-form [name="expense_date"]').value = recognized.expense_date;
+                    }
+                    if (recognized.currency) {
+                        document.querySelector('#expense-form [name="currency"]').value = recognized.currency;
+                    }
+                }
+
+                function readFileAsDataUrl(file) {
+                    return new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = () => resolve(String(reader.result || ''));
+                        reader.onerror = () => reject(new Error('Nao foi possivel ler a imagem selecionada.'));
+                        reader.readAsDataURL(file);
+                    });
                 }
 
                 function renderBudgets(budgets) {
@@ -3424,6 +3534,86 @@ async def web_dashboard_page(request: Request):
                 });
 
                 document.getElementById('expense-reset').addEventListener('click', resetExpenseForm);
+
+                document.getElementById('receipt-file').addEventListener('change', async (event) => {
+                    const file = event.currentTarget.files?.[0];
+                    if (!file) {
+                        setReceiptPreview('');
+                        return;
+                    }
+                    try {
+                        setReceiptPreview(await readFileAsDataUrl(file));
+                        setStatus('recognition-status', 'Imagem pronta para reconhecimento.');
+                    } catch (error) {
+                        setStatus('recognition-status', error.message, true);
+                    }
+                });
+
+                const dropzone = document.getElementById('receipt-dropzone');
+                dropzone.addEventListener('paste', async (event) => {
+                    const imageItem = Array.from(event.clipboardData?.items || []).find((item) => item.type.startsWith('image/'));
+                    if (!imageItem) {
+                        return;
+                    }
+                    event.preventDefault();
+                    const file = imageItem.getAsFile();
+                    if (!file) {
+                        return;
+                    }
+                    try {
+                        setReceiptPreview(await readFileAsDataUrl(file));
+                        setStatus('recognition-status', 'Imagem colada com sucesso. Agora voce pode reconhecer o comprovante.');
+                    } catch (error) {
+                        setStatus('recognition-status', error.message, true);
+                    }
+                });
+                dropzone.addEventListener('dragenter', () => dropzone.classList.add('is-active'));
+                dropzone.addEventListener('dragleave', () => dropzone.classList.remove('is-active'));
+                dropzone.addEventListener('dragover', (event) => {
+                    event.preventDefault();
+                    dropzone.classList.add('is-active');
+                });
+                dropzone.addEventListener('drop', async (event) => {
+                    event.preventDefault();
+                    dropzone.classList.remove('is-active');
+                    const file = Array.from(event.dataTransfer?.files || []).find((item) => item.type.startsWith('image/'));
+                    if (!file) {
+                        setStatus('recognition-status', 'Arraste uma imagem valida para esta area.', true);
+                        return;
+                    }
+                    try {
+                        setReceiptPreview(await readFileAsDataUrl(file));
+                        setStatus('recognition-status', 'Imagem pronta para reconhecimento.');
+                    } catch (error) {
+                        setStatus('recognition-status', error.message, true);
+                    }
+                });
+
+                document.getElementById('clear-receipt').addEventListener('click', () => {
+                    clearReceiptImage();
+                });
+
+                document.getElementById('recognize-receipt').addEventListener('click', async () => {
+                    if (!appState.receiptImageDataUrl) {
+                        setStatus('recognition-status', 'Selecione ou cole uma imagem antes de continuar.', true);
+                        return;
+                    }
+                    try {
+                        setStatus('recognition-status', 'Lendo comprovante...');
+                        const payload = await fetchJson('/dashboard/expenses/recognize', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({
+                                image_base64: appState.receiptImageDataUrl,
+                                additional_text: document.getElementById('receipt-note').value || '',
+                            }),
+                        });
+                        fillExpenseFormFromRecognition(payload.recognized);
+                        setStatus('recognition-status', 'Comprovante lido. Revise os campos antes de salvar.');
+                    } catch (error) {
+                        setStatus('recognition-status', error.message, true);
+                    }
+                });
 
                 document.getElementById('budget-form').addEventListener('submit', async (event) => {
                     event.preventDefault();
@@ -3936,6 +4126,77 @@ async def dashboard_create_expense(
         if not result["success"]:
             raise HTTPException(status_code=400, detail=result["error"])
         return {"status": "ok", **result}
+
+
+@app.post("/dashboard/expenses/recognize")
+async def dashboard_recognize_expense(
+    request: Request,
+    payload: DashboardExpenseRecognitionRequest,
+):
+    """Recognize expense fields from a pasted or uploaded image in the dashboard."""
+    await _get_current_web_user(request)
+    async with async_session() as session:
+        refreshed_user = await _get_current_web_user_in_session(session, request)
+
+        media_usage = await rate_limit_service.check_and_increment(
+            refreshed_user,
+            "daily_media_limit",
+        )
+        if not media_usage["allowed"]:
+            raise HTTPException(
+                status_code=429,
+                detail=rate_limit_service.format_limit_reached_message(
+                    "daily_media_limit",
+                    media_usage,
+                ),
+            )
+
+        ai_usage = await rate_limit_service.check_and_increment(
+            refreshed_user,
+            "daily_ai_limit",
+        )
+        if not ai_usage["allowed"]:
+            raise HTTPException(
+                status_code=429,
+                detail=rate_limit_service.format_limit_reached_message(
+                    "daily_ai_limit",
+                    ai_usage,
+                ),
+            )
+
+        image_bytes = _decode_base64_media_payload(payload.image_base64)
+        result = await ai_service.process_image(
+            image_bytes,
+            payload.additional_text or "",
+            user=refreshed_user,
+        )
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=400,
+                detail=result.get("error") or "Nao foi possivel reconhecer a imagem enviada.",
+            )
+
+        expense_data = dict(result.get("data") or {})
+        if result.get("intent") != "register_expense" or not expense_data.get("amount"):
+            raise HTTPException(
+                status_code=400,
+                detail="Nao foi possivel identificar um lancamento valido na imagem.",
+            )
+
+        return {
+            "status": "ok",
+            "recognized": {
+                "description": expense_data.get("description") or "",
+                "amount": expense_data.get("amount"),
+                "category": expense_data.get("category") or "",
+                "payment_method": expense_data.get("payment_method") or "",
+                "expense_date": expense_data.get("expense_date") or "",
+                "currency": expense_data.get("currency") or refreshed_user.base_currency,
+                "installments": expense_data.get("installments"),
+                "is_shared": bool(expense_data.get("is_shared")),
+                "shared_percentage": expense_data.get("shared_percentage"),
+            },
+        }
 
 
 @app.patch("/dashboard/expenses/{expense_id}")

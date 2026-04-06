@@ -13,6 +13,7 @@ from app.main import (
     DashboardBudgetRequest,
     DashboardCurrencyConvertRequest,
     DashboardExpenseCreateRequest,
+    DashboardExpenseRecognitionRequest,
     DashboardExpenseUpdateRequest,
     DashboardExportRequest,
     DashboardGoalDeleteRequest,
@@ -26,6 +27,7 @@ from app.main import (
     dashboard_delete_budget,
     dashboard_delete_goal,
     dashboard_export,
+    dashboard_recognize_expense,
     dashboard_state,
     dashboard_update_base_currency,
     dashboard_update_expense,
@@ -255,3 +257,42 @@ class TestDashboardWeb:
             DashboardGoalDeleteRequest(description="Reserva"),
         )
         assert deleted_goal["status"] == "ok"
+
+    async def test_dashboard_can_recognize_expense_from_image(self):
+        """Dashboard should recognize receipt data from a pasted/uploaded image payload."""
+        await self._reset_real_db()
+        request = await self._register_dashboard_request(
+            email="ocr@example.com",
+            phone="5511911111111",
+        )
+
+        with patch.object(
+            __import__("app.main", fromlist=["ai_service"]).ai_service,
+            "process_image",
+            new=AsyncMock(
+                return_value={
+                    "success": True,
+                    "intent": "register_expense",
+                    "data": {
+                        "description": "Cafeteria Centro",
+                        "amount": 32.5,
+                        "category": "Alimentação",
+                        "payment_method": "Pix",
+                        "expense_date": "2026-04-03",
+                        "currency": "BRL",
+                    },
+                }
+            ),
+        ):
+            payload = await dashboard_recognize_expense(
+                request,
+                DashboardExpenseRecognitionRequest(
+                    image_base64="data:image/png;base64,aGVsbG8=",
+                    additional_text="considere a data impressa no comprovante",
+                ),
+            )
+
+        assert payload["status"] == "ok"
+        assert payload["recognized"]["description"] == "Cafeteria Centro"
+        assert payload["recognized"]["amount"] == 32.5
+        assert payload["recognized"]["payment_method"] == "Pix"
