@@ -127,6 +127,7 @@ class TestDashboardWeb:
         assert payload["user"]["thousands_separator"] == "."
         assert payload["summary"]["expense_count"] == 0
         assert any(item["code"] == "USD" for item in payload["currencies"])
+        assert payload["expense_update_audits"] == []
 
         updated = await dashboard_update_base_currency(
             request,
@@ -203,6 +204,9 @@ class TestDashboardWeb:
         updated_state = await dashboard_state(request, month=4, year=2026)
         assert updated_state["expenses"][0]["description"] == "Hotel em Buenos Aires - ajuste"
         assert updated_state["expenses"][0]["amount"] == 600.0
+        assert len(updated_state["expense_update_audits"]) == 1
+        assert updated_state["expense_update_audits"][0]["expense_id"] == expense_id
+        assert "Hotel em Buenos Aires" in updated_state["expense_update_audits"][0]["previous_summary"]
 
         deleted = await dashboard_delete_expense(request, expense_id)
         assert deleted["status"] == "ok"

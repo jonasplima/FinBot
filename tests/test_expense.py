@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy import select
 
 from app.services.expense import MONTH_NAMES, ExpenseService, remove_accents
-from tests.conftest import Expense, ExpenseUpdateAudit
+from tests.conftest import Expense, ExpenseUpdateAudit, PaymentMethod
 
 
 class TestRemoveAccents:
@@ -311,6 +311,45 @@ class TestExpenseServiceUpdateExpense:
         assert audit.previous_snapshot["amount"] == 50.0
         assert audit.updated_snapshot["amount"] == 75.0
         assert audit.updated_snapshot["category"] == "Lazer"
+
+    async def test_list_expense_update_audits(self, service, seeded_session, test_phone):
+        """Recent expense update audits should be listed for the dashboard."""
+        payment_method = (
+            await seeded_session.execute(select(PaymentMethod.id).limit(1))
+        ).scalar_one_or_none()
+        if payment_method is None:
+            payment_method = 1
+
+        expense = Expense(
+            user_phone=test_phone,
+            description="Consulta",
+            amount=Decimal("50.00"),
+            category_id=1,
+            payment_method_id=payment_method,
+            type="Negativo",
+            date=date.today(),
+            created_at=datetime.now(),
+        )
+        seeded_session.add(expense)
+        await seeded_session.commit()
+        await seeded_session.refresh(expense)
+
+        seeded_session.add(
+            ExpenseUpdateAudit(
+                expense_id=expense.id,
+                user_phone=test_phone,
+                previous_snapshot={"description": "Consulta", "amount": 50.0, "category": "Saúde"},
+                updated_snapshot={"description": "Consulta médica", "amount": 75.0, "category": "Saúde"},
+            )
+        )
+        await seeded_session.commit()
+
+        audits = await service.list_expense_update_audits(seeded_session, test_phone)
+
+        assert len(audits) == 1
+        assert audits[0]["expense_id"] == expense.id
+        assert "Consulta" in str(audits[0]["previous_summary"])
+        assert "Consulta médica" in str(audits[0]["updated_summary"])
 
     async def test_update_expense_not_found(self, service, seeded_session, test_phone):
         """Test update fails safely when expense does not exist."""

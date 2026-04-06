@@ -5,7 +5,7 @@ import unicodedata
 from calendar import monthrange
 from datetime import date, datetime
 from decimal import Decimal
-from typing import cast
+from typing import Any, cast
 
 from sqlalchemy import extract, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -590,6 +590,43 @@ class ExpenseService:
                 else None,
             }
             for expense in expenses
+        ]
+
+    async def list_expense_update_audits(
+        self,
+        session: AsyncSession,
+        phone: str,
+        limit: int = 30,
+    ) -> list[dict[str, str | int | float | None]]:
+        """Return recent expense update audit entries for the dashboard."""
+        normalized_phone = normalize_phone(phone)
+        result = await session.execute(
+            select(ExpenseUpdateAudit)
+            .where(ExpenseUpdateAudit.user_phone == normalized_phone)
+            .order_by(ExpenseUpdateAudit.created_at.desc())
+            .limit(limit)
+        )
+        audits = result.scalars().all()
+
+        def _summary(snapshot: dict[str, Any] | None) -> str:
+            data = snapshot or {}
+            description = str(data.get("description") or "Lançamento")
+            amount = data.get("amount")
+            category = str(data.get("category") or "Sem categoria")
+            if amount is None:
+                return f"{description} • {category}"
+            return f"{description} • {category} • R$ {float(amount):.2f}"
+
+        return [
+            {
+                "id": int(audit.id),
+                "expense_id": int(audit.expense_id),
+                "created_at": audit.created_at.isoformat(),
+                "created_at_label": audit.created_at.strftime("%d/%m/%Y %H:%M"),
+                "previous_summary": _summary(audit.previous_snapshot),
+                "updated_summary": _summary(audit.updated_snapshot),
+            }
+            for audit in audits
         ]
 
     async def _get_goal_description(

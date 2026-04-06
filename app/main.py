@@ -574,6 +574,7 @@ async def _build_dashboard_payload(
     budgets_result = await budget_service.list_budgets(session, user.phone)
     goals_result = await goal_service.list_goals(session, user.phone)
     goal_transactions = await goal_service.list_goal_transactions(session, user.phone)
+    expense_update_audits = await expense_service.list_expense_update_audits(session, user.phone)
     category_payload = await category_service.list_available_categories(
         session,
         user,
@@ -642,6 +643,7 @@ async def _build_dashboard_payload(
         "budgets": budgets_result.get("budgets", []),
         "goals": goals_result.get("goals", []),
         "goal_transactions": goal_transactions,
+        "expense_update_audits": expense_update_audits,
         "categories": category_payload,
         "payment_methods": payment_methods,
         "charts": {
@@ -3317,7 +3319,7 @@ async def web_dashboard_page(request: Request):
                         </section>
 
                     <section class="card wide-card">
-                            <h2>Metas</h2>
+                        <h2>Metas</h2>
                             <p>Cadastre objetivos, faça aportes dedicados e use valores guardados sem misturar com a categorização normal de despesas.</p>
                             <div class="two-col" style="align-items: start;">
                                 <div class="stack">
@@ -3405,6 +3407,24 @@ async def web_dashboard_page(request: Request):
                                 </div>
                             </div>
                         </section>
+
+                    <section class="card wide-card">
+                        <h2>Histórico de alterações</h2>
+                        <p>Acompanhe os ajustes feitos em lançamentos já registrados, com resumo do antes e depois.</p>
+                        <div class="table-wrap">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Quando</th>
+                                        <th>Lançamento</th>
+                                        <th>Antes</th>
+                                        <th>Depois</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="expense-audits-list"></tbody>
+                            </table>
+                        </div>
+                    </section>
 
                     <div class="stack">
                         <section class="card">
@@ -3689,6 +3709,22 @@ async def web_dashboard_page(request: Request):
                     `).join('');
                 }
 
+                function renderExpenseAudits(audits) {
+                    const container = document.getElementById('expense-audits-list');
+                    if (!audits.length) {
+                        container.innerHTML = '<tr><td colspan="4"><div class="empty">Nenhuma alteração registrada em lançamentos até agora.</div></td></tr>';
+                        return;
+                    }
+                    container.innerHTML = audits.map((item) => `
+                        <tr>
+                            <td>${escapeHtml(item.created_at_label)}</td>
+                            <td>Lançamento #${item.expense_id}</td>
+                            <td>${escapeHtml(item.previous_summary)}</td>
+                            <td>${escapeHtml(item.updated_summary)}</td>
+                        </tr>
+                    `).join('');
+                }
+
                 function openChartModal(title, imageId) {
                     const modal = document.getElementById('chart-modal');
                     const modalTitle = document.getElementById('chart-modal-title');
@@ -3774,6 +3810,7 @@ async def web_dashboard_page(request: Request):
                     renderBudgets(payload.budgets || []);
                     renderGoals(payload.goals || []);
                     renderGoalTransactions(payload.goal_transactions || []);
+                    renderExpenseAudits(payload.expense_update_audits || []);
                     document.getElementById('chart-categories').src = payload.charts.categories;
                     document.getElementById('chart-top-expenses').src = payload.charts.top_expenses;
                     document.getElementById('chart-daily').src = payload.charts.daily;
