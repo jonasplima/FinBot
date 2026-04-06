@@ -335,6 +335,53 @@ class TestAdminAuthentication:
 
         assert exc_info.value.status_code == 401
 
+    async def test_admin_qrcode_rejects_when_rate_limit_is_exceeded(self):
+        """Test admin endpoints are protected by rate limiting."""
+        request = self._build_get_request(
+            "/admin/qrcode",
+            headers={"Authorization": "Bearer test-secret"},
+        )
+
+        with (
+            patch("app.main.settings.admin_secret", "test-secret"),
+            patch("app.main.AdminRateLimitService") as mock_rate_limit_cls,
+            pytest.raises(HTTPException) as exc_info,
+        ):
+            mock_rate_limit = MagicMock()
+            mock_rate_limit.check_request = AsyncMock(
+                return_value={
+                    "allowed": False,
+                    "used": 11,
+                    "limit": 10,
+                    "retry_after": 60,
+                }
+            )
+            mock_rate_limit_cls.return_value = mock_rate_limit
+            await get_qrcode(request)
+
+        assert exc_info.value.status_code == 429
+
+    async def test_admin_status_fails_closed_when_rate_limit_storage_is_unavailable(self):
+        """Test admin protection fails closed when shared storage is unavailable."""
+        request = self._build_get_request(
+            "/admin/status",
+            headers={"Authorization": "Bearer test-secret"},
+        )
+
+        with (
+            patch("app.main.settings.admin_secret", "test-secret"),
+            patch("app.main.AdminRateLimitService") as mock_rate_limit_cls,
+            pytest.raises(HTTPException) as exc_info,
+        ):
+            mock_rate_limit = MagicMock()
+            mock_rate_limit.check_request = AsyncMock(
+                side_effect=RuntimeError("Admin rate-limit storage unavailable in multi-instance mode.")
+            )
+            mock_rate_limit_cls.return_value = mock_rate_limit
+            await get_status(request)
+
+        assert exc_info.value.status_code == 503
+
     async def test_admin_status_accepts_valid_authorization(self):
         """Test status endpoint accepts valid admin auth."""
         request = self._build_get_request(
@@ -344,8 +391,14 @@ class TestAdminAuthentication:
 
         with (
             patch("app.main.settings.admin_secret", "test-secret"),
+            patch("app.main.AdminRateLimitService") as mock_rate_limit_cls,
             patch("app.services.evolution.EvolutionService") as mock_evolution_cls,
         ):
+            mock_rate_limit = MagicMock()
+            mock_rate_limit.check_request = AsyncMock(
+                return_value={"allowed": True, "used": 1, "limit": 10, "retry_after": 60}
+            )
+            mock_rate_limit_cls.return_value = mock_rate_limit
             mock_evolution = MagicMock()
             mock_evolution.get_connection_state = AsyncMock(return_value={"instance": "ok"})
             mock_evolution_cls.return_value = mock_evolution
@@ -363,9 +416,15 @@ class TestAdminAuthentication:
 
         with (
             patch("app.main.settings.admin_secret", "test-secret"),
+            patch("app.main.AdminRateLimitService") as mock_rate_limit_cls,
             patch("app.services.evolution.EvolutionService") as mock_evolution_cls,
             pytest.raises(HTTPException) as exc_info,
         ):
+            mock_rate_limit = MagicMock()
+            mock_rate_limit.check_request = AsyncMock(
+                return_value={"allowed": True, "used": 1, "limit": 10, "retry_after": 60}
+            )
+            mock_rate_limit_cls.return_value = mock_rate_limit
             mock_evolution = MagicMock()
             mock_evolution.get_connection_state = AsyncMock(side_effect=RuntimeError("upstream boom"))
             mock_evolution_cls.return_value = mock_evolution
@@ -779,6 +838,28 @@ class TestWebhookHandlerIntentHandling:
         call_args = handler.evolution.send_text.call_args
         assert "atingiu seu limite diario" in call_args.args[1].lower()
 
+    async def test_process_message_informs_when_rate_limit_storage_is_unavailable(
+        self, handler, seeded_session, test_phone, accepted_user_in_db
+    ):
+        """Test user gets a clear message when shared rate-limit storage is unavailable."""
+        handler.rate_limit_service.check_and_increment = AsyncMock(
+            side_effect=RuntimeError("Rate limit storage unavailable in multi-instance mode.")
+        )
+
+        await handler.process_message(
+            seeded_session,
+            {
+                "phone": test_phone,
+                "text": "oi de novo",
+                "has_image": False,
+                "has_document": False,
+                "message_key": {"id": "limit-unavailable"},
+            },
+        )
+
+        handler.evolution.send_text.assert_awaited_once()
+        assert "armazenamento compartilhado" in handler.evolution.send_text.call_args.args[1].lower()
+
     async def test_process_message_routes_pdf_to_specific_handler(
         self, handler, seeded_session, test_phone, accepted_user_in_db
     ):
@@ -980,10 +1061,13 @@ class TestWebhookHandlerIntentHandling:
         """Test confirmed backup restore."""
         handler.backup_service.load_temporary_backup = AsyncMock(
             return_value={
-                "metadata": {"schema_version": 1},
-                "expenses": [],
-                "budgets": [],
-                "goals": [],
+                "success": True,
+                "backup_data": {
+                    "metadata": {"schema_version": 1},
+                    "expenses": [],
+                    "budgets": [],
+                    "goals": [],
+                },
             }
         )
         handler.backup_service.delete_temporary_backup = AsyncMock()
@@ -1035,10 +1119,13 @@ class TestWebhookHandlerIntentHandling:
         handler.evolution.send_text = AsyncMock(side_effect=RuntimeError("send failed"))
         handler.backup_service.load_temporary_backup = AsyncMock(
             return_value={
-                "metadata": {"schema_version": 1},
-                "expenses": [],
-                "budgets": [],
-                "goals": [],
+                "success": True,
+                "backup_data": {
+                    "metadata": {"schema_version": 1},
+                    "expenses": [],
+                    "budgets": [],
+                    "goals": [],
+                },
             }
         )
         handler.backup_service.delete_temporary_backup = AsyncMock()
@@ -1077,7 +1164,12 @@ class TestWebhookHandlerIntentHandling:
         self, handler, seeded_session, test_phone, accepted_user_in_db
     ):
         """Test restore confirmation fails safely when temporary backup is gone."""
-        handler.backup_service.load_temporary_backup = AsyncMock(return_value=None)
+        handler.backup_service.load_temporary_backup = AsyncMock(
+            return_value={
+                "success": False,
+                "error": "O backup expirou ou nao esta mais disponivel.",
+            }
+        )
         handler.backup_service.delete_temporary_backup = AsyncMock()
         handler.backup_service.restore_user_backup = AsyncMock()
 
@@ -1097,6 +1189,35 @@ class TestWebhookHandlerIntentHandling:
         handler.backup_service.restore_user_backup.assert_not_awaited()
         handler.evolution.send_text.assert_awaited_once()
         assert "expirou" in handler.evolution.send_text.call_args.args[1].lower()
+
+    async def test_handle_backup_restore_confirmation_reports_shared_storage_issue(
+        self, handler, seeded_session, test_phone, accepted_user_in_db
+    ):
+        """Test restore confirmation reports shared storage outage clearly."""
+        handler.backup_service.load_temporary_backup = AsyncMock(
+            return_value={
+                "success": False,
+                "error": "Nao foi possivel acessar o armazenamento temporario do backup agora. Tente novamente em instantes.",
+            }
+        )
+        handler.backup_service.restore_user_backup = AsyncMock()
+
+        await handler._handle_backup_restore_confirmation(
+            seeded_session,
+            test_phone,
+            "sim",
+            {
+                "type": "backup_restore",
+                "backup_ref": "finbot:backup:missing",
+                "summary": {"source_phone": test_phone},
+                "target_phone": test_phone,
+            },
+            accepted_user_in_db,
+        )
+
+        handler.backup_service.restore_user_backup.assert_not_awaited()
+        handler.evolution.send_text.assert_awaited_once()
+        assert "armazenamento temporario" in handler.evolution.send_text.call_args.args[1].lower()
 
     async def test_handle_backup_restore_requires_explicit_migration_confirmation(
         self, handler, seeded_session, test_phone, accepted_user_in_db
@@ -1139,10 +1260,13 @@ class TestWebhookHandlerIntentHandling:
         """Test cross-phone restore succeeds after explicit migration confirmation."""
         handler.backup_service.load_temporary_backup = AsyncMock(
             return_value={
-                "metadata": {"schema_version": 1, "source_phone": "5511888888888"},
-                "expenses": [],
-                "budgets": [],
-                "goals": [],
+                "success": True,
+                "backup_data": {
+                    "metadata": {"schema_version": 1, "source_phone": "5511888888888"},
+                    "expenses": [],
+                    "budgets": [],
+                    "goals": [],
+                },
             }
         )
         handler.backup_service.delete_temporary_backup = AsyncMock()

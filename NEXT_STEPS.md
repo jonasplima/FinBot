@@ -295,7 +295,7 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
   - ✅ `healthcheck` do serviço `finbot` no `docker-compose`
 
 #### 0.9.4 Redis como ponto único de consistência distribuída
-- **Status:** Em andamento
+- **Status:** Parcialmente implementado
 - **Problema identificado:**
   - Idempotência, rate limit e backup temporário têm fallback em memória local
   - Isso funciona em ambiente simples, mas quebra consistência em múltiplos processos ou múltiplas réplicas
@@ -306,6 +306,12 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
 - **Critérios de aceite:**
   - O comportamento em multi-instância é previsível e documentado
   - Queda do Redis não produz duplicidade silenciosa nem limites inconsistentes
+- **Implementação realizada:**
+  - ✅ Scheduler protegido com lock distribuído por job
+  - ✅ `RateLimitService` passa a falhar de forma explícita em `multi_instance` quando Redis está indisponível
+  - ✅ Armazenamento temporário de backup deixa de usar fallback silencioso em `multi_instance`
+  - ✅ Webhook agora responde com mensagens claras quando o storage compartilhado está indisponível
+  - ⏳ Ainda falta revisar outros usos de fallback local e definir observabilidade/alertas operacionais
 
 #### 0.9.5 Scheduler com trava distribuída
 - **Status:** Implementado
@@ -362,7 +368,7 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
   - A superfície de exposição padrão do ambiente sobe mais fechada
 
 #### 0.9.8 Proteção adicional dos segredos estáticos
-- **Status:** Parcialmente implementado
+- **Status:** Implementado
 - **Problema identificado:**
   - A autenticação de admin e webhook depende de bearer secrets estáticos
   - A validação atual usa comparação simples de string
@@ -375,20 +381,20 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
   - Endpoints administrativos ficam menos suscetíveis a abuso por força bruta ou enumeração
 - **Implementação realizada:**
   - ✅ Migração para `secrets.compare_digest`
-  - ⏳ Rate limit e proteção adicional para endpoints administrativos ainda pendentes
+  - ✅ Rate limit por IP/janela para endpoints administrativos
+  - ✅ Falha fechada da proteção administrativa em `multi_instance` quando o storage compartilhado estiver indisponível
 
 #### 0.9.9 Observações de validação
 - **Resultado da revisão local:**
-  - Suíte de testes local executada com sucesso: 277 testes passando
+  - Suíte de testes local executada com sucesso: 289 testes passando
   - `ruff check .` sem achados
   - `python -m compileall app tests` sem erros
   - Não foi executada auditoria online de CVEs de dependências durante a revisão
 
 #### 0.9.10 Ordem sugerida de execução
-1. Fechar a política oficial de restore com migração entre números
-2. Endurecer Redis/rate-limit/backup temporário para comportamento previsível em multi-instância
-3. Adicionar proteção adicional aos endpoints administrativos
-4. Endurecer Docker, segredos e supply chain
+1. Endurecer Docker, segredos e supply chain
+2. Revisar observabilidade e alertas para modos degradados em multi-instância
+3. Refinar auditoria persistida do fluxo de migração de backup entre números
 
 ---
 

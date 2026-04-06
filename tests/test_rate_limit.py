@@ -1,5 +1,9 @@
 """Tests for RateLimitService."""
 
+from unittest.mock import AsyncMock, patch
+
+import pytest
+
 from app.services.rate_limit import RateLimitService
 
 
@@ -32,3 +36,15 @@ class TestRateLimitService:
 
         assert summary["daily_text_limit"]["used"] == 1
         assert summary["daily_ai_limit"]["used"] == 1
+
+    async def test_multi_instance_requires_redis_for_rate_limit(self, accepted_user_in_db):
+        """Test multi-instance mode fails closed when Redis is unavailable."""
+        RateLimitService._fallback_counters.clear()
+        service = RateLimitService()
+
+        with patch("app.services.rate_limit.settings.deployment_mode", "multi_instance"):
+            service._get_redis = AsyncMock(return_value=None)
+            with pytest.raises(RuntimeError) as exc_info:
+                await service.check_and_increment(accepted_user_in_db, "daily_text_limit")
+
+        assert "multi-instance" in str(exc_info.value).lower()

@@ -22,6 +22,10 @@ class RateLimitService:
         self.redis_url = settings.redis_url
         self._redis: Redis | None = None
 
+    def _allow_local_fallback(self) -> bool:
+        """Whether local in-memory counters are allowed in the current deployment mode."""
+        return settings.normalized_deployment_mode == "single_instance"
+
     async def check_and_increment(
         self,
         user: User,
@@ -84,12 +88,16 @@ class RateLimitService:
         """Get current counter value using Redis or fallback storage."""
         redis_client = await self._get_redis()
         if redis_client is None:
+            if not self._allow_local_fallback():
+                raise RuntimeError("Rate limit storage unavailable in multi-instance mode.")
             return self._fallback_counters.get(key, 0)
 
         try:
             value = await redis_client.get(key)
             return int(value) if value is not None else 0
         except Exception as e:
+            if not self._allow_local_fallback():
+                raise RuntimeError("Rate limit storage unavailable in multi-instance mode.") from e
             logger.warning(f"Redis unavailable for get, using fallback: {e}")
             return self._fallback_counters.get(key, 0)
 
@@ -97,6 +105,8 @@ class RateLimitService:
         """Increment counter using Redis or fallback storage."""
         redis_client = await self._get_redis()
         if redis_client is None:
+            if not self._allow_local_fallback():
+                raise RuntimeError("Rate limit storage unavailable in multi-instance mode.")
             self._fallback_counters[key] = self._fallback_counters.get(key, 0) + increment
             return self._fallback_counters[key]
 
@@ -105,6 +115,8 @@ class RateLimitService:
             await redis_client.expire(key, 60 * 60 * 24 * 2)
             return int(new_value)
         except Exception as e:
+            if not self._allow_local_fallback():
+                raise RuntimeError("Rate limit storage unavailable in multi-instance mode.") from e
             logger.warning(f"Redis unavailable for incr, using fallback: {e}")
             self._fallback_counters[key] = self._fallback_counters.get(key, 0) + increment
             return self._fallback_counters[key]

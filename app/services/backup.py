@@ -85,6 +85,10 @@ class BackupService:
         self.redis_url = settings.redis_url
         self._redis: Redis | None = None
 
+    def _allow_local_fallback(self) -> bool:
+        """Whether local in-memory temporary storage is allowed in this deployment mode."""
+        return settings.normalized_deployment_mode == "single_instance"
+
     async def export_user_backup(
         self,
         session: AsyncSession,
@@ -242,6 +246,18 @@ class BackupService:
                     serialized,
                 )
             except Exception as exc:
+                if not self._allow_local_fallback():
+                    logger.error(
+                        "Temporary backup storage unavailable in multi-instance mode: %s",
+                        exc,
+                    )
+                    return {
+                        "success": False,
+                        "error": (
+                            "O armazenamento temporario do backup esta indisponivel no momento. "
+                            "Tente novamente em instantes."
+                        ),
+                    }
                 logger.warning(
                     f"Redis unavailable for temporary backup store, using fallback: {exc}"
                 )
@@ -250,6 +266,15 @@ class BackupService:
                     datetime.fromtimestamp(expires_at),
                 )
         else:
+            if not self._allow_local_fallback():
+                logger.error("Temporary backup storage unavailable in multi-instance mode")
+                return {
+                    "success": False,
+                    "error": (
+                        "O armazenamento temporario do backup esta indisponivel no momento. "
+                        "Tente novamente em instantes."
+                    ),
+                }
             self._fallback_temp_storage[backup_ref] = (
                 serialized,
                 datetime.fromtimestamp(expires_at),
@@ -261,10 +286,10 @@ class BackupService:
             "backup_hash": hashlib.sha256(serialized.encode("utf-8")).hexdigest(),
         }
 
-    async def load_temporary_backup(self, backup_ref: str) -> dict[str, Any] | None:
+    async def load_temporary_backup(self, backup_ref: str) -> dict[str, Any]:
         """Load a previously stored temporary backup payload."""
         if not backup_ref:
-            return None
+            return {"success": False, "error": "Backup temporario invalido ou ausente."}
 
         serialized: str | None = None
         redis_client = await self._get_redis()
@@ -272,28 +297,52 @@ class BackupService:
             try:
                 serialized = await redis_client.get(backup_ref)
             except Exception as exc:
+                if not self._allow_local_fallback():
+                    logger.error(
+                        "Temporary backup load unavailable in multi-instance mode: %s",
+                        exc,
+                    )
+                    return {
+                        "success": False,
+                        "error": (
+                            "Nao foi possivel acessar o armazenamento temporario do backup agora. "
+                            "Tente novamente em instantes."
+                        ),
+                    }
                 logger.warning(
                     f"Redis unavailable for temporary backup load, using fallback: {exc}"
                 )
 
         if serialized is None:
+            if not self._allow_local_fallback() and redis_client is None:
+                logger.error("Temporary backup load unavailable in multi-instance mode")
+                return {
+                    "success": False,
+                    "error": (
+                        "Nao foi possivel acessar o armazenamento temporario do backup agora. "
+                        "Tente novamente em instantes."
+                    ),
+                }
             entry = self._fallback_temp_storage.get(backup_ref)
             if entry is None:
-                return None
+                return {"success": False, "error": "O backup expirou ou nao esta mais disponivel."}
             serialized, expires_at = entry
             if expires_at <= datetime.now():
                 self._fallback_temp_storage.pop(backup_ref, None)
-                return None
+                return {"success": False, "error": "O backup expirou ou nao esta mais disponivel."}
 
         try:
             data = json.loads(serialized)
         except json.JSONDecodeError:
-            return None
+            return {"success": False, "error": "Backup temporario corrompido ou invalido."}
 
         validation = self.validate_backup_data(data)
         if not validation["success"]:
-            return None
-        return data
+            return {
+                "success": False,
+                "error": validation.get("error", "Backup temporario invalido."),
+            }
+        return {"success": True, "backup_data": data}
 
     async def delete_temporary_backup(self, backup_ref: str) -> None:
         """Delete a temporary backup payload after use or cancellation."""

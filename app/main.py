@@ -12,6 +12,7 @@ from sqlalchemy import text
 from app.config import get_settings
 from app.database.connection import async_session, init_db
 from app.database.seed import seed_all
+from app.services.admin_rate_limit import AdminRateLimitService
 from app.services.webhook_idempotency import WebhookIdempotencyService
 
 # Configure logging
@@ -53,6 +54,30 @@ def _is_message_event(event: str) -> bool:
 def _extract_webhook_message_id(body: dict) -> str:
     """Extract message ID from webhook payload when available."""
     return str(body.get("data", {}).get("key", {}).get("id", "")).strip()
+
+
+async def _enforce_admin_rate_limit(request: Request) -> None:
+    """Apply rate limiting to administrative endpoints."""
+    client_host = request.client.host if request.client else "unknown"
+    path = request.url.path if request.url else "unknown"
+    identifier = f"{client_host}:{path}"
+    service = AdminRateLimitService()
+
+    try:
+        result = await service.check_request(identifier)
+    except RuntimeError:
+        raise HTTPException(
+            status_code=503,
+            detail="A protecao administrativa esta temporariamente indisponivel.",
+        )
+
+    if not result["allowed"]:
+        logger.warning("Admin rate limit exceeded for %s", identifier)
+        raise HTTPException(
+            status_code=429,
+            detail="Muitas tentativas no endpoint administrativo. Tente novamente em instantes.",
+            headers={"Retry-After": str(result["retry_after"])},
+        )
 
 
 async def _build_health_payload(include_dependencies: bool = True) -> tuple[dict, int]:
@@ -180,6 +205,7 @@ async def get_qrcode(request: Request):
     Requires ADMIN_SECRET for security.
     Returns an HTML page with the QR code image.
     """
+    await _enforce_admin_rate_limit(request)
     if not _is_valid_admin_authorization(request.headers.get("Authorization")):
         raise HTTPException(status_code=401, detail="Invalid admin authorization")
 
@@ -408,6 +434,7 @@ async def get_qrcode(request: Request):
 @app.get("/admin/status")
 async def get_status(request: Request):
     """Get connection status."""
+    await _enforce_admin_rate_limit(request)
     if not _is_valid_admin_authorization(request.headers.get("Authorization")):
         raise HTTPException(status_code=401, detail="Invalid admin authorization")
 

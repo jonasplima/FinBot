@@ -4,7 +4,7 @@ import base64
 import json
 from datetime import date, datetime
 from decimal import Decimal
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from sqlalchemy import select
@@ -287,10 +287,35 @@ class TestBackupService:
 
         assert stored["success"] is True
         loaded = await service.load_temporary_backup(stored["backup_ref"])
-        assert loaded == backup_data
+        assert loaded["success"] is True
+        assert loaded["backup_data"] == backup_data
 
         await service.delete_temporary_backup(stored["backup_ref"])
-        assert await service.load_temporary_backup(stored["backup_ref"]) is None
+        missing = await service.load_temporary_backup(stored["backup_ref"])
+        assert missing["success"] is False
+        assert "expirou" in missing["error"].lower() or "disponivel" in missing["error"].lower()
+
+    async def test_temporary_backup_storage_fails_without_redis_in_multi_instance_mode(
+        self, service
+    ):
+        """Test temporary backup storage fails closed in multi-instance mode without Redis."""
+        backup_data = {
+            "metadata": {
+                "schema_version": BACKUP_SCHEMA_VERSION,
+                "exported_at": "2026-04-05T10:00:00",
+                "source_phone": "5511888888888",
+            },
+            "expenses": [],
+            "budgets": [],
+            "goals": [],
+        }
+
+        with patch("app.services.backup.settings.deployment_mode", "multi_instance"):
+            service._get_redis = AsyncMock(return_value=None)
+            stored = await service.store_temporary_backup(backup_data)
+
+        assert stored["success"] is False
+        assert "indisponivel" in stored["error"].lower()
 
     async def test_restore_user_backup_success(self, service, seeded_session, test_phone):
         """Test restoring backup data successfully."""

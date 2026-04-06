@@ -336,7 +336,16 @@ class WebhookHandler:
         user: User,
     ) -> None:
         """Handle showing current user limits and daily usage."""
-        usage = await self.rate_limit_service.get_usage_summary(user)
+        try:
+            usage = await self.rate_limit_service.get_usage_summary(user)
+        except RuntimeError:
+            await self.evolution.send_text(
+                phone,
+                "Nao consegui consultar seus limites agora porque o armazenamento compartilhado "
+                "esta indisponivel. Tente novamente em instantes.",
+            )
+            return
+
         await self.evolution.send_text(phone, self.user_service.format_user_limits(user, usage))
 
     async def handle_set_user_limit(
@@ -1985,14 +1994,15 @@ class WebhookHandler:
             return
 
         if response_lower in positive_responses or response_lower in migration_positive_responses:
-            backup_data = await self.backup_service.load_temporary_backup(backup_ref)
-            if backup_data is None:
+            load_result = await self.backup_service.load_temporary_backup(backup_ref)
+            if not load_result["success"]:
                 await self.evolution.send_text(
                     phone,
-                    "O backup expirou ou nao esta mais disponivel. Envie o arquivo novamente.",
+                    load_result["error"],
                 )
                 return
 
+            backup_data = load_result["backup_data"]
             result = await self.backup_service.restore_user_backup(session, phone, backup_data)
             await self.backup_service.delete_temporary_backup(backup_ref)
             if result["success"]:
@@ -2082,7 +2092,16 @@ class WebhookHandler:
         limit_field: str,
     ) -> bool:
         """Check and increment a daily limit for the user."""
-        usage = await self.rate_limit_service.check_and_increment(user, limit_field)
+        try:
+            usage = await self.rate_limit_service.check_and_increment(user, limit_field)
+        except RuntimeError:
+            await self.evolution.send_text(
+                phone,
+                "Nao consegui validar seus limites agora porque o armazenamento compartilhado "
+                "esta indisponivel. Tente novamente em instantes.",
+            )
+            return False
+
         if usage["allowed"]:
             return True
 

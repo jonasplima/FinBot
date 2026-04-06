@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     # Security
     admin_secret: str
     webhook_secret: str = ""
+    admin_rate_limit_max_attempts: int = 10
+    admin_rate_limit_window_seconds: int = 60
 
     # Scheduler
     scheduler_enabled: bool = True
@@ -158,6 +160,11 @@ class Settings(BaseSettings):
     def effective_gemini_timeout_seconds(self) -> int:
         """Clamp Gemini timeout to a safe server ceiling."""
         return min(max(self.gemini_timeout_seconds, 5), 120)
+
+    @property
+    def effective_admin_rate_limit_window_seconds(self) -> int:
+        """Clamp admin rate-limit window to a safe operational range."""
+        return min(max(self.admin_rate_limit_window_seconds, 10), 3600)
 
     @property
     def effective_scheduler_lock_ttl_seconds(self) -> int:
