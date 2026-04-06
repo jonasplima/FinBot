@@ -1,5 +1,6 @@
 """Recurring expenses scheduler service."""
 
+import inspect
 import logging
 from datetime import date, datetime, timedelta
 from uuid import uuid4
@@ -456,7 +457,9 @@ class SchedulerService:
             return None
 
         if not acquired:
-            logger.info("Skipping scheduler job '%s' because another instance owns the lock", job_name)
+            logger.info(
+                "Skipping scheduler job '%s' because another instance owns the lock", job_name
+            )
             operational_status.record_event(
                 "scheduler",
                 "info",
@@ -480,7 +483,9 @@ class SchedulerService:
         return 0
         """
         try:
-            await redis_client.eval(script, 1, self._build_lock_key(job_name), token)
+            release_result = redis_client.eval(script, 1, self._build_lock_key(job_name), token)
+            if inspect.isawaitable(release_result):
+                await release_result
         except Exception as exc:
             logger.warning("Failed to release scheduler lock for '%s': %s", job_name, exc)
 

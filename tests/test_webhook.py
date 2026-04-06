@@ -255,7 +255,9 @@ class TestEvolutionWebhookAuthentication:
             response = await evolution_webhook(request)
 
         assert response.status_code == 500
-        assert response.body == b'{"status":"error","message":"Erro interno ao processar o webhook."}'
+        assert (
+            response.body == b'{"status":"error","message":"Erro interno ao processar o webhook."}'
+        )
         mock_idempotency.release.assert_awaited_once_with("msg-123")
 
     async def test_does_not_release_reservation_after_committed_failure(self):
@@ -377,7 +379,9 @@ class TestAdminAuthentication:
         ):
             mock_rate_limit = MagicMock()
             mock_rate_limit.check_request = AsyncMock(
-                side_effect=RuntimeError("Admin rate-limit storage unavailable in multi-instance mode.")
+                side_effect=RuntimeError(
+                    "Admin rate-limit storage unavailable in multi-instance mode."
+                )
             )
             mock_rate_limit_cls.return_value = mock_rate_limit
             await get_status(request)
@@ -428,7 +432,9 @@ class TestAdminAuthentication:
             )
             mock_rate_limit_cls.return_value = mock_rate_limit
             mock_evolution = MagicMock()
-            mock_evolution.get_connection_state = AsyncMock(side_effect=RuntimeError("upstream boom"))
+            mock_evolution.get_connection_state = AsyncMock(
+                side_effect=RuntimeError("upstream boom")
+            )
             mock_evolution_cls.return_value = mock_evolution
             await get_status(request)
 
@@ -496,7 +502,9 @@ class TestHealthEndpoints:
             patch("app.services.evolution.EvolutionService") as mock_evolution_cls,
         ):
             mock_evolution = MagicMock()
-            mock_evolution.get_connection_state = AsyncMock(return_value={"instance": {"state": "open"}})
+            mock_evolution.get_connection_state = AsyncMock(
+                return_value={"instance": {"state": "open"}}
+            )
             mock_evolution_cls.return_value = mock_evolution
 
             response = await health_ready()
@@ -533,7 +541,9 @@ class TestHealthEndpoints:
             patch("app.services.evolution.EvolutionService") as mock_evolution_cls,
         ):
             mock_evolution = MagicMock()
-            mock_evolution.get_connection_state = AsyncMock(return_value={"instance": {"state": "open"}})
+            mock_evolution.get_connection_state = AsyncMock(
+                return_value={"instance": {"state": "open"}}
+            )
             mock_evolution_cls.return_value = mock_evolution
 
             response = await health_check()
@@ -556,7 +566,9 @@ class TestHealthEndpoints:
         ):
             mock_rate_limit = MagicMock()
             mock_rate_limit.check_request = AsyncMock(
-                side_effect=RuntimeError("Admin rate-limit storage unavailable in multi-instance mode.")
+                side_effect=RuntimeError(
+                    "Admin rate-limit storage unavailable in multi-instance mode."
+                )
             )
             mock_rate_limit_cls.return_value = mock_rate_limit
             await get_status(request)
@@ -910,7 +922,9 @@ class TestWebhookHandlerIntentHandling:
         )
 
         handler.evolution.send_text.assert_awaited_once()
-        assert "armazenamento compartilhado" in handler.evolution.send_text.call_args.args[1].lower()
+        assert (
+            "armazenamento compartilhado" in handler.evolution.send_text.call_args.args[1].lower()
+        )
 
     async def test_process_message_routes_pdf_to_specific_handler(
         self, handler, seeded_session, test_phone, accepted_user_in_db

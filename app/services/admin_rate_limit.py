@@ -45,7 +45,9 @@ class AdminRateLimitService:
                         "error",
                         "Administrative rate-limit storage unavailable in multi-instance mode.",
                     )
-                    raise RuntimeError("Admin rate-limit storage unavailable in multi-instance mode.") from exc
+                    raise RuntimeError(
+                        "Admin rate-limit storage unavailable in multi-instance mode."
+                    ) from exc
                 logger.warning(f"Redis unavailable for admin rate limit, using fallback: {exc}")
                 operational_status.record_event(
                     "admin_rate_limit",

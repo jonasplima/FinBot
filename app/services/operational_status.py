@@ -27,7 +27,9 @@ class OperationalStatusService:
         with self._lock:
             self._events.append(event)
 
-    def get_recent_events(self, max_items: int = 10, max_age_seconds: int = 3600) -> list[dict[str, Any]]:
+    def get_recent_events(
+        self, max_items: int = 10, max_age_seconds: int = 3600
+    ) -> list[dict[str, Any]]:
         """Return recent events within the configured age window."""
         cutoff = datetime.now() - timedelta(seconds=max_age_seconds)
         with self._lock:

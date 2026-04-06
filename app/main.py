@@ -3,6 +3,7 @@
 import logging
 import secrets
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -92,9 +93,11 @@ async def _enforce_admin_rate_limit(request: Request) -> None:
         )
 
 
-async def _build_health_payload(include_dependencies: bool = True) -> tuple[dict, int]:
+async def _build_health_payload(
+    include_dependencies: bool = True,
+) -> tuple[dict[str, Any], int]:
     """Build liveness/readiness payload with dependency details when requested."""
-    payload = {
+    payload: dict[str, Any] = {
         "status": "healthy",
         "app": "FinBot",
         "version": "1.0.0",
@@ -519,7 +522,9 @@ async def evolution_webhook(request: Request):
     except Exception as e:
         logger.error(f"Webhook error: {e}")
         if "handler" in locals() and getattr(handler, "processing_committed", False):
-            logger.warning("Webhook completed persistence before failing on post-commit side effects")
+            logger.warning(
+                "Webhook completed persistence before failing on post-commit side effects"
+            )
             operational_status.record_event(
                 "webhook",
                 "warning",
