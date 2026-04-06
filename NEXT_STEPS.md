@@ -353,7 +353,7 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
   - A decisão fica documentada como regra de negócio, não como comportamento implícito
 
 #### 0.9.7 Hardening adicional de Docker e supply chain
-- **Status:** Pendente
+- **Status:** Parcialmente implementado
 - **Problema identificado:**
   - Imagens base e de terceiros não estão fixadas por digest
   - Dependências Python não usam hashes de integridade
@@ -366,6 +366,13 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
 - **Critérios de aceite:**
   - A cadeia de build fica mais reprodutível e auditável
   - A superfície de exposição padrão do ambiente sobe mais fechada
+- **Implementação realizada:**
+  - ✅ `Dockerfile` convertido para multi-stage build, removendo toolchain de compilação da imagem final
+  - ✅ Runtime com `PYTHONDONTWRITEBYTECODE` e `PYTHONUNBUFFERED`
+  - ✅ Serviço `finbot` endurecido com `read_only`, `tmpfs`, `cap_drop: [ALL]` e `no-new-privileges`
+  - ✅ Portas publicadas em `localhost` por padrão no Compose
+  - ✅ Job de `pip-audit` adicionado à CI em modo não-bloqueante
+  - ⏳ Ainda faltam pin por digest das imagens e, se desejado, hashes de integridade para dependências Python
 
 #### 0.9.8 Proteção adicional dos segredos estáticos
 - **Status:** Implementado
@@ -392,9 +399,9 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
   - Não foi executada auditoria online de CVEs de dependências durante a revisão
 
 #### 0.9.10 Ordem sugerida de execução
-1. Endurecer Docker, segredos e supply chain
-2. Revisar observabilidade e alertas para modos degradados em multi-instância
-3. Refinar auditoria persistida do fluxo de migração de backup entre números
+1. Revisar observabilidade e alertas para modos degradados em multi-instância
+2. Refinar auditoria persistida do fluxo de migração de backup entre números
+3. Avaliar pin por digest das imagens e hashes de dependências Python
 
 ---
 

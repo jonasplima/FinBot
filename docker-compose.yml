@@ -32,7 +32,7 @@ services:
   evolution:
     image: evoapicloud/evolution-api:v2.3.7
     ports:
-      - "8008:8080"
+      - "127.0.0.1:8008:8080"
     environment:
       - AUTHENTICATION_API_KEY=${EVOLUTION_API_KEY}
       - DATABASE_ENABLED=true
@@ -63,7 +63,7 @@ services:
     env_file:
       - .env
     ports:
-      - "3003:3003"
+      - "127.0.0.1:3003:3003"
     environment:
       - PORT=3003
       - LOG_LEVEL=${LOG_LEVEL}
@@ -106,6 +106,7 @@ services:
       - MAX_BACKUP_GOAL_UPDATES=${MAX_BACKUP_GOAL_UPDATES:-1000}
       - BACKUP_TEMP_TTL_SECONDS=${BACKUP_TEMP_TTL_SECONDS:-600}
       - WEBHOOK_IDEMPOTENCY_TTL_SECONDS=${WEBHOOK_IDEMPOTENCY_TTL_SECONDS:-172800}
+      - MPLCONFIGDIR=/tmp/matplotlib
     depends_on:
       postgres:
         condition: service_healthy
@@ -125,6 +126,13 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
     restart: unless-stopped
 
 volumes:

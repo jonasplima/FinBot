@@ -137,6 +137,8 @@ docker-compose up -d
 Observação:
 - O build Docker ignora `.env` e outros arquivos locais sensíveis via `.dockerignore`
 - As credenciais são injetadas no container em runtime pelo `docker-compose`, não copiadas para a imagem
+- As portas publicadas por padrão ficam presas em `127.0.0.1`, reduzindo exposição acidental na rede local
+- O serviço `finbot` roda com filesystem somente leitura, `tmpfs` em `/tmp` e `no-new-privileges`
 
 ### 4. Conecte o WhatsApp
 
@@ -207,6 +209,14 @@ ruff format .
 
 # Type checking
 mypy app/
+```
+
+### Auditoria de Dependências
+
+```bash
+# Auditoria local de dependências conhecidas
+pip install pip-audit
+pip-audit -r requirements.txt
 ```
 
 ---
