@@ -11,13 +11,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.database.connection import async_session
 from app.database.models import PendingConfirmation, User
+from app.services.ai import AIService
 from app.services.backup import BackupService
 from app.services.budget import BudgetService
 from app.services.chart import ChartService
 from app.services.currency import CurrencyService
 from app.services.evolution import EvolutionService
 from app.services.expense import ExpenseService
-from app.services.gemini import GeminiService
 from app.services.goal import GoalService
 from app.services.rate_limit import RateLimitService
 from app.services.user import UserService
@@ -33,7 +33,7 @@ class WebhookHandler:
     def __init__(self):
         self.processing_committed = False
         self.evolution = EvolutionService()
-        self.gemini = GeminiService()
+        self.ai = AIService()
         self.expense_service = ExpenseService()
         self.budget_service = BudgetService()
         self.chart_service = ChartService()
@@ -139,7 +139,7 @@ class WebhookHandler:
             await self.handle_backup_document(session, msg_data)
             return
 
-        # Process text message with Gemini
+        # Process text message with the configured AI provider
         await self.handle_text_message(session, msg_data, user)
 
     async def handle_text_message(
@@ -148,7 +148,7 @@ class WebhookHandler:
         msg_data: dict,
         user: User,
     ) -> None:
-        """Handle text message with Gemini AI."""
+        """Handle text message with the configured AI provider."""
         phone = msg_data["phone"]
         text = msg_data["text"]
         safe_phone = mask_phone(phone)
@@ -161,8 +161,8 @@ class WebhookHandler:
             if not ai_allowed:
                 return
 
-            # Process with Gemini
-            result = await self.gemini.process_message(text)
+            # Process with the configured AI provider
+            result = await self.ai.process_message(text)
 
             intent = result.get("intent", "unknown")
 
@@ -412,8 +412,8 @@ class WebhookHandler:
             if not ai_allowed:
                 return
 
-            # Process with Gemini Vision
-            result = await self.gemini.process_image(image_data, msg_data.get("text", ""))
+            # Process with the configured vision-capable AI provider
+            result = await self.ai.process_image(image_data, msg_data.get("text", ""))
 
             if result.get("success"):
                 await self.handle_register_expense(session, phone, result)
@@ -468,7 +468,7 @@ class WebhookHandler:
             if not ai_allowed:
                 return
 
-            result = await self.gemini.process_pdf_text(pdf_text, msg_data.get("text", ""))
+            result = await self.ai.process_pdf_text(pdf_text, msg_data.get("text", ""))
 
             if result.get("success"):
                 await self.handle_register_expense(session, phone, result)
@@ -594,7 +594,7 @@ class WebhookHandler:
 
         expense_data = data.get("data", {})
 
-        # Normalize shared_percentage - Gemini may return 0.7 instead of 70
+        # Normalize shared_percentage - some AI providers may return 0.7 instead of 70
         shared_percentage = expense_data.get("shared_percentage")
         if shared_percentage is not None and shared_percentage < 1:
             expense_data["shared_percentage"] = shared_percentage * 100
@@ -1164,7 +1164,7 @@ class WebhookHandler:
 
         if result["success"]:
             progress = result["progress"]
-            msg = self.gemini.format_goal_motivation(progress)
+            msg = self.ai.format_goal_motivation(progress)
             await self.evolution.send_text(phone, msg)
         else:
             await self.evolution.send_text(phone, result["error"])
@@ -1373,7 +1373,7 @@ class WebhookHandler:
             return
 
         # Evaluate response using LLM
-        evaluation = await self.gemini.evaluate_confirmation_response(expense_summary, response)
+        evaluation = await self.ai.evaluate_confirmation_response(expense_summary, response)
 
         action = evaluation.get("action", "unknown")
         adjustments = evaluation.get("adjustments", {})
@@ -1418,7 +1418,7 @@ class WebhookHandler:
                         )
                         # Send alert messages
                         for alert in alerts:
-                            alert_msg = self.gemini.format_budget_alert(alert)
+                            alert_msg = self.ai.format_budget_alert(alert)
                             await self._notify_user(phone, alert_msg)
             else:
                 await self.evolution.send_text(
@@ -1525,7 +1525,7 @@ class WebhookHandler:
 
         if not payment_method:
             # Try using LLM to understand the payment method
-            evaluation = await self.gemini.evaluate_confirmation_response(
+            evaluation = await self.ai.evaluate_confirmation_response(
                 "Selecao de forma de pagamento",
                 response,
             )
@@ -1752,7 +1752,7 @@ class WebhookHandler:
                         session, phone, category_id
                     )
                     for alert in alerts:
-                        alert_msg = self.gemini.format_budget_alert(alert)
+                        alert_msg = self.ai.format_budget_alert(alert)
                         await self._notify_user(phone, alert_msg)
 
         elif response_lower in negative_responses:
@@ -1766,7 +1766,7 @@ class WebhookHandler:
             if not ai_allowed:
                 return
 
-            evaluation = await self.gemini.evaluate_confirmation_response(
+            evaluation = await self.ai.evaluate_confirmation_response(
                 f"Confirmacao de {len(expenses)} despesa(s) recorrente(s) no valor de R$ {total:.2f}",
                 response,
             )
@@ -1894,7 +1894,7 @@ class WebhookHandler:
             if not ai_allowed:
                 return
 
-            evaluation = await self.gemini.evaluate_confirmation_response(summary, response)
+            evaluation = await self.ai.evaluate_confirmation_response(summary, response)
 
             action = evaluation.get("action", "unknown")
 
@@ -2106,7 +2106,7 @@ class WebhookHandler:
         if not ai_allowed:
             return
 
-        evaluation = await self.gemini.evaluate_confirmation_response(
+        evaluation = await self.ai.evaluate_confirmation_response(
             self._build_backup_restore_summary(summary),
             response,
         )

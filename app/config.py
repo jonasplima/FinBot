@@ -4,6 +4,7 @@ import os
 from functools import lru_cache
 from typing import Any
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings
 
 
@@ -29,9 +30,14 @@ class Settings(BaseSettings):
     owner_phone: str = ""
     allowed_numbers: str = ""
 
-    # Gemini AI
+    # AI providers
     gemini_api_key: str
-    gemini_timeout_seconds: int = 25
+    ai_timeout_seconds: int = Field(
+        default=25,
+        validation_alias=AliasChoices("AI_TIMEOUT_SECONDS", "GEMINI_TIMEOUT_SECONDS"),
+    )
+    groq_api_key: str = ""
+    ai_primary_provider: str = "gemini"
 
     # Security
     admin_secret: str
@@ -157,9 +163,15 @@ class Settings(BaseSettings):
         return min(max(self.webhook_idempotency_ttl_seconds, 3_600), 604_800)
 
     @property
-    def effective_gemini_timeout_seconds(self) -> int:
-        """Clamp Gemini timeout to a safe server ceiling."""
-        return min(max(self.gemini_timeout_seconds, 5), 120)
+    def effective_ai_timeout_seconds(self) -> int:
+        """Clamp AI timeout to a safe server ceiling."""
+        return min(max(self.ai_timeout_seconds, 5), 120)
+
+    @property
+    def normalized_ai_primary_provider(self) -> str:
+        """Normalize the preferred primary AI provider."""
+        provider = self.ai_primary_provider.strip().lower()
+        return provider if provider in {"gemini", "groq"} else "gemini"
 
     @property
     def effective_admin_rate_limit_window_seconds(self) -> int:

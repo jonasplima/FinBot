@@ -10,6 +10,8 @@ os.environ["EVOLUTION_API_KEY"] = "test-key"
 os.environ["EVOLUTION_INSTANCE"] = "test-instance"
 os.environ["OWNER_PHONE"] = "5511999999999"
 os.environ["GEMINI_API_KEY"] = "test-gemini-key"
+os.environ["GROQ_API_KEY"] = ""
+os.environ["AI_PRIMARY_PROVIDER"] = "gemini"
 os.environ["ADMIN_SECRET"] = "test-secret"
 
 from datetime import date, datetime, timedelta
@@ -380,15 +382,15 @@ def test_phone():
 
 
 @pytest.fixture
-def mock_gemini_service():
-    """Mock GeminiService for testing without API calls."""
-    with patch("app.services.gemini.GeminiService") as MockGemini:
+def mock_ai_service():
+    """Mock AIService for testing without API calls."""
+    with patch("app.services.ai.AIService") as MockAI:
         mock_instance = MagicMock()
         mock_instance.process_message = AsyncMock()
         mock_instance.process_image = AsyncMock()
         mock_instance.process_pdf_text = AsyncMock()
         mock_instance.evaluate_confirmation_response = AsyncMock()
-        MockGemini.return_value = mock_instance
+        MockAI.return_value = mock_instance
         yield mock_instance
 
 
@@ -418,7 +420,9 @@ def mock_settings():
         mock_settings.owner_phone = "5511999999999"
         mock_settings.allowed_phones = []
         mock_settings.gemini_api_key = "test-gemini-key"
-        mock_settings.gemini_timeout_seconds = 25
+        mock_settings.ai_timeout_seconds = 25
+        mock_settings.groq_api_key = ""
+        mock_settings.ai_primary_provider = "gemini"
         mock_settings.admin_secret = "test-secret"
         mock_settings.webhook_secret = "test-webhook-secret"
         mock_settings.terms_version = "2026-04"

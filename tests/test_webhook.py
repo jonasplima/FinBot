@@ -30,7 +30,7 @@ class TestWebhookHandlerMessageExtraction:
         """Create a webhook handler with mocked services."""
         with (
             patch("app.handlers.webhook.EvolutionService") as MockEvolution,
-            patch("app.handlers.webhook.GeminiService") as MockGemini,
+            patch("app.handlers.webhook.AIService") as MockAI,
         ):
             mock_evolution = MagicMock()
             mock_evolution.send_text = AsyncMock()
@@ -38,14 +38,14 @@ class TestWebhookHandlerMessageExtraction:
             mock_evolution.extract_message_data = MagicMock()
             MockEvolution.return_value = mock_evolution
 
-            mock_gemini = MagicMock()
-            mock_gemini.process_message = AsyncMock()
-            mock_gemini.evaluate_confirmation_response = AsyncMock()
-            MockGemini.return_value = mock_gemini
+            mock_ai = MagicMock()
+            mock_ai.process_message = AsyncMock()
+            mock_ai.evaluate_confirmation_response = AsyncMock()
+            MockAI.return_value = mock_ai
 
             handler = WebhookHandler()
             handler.evolution = mock_evolution
-            handler.gemini = mock_gemini
+            handler.ai = mock_ai
             RateLimitService._fallback_counters.clear()
 
             yield handler
@@ -59,18 +59,18 @@ class TestWebhookHandlerPendingConfirmation:
         """Create a webhook handler with mocked services."""
         with (
             patch("app.handlers.webhook.EvolutionService") as MockEvolution,
-            patch("app.handlers.webhook.GeminiService") as MockGemini,
+            patch("app.handlers.webhook.AIService") as MockAI,
         ):
             mock_evolution = MagicMock()
             mock_evolution.send_text = AsyncMock()
             MockEvolution.return_value = mock_evolution
 
-            mock_gemini = MagicMock()
-            MockGemini.return_value = mock_gemini
+            mock_ai = MagicMock()
+            MockAI.return_value = mock_ai
 
             handler = WebhookHandler()
             handler.evolution = mock_evolution
-            handler.gemini = mock_gemini
+            handler.ai = mock_ai
 
             yield handler
 
@@ -587,7 +587,7 @@ class TestWebhookHandlerBuildExpenseSummary:
     def handler(self):
         with (
             patch("app.handlers.webhook.EvolutionService"),
-            patch("app.handlers.webhook.GeminiService"),
+            patch("app.handlers.webhook.AIService"),
         ):
             return WebhookHandler()
 
@@ -665,7 +665,7 @@ class TestWebhookHandlerApplyAdjustments:
     def handler(self):
         with (
             patch("app.handlers.webhook.EvolutionService"),
-            patch("app.handlers.webhook.GeminiService"),
+            patch("app.handlers.webhook.AIService"),
         ):
             return WebhookHandler()
 
@@ -745,7 +745,7 @@ class TestWebhookHandlerIntentHandling:
         """Create handler with mocked services."""
         with (
             patch("app.handlers.webhook.EvolutionService") as MockEvolution,
-            patch("app.handlers.webhook.GeminiService") as MockGemini,
+            patch("app.handlers.webhook.AIService") as MockAI,
         ):
             mock_evolution = MagicMock()
             mock_evolution.send_text = AsyncMock()
@@ -753,16 +753,16 @@ class TestWebhookHandlerIntentHandling:
             mock_evolution.download_media = AsyncMock()
             MockEvolution.return_value = mock_evolution
 
-            mock_gemini = MagicMock()
-            mock_gemini.process_message = AsyncMock()
-            mock_gemini.process_image = AsyncMock()
-            mock_gemini.process_pdf_text = AsyncMock()
-            mock_gemini.evaluate_confirmation_response = AsyncMock()
-            MockGemini.return_value = mock_gemini
+            mock_ai = MagicMock()
+            mock_ai.process_message = AsyncMock()
+            mock_ai.process_image = AsyncMock()
+            mock_ai.process_pdf_text = AsyncMock()
+            mock_ai.evaluate_confirmation_response = AsyncMock()
+            MockAI.return_value = mock_ai
 
             handler = WebhookHandler()
             handler.evolution = mock_evolution
-            handler.gemini = mock_gemini
+            handler.ai = mock_ai
 
             yield handler
 
@@ -875,7 +875,7 @@ class TestWebhookHandlerIntentHandling:
             },
         )
 
-        handler.gemini.process_message.assert_not_awaited()
+        handler.ai.process_message.assert_not_awaited()
         handler.evolution.send_text.assert_awaited_once()
         call_args = handler.evolution.send_text.call_args
         assert "seus limites diarios atuais" in call_args.args[1].lower()
@@ -970,7 +970,7 @@ class TestWebhookHandlerIntentHandling:
     ):
         """Test successful PDF receipt processing."""
         handler.evolution.download_media.return_value = b"%PDF fake"
-        handler.gemini.process_pdf_text.return_value = {
+        handler.ai.process_pdf_text.return_value = {
             "success": True,
             "intent": "register_expense",
             "data": {
@@ -996,7 +996,7 @@ class TestWebhookHandlerIntentHandling:
                 accepted_user_in_db,
             )
 
-        handler.gemini.process_pdf_text.assert_awaited_once_with(
+        handler.ai.process_pdf_text.assert_awaited_once_with(
             "COMPROVANTE PIX UBER",
             "comprovante uber",
         )
@@ -1043,7 +1043,7 @@ class TestWebhookHandlerIntentHandling:
                 accepted_user_in_db,
             )
 
-        handler.gemini.process_pdf_text.assert_not_called()
+        handler.ai.process_pdf_text.assert_not_called()
         handler.evolution.send_text.assert_awaited_once()
         assert "excede o limite" in handler.evolution.send_text.call_args.args[1].lower()
 
@@ -1539,7 +1539,7 @@ class TestWebhookHandlerIntentHandling:
         seeded_session.add(pending)
         await seeded_session.commit()
 
-        handler.gemini.evaluate_confirmation_response.return_value = {
+        handler.ai.evaluate_confirmation_response.return_value = {
             "action": "confirm",
             "adjustments": {},
         }

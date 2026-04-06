@@ -1,33 +1,46 @@
-"""Tests for GeminiService with mocked API calls."""
+"""Tests for AIService with mocked API calls."""
 
 import json
 from datetime import datetime, timedelta
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.services.gemini import MODEL_FALLBACK_CHAIN, VISION_CAPABLE_MODELS, GeminiService
+from app.services.ai import (
+    GROQ_MODEL_FALLBACK_CHAIN,
+    MODEL_FALLBACK_CHAIN,
+    VISION_CAPABLE_MODELS,
+    AIService,
+)
 
 
-class TestGeminiServiceInit:
-    """Tests for GeminiService initialization."""
+@pytest.fixture(autouse=True)
+def clear_model_exhaustion():
+    """Isolate class-level exhaustion tracking between tests."""
+    AIService._exhausted_models.clear()
+    yield
+    AIService._exhausted_models.clear()
+
+
+class TestAIServiceInit:
+    """Tests for AIService initialization."""
 
     def test_init_models(self):
         """Test that service initializes with correct models."""
-        with patch("app.services.gemini.genai"):
-            service = GeminiService()
+        with patch("app.services.ai.genai"):
+            service = AIService()
 
             assert service.models == MODEL_FALLBACK_CHAIN
             assert service.vision_models == VISION_CAPABLE_MODELS
 
 
-class TestGeminiServiceQuotaDetection:
+class TestAIServiceQuotaDetection:
     """Tests for quota error detection."""
 
     def test_is_quota_error_true(self):
         """Test that quota errors are detected correctly."""
-        with patch("app.services.gemini.genai"):
-            service = GeminiService()
+        with patch("app.services.ai.genai"):
+            service = AIService()
 
             assert service._is_quota_error(Exception("quota exceeded"))
             assert service._is_quota_error(Exception("rate limit reached"))
@@ -36,30 +49,30 @@ class TestGeminiServiceQuotaDetection:
 
     def test_is_quota_error_false(self):
         """Test that non-quota errors are not detected as quota errors."""
-        with patch("app.services.gemini.genai"):
-            service = GeminiService()
+        with patch("app.services.ai.genai"):
+            service = AIService()
 
             assert not service._is_quota_error(Exception("connection error"))
             assert not service._is_quota_error(Exception("invalid api key"))
             assert not service._is_quota_error(Exception("timeout"))
 
 
-class TestGeminiServiceModelExhaustion:
+class TestAIServiceModelExhaustion:
     """Tests for model exhaustion tracking."""
 
     def test_mark_model_exhausted(self):
         """Test marking a model as exhausted."""
-        with patch("app.services.gemini.genai"):
-            service = GeminiService()
+        with patch("app.services.ai.genai"):
+            service = AIService()
             service._mark_model_exhausted("gemini-2.5-flash-lite")
 
-            assert "gemini-2.5-flash-lite" in service._exhausted_models
+            assert "gemini:gemini-2.5-flash-lite" in service._exhausted_models
 
     def test_get_available_model_skips_exhausted(self):
         """Test that exhausted models are skipped."""
-        with patch("app.services.gemini.genai"):
-            service = GeminiService()
-            service._exhausted_models["gemini-2.5-flash-lite"] = datetime.now()
+        with patch("app.services.ai.genai"):
+            service = AIService()
+            service._exhausted_models["gemini:gemini-2.5-flash-lite"] = datetime.now()
 
             available = service._get_available_model()
 
@@ -67,24 +80,26 @@ class TestGeminiServiceModelExhaustion:
 
     def test_exhausted_model_recovers_after_timeout(self):
         """Test that exhausted models become available after timeout."""
-        with patch("app.services.gemini.genai"):
-            service = GeminiService()
+        with patch("app.services.ai.genai"):
+            service = AIService()
             # Mark as exhausted more than 1 hour ago
-            service._exhausted_models["gemini-2.5-flash-lite"] = datetime.now() - timedelta(hours=2)
+            service._exhausted_models["gemini:gemini-2.5-flash-lite"] = (
+                datetime.now() - timedelta(hours=2)
+            )
 
             available = service._get_available_model()
 
             # Model should be available again
             assert available == "gemini-2.5-flash-lite"
-            assert "gemini-2.5-flash-lite" not in service._exhausted_models
+            assert "gemini:gemini-2.5-flash-lite" not in service._exhausted_models
 
 
-class TestGeminiServiceProcessMessage:
-    """Tests for GeminiService.process_message method."""
+class TestAIServiceProcessMessage:
+    """Tests for AIService.process_message method."""
 
     @pytest.fixture
     def mock_model(self):
-        """Create a mock Gemini model."""
+        """Create a mock AI model."""
         mock = MagicMock()
         mock.generate_content = MagicMock()
         return mock
@@ -112,10 +127,10 @@ class TestGeminiServiceProcessMessage:
         mock_response.text = json.dumps(expected_response)
         mock_model.generate_content.return_value = mock_response
 
-        with patch("app.services.gemini.genai") as mock_genai:
+        with patch("app.services.ai.genai") as mock_genai:
             mock_genai.GenerativeModel.return_value = mock_model
 
-            service = GeminiService()
+            service = AIService()
             result = await service.process_message("gastei 45 reais no almoco no pix")
 
             assert result["intent"] == "register_expense"
@@ -137,10 +152,10 @@ class TestGeminiServiceProcessMessage:
         mock_response.text = json.dumps(expected_response)
         mock_model.generate_content.return_value = mock_response
 
-        with patch("app.services.gemini.genai") as mock_genai:
+        with patch("app.services.ai.genai") as mock_genai:
             mock_genai.GenerativeModel.return_value = mock_model
 
-            service = GeminiService()
+            service = AIService()
             result = await service.process_message("quanto gastei esse mes?")
 
             assert result["intent"] == "query_month"
@@ -157,10 +172,10 @@ class TestGeminiServiceProcessMessage:
         mock_response.text = json.dumps(expected_response)
         mock_model.generate_content.return_value = mock_response
 
-        with patch("app.services.gemini.genai") as mock_genai:
+        with patch("app.services.ai.genai") as mock_genai:
             mock_genai.GenerativeModel.return_value = mock_model
 
-            service = GeminiService()
+            service = AIService()
             result = await service.process_message("desfaz")
 
             assert result["intent"] == "undo_last"
@@ -177,10 +192,10 @@ class TestGeminiServiceProcessMessage:
         mock_response.text = json.dumps(expected_response)
         mock_model.generate_content.return_value = mock_response
 
-        with patch("app.services.gemini.genai") as mock_genai:
+        with patch("app.services.ai.genai") as mock_genai:
             mock_genai.GenerativeModel.return_value = mock_model
 
-            service = GeminiService()
+            service = AIService()
             result = await service.process_message("exporta meu backup")
 
             assert result["intent"] == "export_backup"
@@ -197,10 +212,10 @@ class TestGeminiServiceProcessMessage:
         mock_response.text = json.dumps(expected_response)
         mock_model.generate_content.return_value = mock_response
 
-        with patch("app.services.gemini.genai") as mock_genai:
+        with patch("app.services.ai.genai") as mock_genai:
             mock_genai.GenerativeModel.return_value = mock_model
 
-            service = GeminiService()
+            service = AIService()
             result = await service.process_message("meus limites")
 
             assert result["intent"] == "show_limits"
@@ -211,10 +226,10 @@ class TestGeminiServiceProcessMessage:
         mock_response.text = "invalid json response"
         mock_model.generate_content.return_value = mock_response
 
-        with patch("app.services.gemini.genai") as mock_genai:
+        with patch("app.services.ai.genai") as mock_genai:
             mock_genai.GenerativeModel.return_value = mock_model
 
-            service = GeminiService()
+            service = AIService()
             result = await service.process_message("test message")
 
             assert result["intent"] == "unknown"
@@ -224,10 +239,10 @@ class TestGeminiServiceProcessMessage:
         """Test handling API error."""
         mock_model.generate_content.side_effect = Exception("API Error")
 
-        with patch("app.services.gemini.genai") as mock_genai:
+        with patch("app.services.ai.genai") as mock_genai:
             mock_genai.GenerativeModel.return_value = mock_model
 
-            service = GeminiService()
+            service = AIService()
             result = await service.process_message("test message")
 
             assert result["intent"] == "unknown"
@@ -244,31 +259,31 @@ class TestGeminiServiceProcessMessage:
         ok_model = MagicMock()
         ok_model.generate_content.return_value = ok_response
 
-        with patch("app.services.gemini.genai") as mock_genai:
+        with patch("app.services.ai.genai") as mock_genai:
             mock_genai.GenerativeModel.side_effect = [slow_model, ok_model]
 
-            service = GeminiService()
-            with patch("app.services.gemini.settings.gemini_timeout_seconds", 5):
+            service = AIService()
+            with patch("app.services.ai.settings.ai_timeout_seconds", 5):
                 result = await service.process_message("quanto gastei esse mes?")
 
         assert result["intent"] == "query_month"
 
     async def test_process_message_returns_unknown_when_all_models_timeout(self):
         """Test full timeout chain returns controlled unknown response."""
-        with patch("app.services.gemini.genai") as mock_genai:
+        with patch("app.services.ai.genai") as mock_genai:
             timeout_model = MagicMock()
             timeout_model.generate_content.side_effect = TimeoutError("timeout")
             mock_genai.GenerativeModel.return_value = timeout_model
 
-            service = GeminiService()
-            with patch("app.services.gemini.settings.gemini_timeout_seconds", 5):
+            service = AIService()
+            with patch("app.services.ai.settings.ai_timeout_seconds", 5):
                 result = await service.process_message("test message")
 
         assert result["intent"] == "unknown"
         assert result["confidence"] == 0
 
     async def test_generate_with_fallback_uses_asyncio_to_thread(self, mock_model):
-        """Test Gemini blocking call is delegated out of the event loop."""
+        """Test blocking AI provider call is delegated out of the event loop."""
         mock_response = MagicMock()
         mock_response.text = json.dumps({"intent": "query_month", "data": {}, "confidence": 0.9})
         mock_model.generate_content.return_value = mock_response
@@ -277,27 +292,113 @@ class TestGeminiServiceProcessMessage:
             return func(*args, **kwargs)
 
         with (
-            patch("app.services.gemini.genai") as mock_genai,
+            patch("app.services.ai.genai") as mock_genai,
             patch(
-                "app.services.gemini.asyncio.to_thread", side_effect=fake_to_thread
+                "app.services.ai.asyncio.to_thread", side_effect=fake_to_thread
             ) as mock_to_thread,
         ):
             mock_genai.GenerativeModel.return_value = mock_model
 
-            service = GeminiService()
+            service = AIService()
             result = await service.process_message("quanto gastei esse mes?")
 
         assert result["intent"] == "query_month"
         assert mock_to_thread.await_count >= 1
 
+    async def test_process_message_falls_back_to_groq_on_gemini_quota(self):
+        """Test quota exhaustion in the primary provider falls back to Groq text generation."""
+        groq_payload = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {"intent": "query_month", "data": {}, "confidence": 0.9}
+                        )
+                    }
+                }
+            ]
+        }
 
-class TestGeminiServiceEvaluateConfirmation:
-    """Tests for GeminiService.evaluate_confirmation_response method."""
+        quota_model = MagicMock()
+        quota_model.generate_content.side_effect = Exception("429 quota exceeded")
+
+        mock_http_response = MagicMock()
+        mock_http_response.json.return_value = groq_payload
+        mock_http_response.raise_for_status.return_value = None
+
+        mock_http_client = MagicMock()
+        mock_http_client.__aenter__.return_value = mock_http_client
+        mock_http_client.__aexit__.return_value = False
+        mock_http_client.post = AsyncMock(return_value=mock_http_response)
+
+        with (
+            patch("app.services.ai.genai") as mock_genai,
+            patch("app.services.ai.httpx.AsyncClient", return_value=mock_http_client),
+            patch("app.services.ai.settings.groq_api_key", "test-groq-key"),
+        ):
+            mock_genai.GenerativeModel.return_value = quota_model
+
+            service = AIService()
+            result = await service.process_message("quanto gastei esse mes?")
+
+        assert result["intent"] == "query_month"
+
+    async def test_process_image_falls_back_to_groq_on_gemini_quota(self):
+        """Test quota exhaustion in the primary provider falls back to Groq vision generation."""
+        groq_payload = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {
+                                "success": True,
+                                "intent": "register_expense",
+                                "data": {
+                                    "description": "Restaurante XYZ",
+                                    "amount": 89.90,
+                                    "category": "Alimentação",
+                                    "payment_method": None,
+                                },
+                                "confidence": 0.9,
+                            }
+                        )
+                    }
+                }
+            ]
+        }
+
+        quota_model = MagicMock()
+        quota_model.generate_content.side_effect = Exception("quota exceeded")
+
+        mock_http_response = MagicMock()
+        mock_http_response.json.return_value = groq_payload
+        mock_http_response.raise_for_status.return_value = None
+
+        mock_http_client = MagicMock()
+        mock_http_client.__aenter__.return_value = mock_http_client
+        mock_http_client.__aexit__.return_value = False
+        mock_http_client.post = AsyncMock(return_value=mock_http_response)
+
+        with (
+            patch("app.services.ai.genai") as mock_genai,
+            patch("app.services.ai.httpx.AsyncClient", return_value=mock_http_client),
+            patch("app.services.ai.settings.groq_api_key", "test-groq-key"),
+        ):
+            mock_genai.GenerativeModel.return_value = quota_model
+
+            service = AIService()
+            result = await service.process_image(b"fake_image_data")
+
+        assert result["success"] is True
+
+
+class TestAIServiceEvaluateConfirmation:
+    """Tests for AIService.evaluate_confirmation_response method."""
 
     async def test_fast_path_confirm(self):
         """Test fast path for confirmation responses."""
-        with patch("app.services.gemini.genai"):
-            service = GeminiService()
+        with patch("app.services.ai.genai"):
+            service = AIService()
 
             # Test various confirmation phrases
             for phrase in ["sim", "ok", "confirma", "pode", "certo", "beleza"]:
@@ -307,8 +408,8 @@ class TestGeminiServiceEvaluateConfirmation:
 
     async def test_fast_path_cancel(self):
         """Test fast path for cancellation responses."""
-        with patch("app.services.gemini.genai"):
-            service = GeminiService()
+        with patch("app.services.ai.genai"):
+            service = AIService()
 
             # Test various cancellation phrases
             for phrase in ["nao", "não", "cancela", "desisto"]:
@@ -330,10 +431,10 @@ class TestGeminiServiceEvaluateConfirmation:
         mock_model = MagicMock()
         mock_model.generate_content.return_value = mock_response
 
-        with patch("app.services.gemini.genai") as mock_genai:
+        with patch("app.services.ai.genai") as mock_genai:
             mock_genai.GenerativeModel.return_value = mock_model
 
-            service = GeminiService()
+            service = AIService()
             result = await service.evaluate_confirmation_response(
                 "expense summary", "muda pra 60 reais"
             )
@@ -342,8 +443,8 @@ class TestGeminiServiceEvaluateConfirmation:
             assert result["adjustments"]["amount"] == 60.00
 
 
-class TestGeminiServiceProcessImage:
-    """Tests for GeminiService.process_image method."""
+class TestAIServiceProcessImage:
+    """Tests for AIService.process_image method."""
 
     async def test_process_image_success(self):
         """Test successful image processing."""
@@ -365,10 +466,10 @@ class TestGeminiServiceProcessImage:
         mock_model = MagicMock()
         mock_model.generate_content.return_value = mock_response
 
-        with patch("app.services.gemini.genai") as mock_genai:
+        with patch("app.services.ai.genai") as mock_genai:
             mock_genai.GenerativeModel.return_value = mock_model
 
-            service = GeminiService()
+            service = AIService()
             result = await service.process_image(b"fake_image_data")
 
             assert result["success"] is True
@@ -387,17 +488,17 @@ class TestGeminiServiceProcessImage:
         mock_model = MagicMock()
         mock_model.generate_content.return_value = mock_response
 
-        with patch("app.services.gemini.genai") as mock_genai:
+        with patch("app.services.ai.genai") as mock_genai:
             mock_genai.GenerativeModel.return_value = mock_model
 
-            service = GeminiService()
+            service = AIService()
             result = await service.process_image(b"fake_image_data")
 
             assert result["success"] is False
 
 
-class TestGeminiServiceProcessPdfText:
-    """Tests for GeminiService.process_pdf_text method."""
+class TestAIServiceProcessPdfText:
+    """Tests for AIService.process_pdf_text method."""
 
     async def test_process_pdf_text_success(self):
         """Test successful PDF text processing."""
@@ -419,10 +520,10 @@ class TestGeminiServiceProcessPdfText:
         mock_model = MagicMock()
         mock_model.generate_content.return_value = mock_response
 
-        with patch("app.services.gemini.genai") as mock_genai:
+        with patch("app.services.ai.genai") as mock_genai:
             mock_genai.GenerativeModel.return_value = mock_model
 
-            service = GeminiService()
+            service = AIService()
             result = await service.process_pdf_text("COMPROVANTE PIX\nVALOR R$ 120,50")
 
             assert result["success"] is True
@@ -441,35 +542,41 @@ class TestGeminiServiceProcessPdfText:
         mock_model = MagicMock()
         mock_model.generate_content.return_value = mock_response
 
-        with patch("app.services.gemini.genai") as mock_genai:
+        with patch("app.services.ai.genai") as mock_genai:
             mock_genai.GenerativeModel.return_value = mock_model
 
-            service = GeminiService()
+            service = AIService()
             result = await service.process_pdf_text("arquivo qualquer")
 
             assert result["success"] is False
 
 
-class TestGeminiServiceModelStatus:
-    """Tests for GeminiService.get_model_status method."""
+class TestAIServiceModelStatus:
+    """Tests for AIService.get_model_status method."""
 
     def test_get_model_status_all_available(self):
         """Test getting model status when all models are available."""
-        with patch("app.services.gemini.genai"):
-            service = GeminiService()
-            status = service.get_model_status()
+        with patch("app.services.ai.genai"):
+            with patch("app.services.ai.settings.groq_api_key", "test-groq-key"):
+                service = AIService()
+                status = service.get_model_status()
 
             for model in MODEL_FALLBACK_CHAIN:
-                assert model in status
-                assert status[model]["available"] is True
+                key = f"gemini:{model}"
+                assert key in status
+                assert status[key]["available"] is True
+            for model in GROQ_MODEL_FALLBACK_CHAIN:
+                key = f"groq:{model}"
+                assert key in status
+                assert status[key]["available"] is True
 
     def test_get_model_status_some_exhausted(self):
         """Test getting model status with some exhausted models."""
-        with patch("app.services.gemini.genai"):
-            service = GeminiService()
-            service._exhausted_models["gemini-2.5-flash-lite"] = datetime.now()
+        with patch("app.services.ai.genai"):
+            service = AIService()
+            service._exhausted_models["gemini:gemini-2.5-flash-lite"] = datetime.now()
 
             status = service.get_model_status()
 
-            assert status["gemini-2.5-flash-lite"]["available"] is False
-            assert "exhausted_at" in status["gemini-2.5-flash-lite"]
+            assert status["gemini:gemini-2.5-flash-lite"]["available"] is False
+            assert "exhausted_at" in status["gemini:gemini-2.5-flash-lite"]

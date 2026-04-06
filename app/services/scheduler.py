@@ -283,13 +283,13 @@ class SchedulerService:
 
     async def _send_weekly_goal_motivation_impl(self) -> None:
         """Actual weekly goal motivation logic executed under the scheduler guard."""
-        from app.services.gemini import GeminiService
+        from app.services.ai import AIService
         from app.services.goal import GoalService
 
         logger.info("Starting weekly goal motivation job...")
 
         goal_service = GoalService()
-        gemini_service = GeminiService()
+        ai_service = AIService()
 
         try:
             async with async_session() as session:
@@ -306,7 +306,7 @@ class SchedulerService:
                         motivations = await goal_service.get_weekly_motivation(session, phone)
 
                         for motivation in motivations:
-                            msg = gemini_service.format_goal_motivation(motivation)
+                            msg = ai_service.format_goal_motivation(motivation)
                             await self.evolution.send_text(phone, msg)
                             sent_count += 1
 

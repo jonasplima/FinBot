@@ -8,14 +8,14 @@
   [![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](#)
   [![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)](#)
   [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-316192?style=for-the-badge&logo=postgresql&logoColor=white)](#)
-  [![Gemini](https://img.shields.io/badge/Google_Gemini-8E75B2?style=for-the-badge&logo=google&logoColor=white)](#)
+  [![AI](https://img.shields.io/badge/LLM-Multi_Provider-0F766E?style=for-the-badge)](#)
 </div>
 
 <br/>
 
 O **FinBot** é um assistente financeiro pessoal que opera diretamente no WhatsApp. Registre gastos, receitas e controle seu orçamento através de mensagens de texto naturais ou fotos de notas fiscais.
 
-Através da integração da **Evolution API** com o **Google Gemini**, o FinBot interpreta suas mensagens, categoriza despesas automaticamente e mantém seu controle financeiro organizado.
+Através da integração da **Evolution API** com provedores de **IA generativa**, o FinBot interpreta suas mensagens, categoriza despesas automaticamente e mantém seu controle financeiro organizado.
 
 ---
 
@@ -75,7 +75,7 @@ Através da integração da **Evolution API** com o **Google Gemini**, o FinBot 
                     ┌───────────────────────────┼───────────────────────────┐
                     │                           │                           │
               ┌─────▼─────┐             ┌───────▼───────┐           ┌───────▼───────┐
-              │ PostgreSQL │             │ Google Gemini │           │     Redis     │
+              │ PostgreSQL │             │  AI Provider  │           │     Redis     │
               │    (DB)    │             │     (AI)      │           │    (Cache)    │
               └───────────┘             └───────────────┘           └───────────────┘
 ```
@@ -84,7 +84,7 @@ Através da integração da **Evolution API** com o **Google Gemini**, o FinBot 
 
 - **FastAPI** - Framework web assíncrono de alta performance
 - **Evolution API** - Integração nativa com WhatsApp
-- **Google Gemini** - IA para interpretação de mensagens e imagens
+- **IA multi-provider** - interpretação de mensagens, imagens e documentos com Gemini/Groq
 - **PostgreSQL** - Banco de dados relacional
 - **Redis** - Cache e controle de estado
 - **APScheduler** - Agendamento de tarefas (despesas recorrentes)
@@ -97,7 +97,7 @@ Através da integração da **Evolution API** com o **Google Gemini**, o FinBot 
 ### Pré-requisitos
 
 - [Docker](https://www.docker.com/) e [Docker Compose](https://docs.docker.com/compose/)
-- Conta no [Google AI Studio](https://aistudio.google.com/) para chave da API Gemini
+- Conta no [Google AI Studio](https://aistudio.google.com/) e/ou [Groq](https://console.groq.com/) para chaves de IA
 
 ### 1. Clone o repositório
 
@@ -118,6 +118,9 @@ Edite o arquivo `.env`:
 # Obrigatórios
 OWNER_PHONE=5511999999999        # Seu número (formato internacional)
 GEMINI_API_KEY=sua_chave_gemini  # Do Google AI Studio
+GROQ_API_KEY=sua_chave_groq      # Opcional, para fallback/alternativa
+AI_PRIMARY_PROVIDER=gemini       # "gemini" ou "groq"
+AI_TIMEOUT_SECONDS=25            # Timeout comum dos provedores
 ADMIN_SECRET=senha_segura        # Para acessar endpoints admin via Authorization
 EVOLUTION_API_KEY=chave_aleatoria # Gere com: openssl rand -hex 32
 WEBHOOK_SECRET=chave_webhook     # Autenticação do webhook da Evolution
@@ -140,6 +143,7 @@ Observação:
 - As portas publicadas por padrão ficam presas em `127.0.0.1`, reduzindo exposição acidental na rede local
 - O serviço `finbot` roda com filesystem somente leitura, `tmpfs` em `/tmp` e `no-new-privileges`
 - As imagens do Compose e do `Dockerfile` podem ser travadas por digest via `.env`, sem editar o YAML
+- O processamento de IA pode usar `Gemini` e `Groq`, com fallback automático entre provedores quando configurados
 
 ### 4. Conecte o WhatsApp
 
@@ -313,5 +317,5 @@ Este projeto é privado e de uso pessoal.
 ---
 
 <div align="center">
-  <sub>Desenvolvido com FastAPI + Google Gemini</sub>
+  <sub>Desenvolvido com FastAPI + IA multi-provider</sub>
 </div>

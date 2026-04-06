@@ -484,8 +484,8 @@ class TestRecurringConfirmationHandler:
         return mock
 
     @pytest.fixture
-    def mock_gemini(self):
-        """Mock GeminiService."""
+    def mock_ai(self):
+        """Mock AIService."""
         mock = MagicMock()
         mock.evaluate_confirmation_response = AsyncMock(
             return_value={"action": "confirm", "adjustments": {}, "confidence": 1.0}
@@ -529,7 +529,7 @@ class TestRecurringConfirmationHandler:
         test_phone,
         pending_recurring,
         mock_evolution,
-        mock_gemini,
+        mock_ai,
         accepted_user_in_db,
     ):
         """Test that confirming recurring creates expenses."""
@@ -537,7 +537,7 @@ class TestRecurringConfirmationHandler:
 
         handler = WebhookHandler()
         handler.evolution = mock_evolution
-        handler.gemini = mock_gemini
+        handler.ai = mock_ai
 
         await handler._handle_recurring_confirmation(
             seeded_session,
@@ -571,7 +571,7 @@ class TestRecurringConfirmationHandler:
         test_phone,
         pending_recurring,
         mock_evolution,
-        mock_gemini,
+        mock_ai,
         accepted_user_in_db,
     ):
         """Test that denying recurring ignores expenses."""
@@ -579,7 +579,7 @@ class TestRecurringConfirmationHandler:
 
         handler = WebhookHandler()
         handler.evolution = mock_evolution
-        handler.gemini = mock_gemini
+        handler.ai = mock_ai
 
         await handler._handle_recurring_confirmation(
             seeded_session,

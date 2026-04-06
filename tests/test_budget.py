@@ -333,17 +333,17 @@ class TestBudgetService:
         assert len(alerts2) == 0
 
 
-class TestGeminiServiceBudgetFormatting:
-    """Tests for GeminiService budget alert formatting."""
+class TestAIServiceBudgetFormatting:
+    """Tests for AIService budget alert formatting."""
 
     @pytest.fixture
-    def gemini_service(self):
-        """Create GeminiService instance."""
-        from app.services.gemini import GeminiService
+    def ai_service(self):
+        """Create AIService instance."""
+        from app.services.ai import AIService
 
-        return GeminiService()
+        return AIService()
 
-    def test_format_budget_alert_50_percent(self, gemini_service):
+    def test_format_budget_alert_50_percent(self, ai_service):
         """Test formatting 50% budget alert."""
         alert = {
             "threshold": 50,
@@ -354,7 +354,7 @@ class TestGeminiServiceBudgetFormatting:
             "exceeded": False,
         }
 
-        msg = gemini_service.format_budget_alert(alert)
+        msg = ai_service.format_budget_alert(alert)
 
         assert "Aviso de orcamento" in msg
         assert "50%" in msg
@@ -362,7 +362,7 @@ class TestGeminiServiceBudgetFormatting:
         assert "500.00" in msg
         assert "250.00" in msg
 
-    def test_format_budget_alert_80_percent(self, gemini_service):
+    def test_format_budget_alert_80_percent(self, ai_service):
         """Test formatting 80% budget alert."""
         alert = {
             "threshold": 80,
@@ -373,13 +373,13 @@ class TestGeminiServiceBudgetFormatting:
             "exceeded": False,
         }
 
-        msg = gemini_service.format_budget_alert(alert)
+        msg = ai_service.format_budget_alert(alert)
 
         assert "Cuidado" in msg
         assert "80%" in msg
         assert "Alimentação" in msg
 
-    def test_format_budget_alert_exceeded(self, gemini_service):
+    def test_format_budget_alert_exceeded(self, ai_service):
         """Test formatting exceeded budget alert."""
         alert = {
             "threshold": 100,
@@ -390,7 +390,7 @@ class TestGeminiServiceBudgetFormatting:
             "exceeded": True,
         }
 
-        msg = gemini_service.format_budget_alert(alert)
+        msg = ai_service.format_budget_alert(alert)
 
         assert "Limite atingido" in msg
         assert "excedeu" in msg

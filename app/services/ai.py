@@ -1,20 +1,23 @@
-"""Google Gemini AI integration service."""
+"""Generic AI service with support for multiple providers."""
 
 import asyncio
 import base64
 import json
 import logging
 from datetime import date, datetime, timedelta
+from typing import Any
 
 import google.generativeai as genai
+import httpx
 
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-# Configure Gemini
-genai.configure(api_key=settings.gemini_api_key)
+# Configure Gemini provider when available
+if settings.gemini_api_key:
+    genai.configure(api_key=settings.gemini_api_key)
 
 # Model fallback chain - ordered by priority (best to fallback)
 MODEL_FALLBACK_CHAIN = [
@@ -30,6 +33,16 @@ MODEL_FALLBACK_CHAIN = [
 VISION_CAPABLE_MODELS = [
     "gemini-2.5-flash-lite",
     "gemini-2.5-flash",
+]
+
+GROQ_MODEL_FALLBACK_CHAIN = [
+    "openai/gpt-oss-20b",
+    "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant",
+]
+
+GROQ_VISION_MODEL_FALLBACK_CHAIN = [
+    "meta-llama/llama-4-scout-17b-16e-instruct",
 ]
 
 
@@ -481,16 +494,19 @@ Responda APENAS com o JSON.
 """
 
 
-class GeminiService:
-    """Service for interacting with Google Gemini AI with automatic model fallback."""
+class AIService:
+    """Service for interacting with multiple AI providers with fallback support."""
 
     # Class-level tracking of exhausted models (shared across instances)
     _exhausted_models: dict[str, datetime] = {}
     _exhausted_timeout = timedelta(hours=1)  # Retry exhausted models after 1 hour
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.models = MODEL_FALLBACK_CHAIN
         self.vision_models = VISION_CAPABLE_MODELS
+        self.groq_models = GROQ_MODEL_FALLBACK_CHAIN
+        self.groq_vision_models = GROQ_VISION_MODEL_FALLBACK_CHAIN
+        self.primary_provider = settings.normalized_ai_primary_provider
         self._current_model_index = 0
         self._current_vision_model_index = 0
 
@@ -504,54 +520,156 @@ class GeminiService:
             "429",
             "too many requests",
             "resourceexhausted",
+            "credits",
+            "rate_limit_exceeded",
         ]
         return any(indicator in error_str for indicator in quota_indicators)
 
-    def _get_available_model(self, vision_only: bool = False) -> str | None:
+    def _get_available_model(
+        self,
+        vision_only: bool = False,
+        provider: str | None = None,
+    ) -> str | None:
         """Get the next available model, skipping exhausted ones."""
-        model_list = self.vision_models if vision_only else self.models
+        provider_chains = self._build_provider_chains(vision_only)
+        if provider:
+            model_list = [
+                model_name
+                for provider_name, model_name in provider_chains
+                if provider_name == provider
+            ]
+        else:
+            model_list = [model_name for _, model_name in provider_chains]
         now = datetime.now()
 
         # Clean up expired exhausted models
-        expired = [
-            model
-            for model, exhausted_at in self._exhausted_models.items()
-            if now - exhausted_at > self._exhausted_timeout
-        ]
-        for model in expired:
-            del self._exhausted_models[model]
-            logger.info(f"Model {model} is available again after timeout")
+        expired = []
+        for model_key, exhausted_at in self._exhausted_models.items():
+            if now - exhausted_at > self._exhausted_timeout:
+                expired.append(model_key)
+        for model_key in expired:
+            del self._exhausted_models[model_key]
+            logger.info("Model %s is available again after timeout", model_key)
 
         # Find first available model
         for model in model_list:
-            if model not in self._exhausted_models:
+            if self._get_model_key(provider or self.primary_provider, model) not in self._exhausted_models:
                 return model
 
         # All models exhausted - try the first one anyway (might have reset)
         logger.warning("All models exhausted, trying first model in chain")
         return model_list[0] if model_list else None
 
-    def _mark_model_exhausted(self, model_name: str) -> None:
+    def _mark_model_exhausted(self, model_name: str, provider: str = "gemini") -> None:
         """Mark a model as exhausted."""
-        self._exhausted_models[model_name] = datetime.now()
-        logger.warning(f"Model {model_name} marked as exhausted (quota exceeded)")
+        model_key = self._get_model_key(provider, model_name)
+        self._exhausted_models[model_key] = datetime.now()
+        logger.warning("Model %s marked as exhausted (quota exceeded)", model_key)
+
+    def _has_gemini(self) -> bool:
+        """Whether the Gemini provider is configured."""
+        return bool(settings.gemini_api_key)
+
+    def _has_groq(self) -> bool:
+        """Whether Groq is configured."""
+        return bool(settings.groq_api_key)
+
+    def _get_model_key(self, provider: str, model_name: str) -> str:
+        """Build a unique key for per-provider model exhaustion tracking."""
+        return f"{provider}:{model_name}"
+
+    def _build_provider_chains(self, vision_only: bool = False) -> list[tuple[str, str]]:
+        """Build the ordered provider/model fallback chain."""
+        gemini_models = self.vision_models if vision_only else self.models
+        groq_models = self.groq_vision_models if vision_only else self.groq_models
+
+        ordered_providers = (
+            ["groq", "gemini"]
+            if self.primary_provider == "groq"
+            else ["gemini", "groq"]
+        )
+
+        provider_chains: list[tuple[str, str]] = []
+        for provider in ordered_providers:
+            if provider == "gemini" and self._has_gemini():
+                provider_chains.extend(("gemini", model_name) for model_name in gemini_models)
+            if provider == "groq" and self._has_groq():
+                provider_chains.extend(("groq", model_name) for model_name in groq_models)
+        return provider_chains
 
     def _generate_content_sync(
         self,
         model_name: str,
         contents: list,
         generation_config: genai.GenerationConfig,
-    ):
-        """Run blocking Gemini SDK call synchronously."""
+    ) -> Any:
+        """Run the blocking Gemini SDK call synchronously."""
         model = genai.GenerativeModel(model_name)
         return model.generate_content(
             contents,
             generation_config=generation_config,
         )
 
+    async def _generate_content_groq(
+        self,
+        model_name: str,
+        contents: list[Any],
+        generation_config: genai.GenerationConfig,
+    ) -> str:
+        """Generate content using Groq's OpenAI-compatible chat API."""
+        headers = {
+            "Authorization": f"Bearer {settings.groq_api_key}",
+            "Content-Type": "application/json",
+        }
+        payload: dict[str, Any] = {
+            "model": model_name,
+            "messages": self._build_groq_messages(contents),
+            "temperature": getattr(generation_config, "temperature", 0.1),
+        }
+        if getattr(generation_config, "response_mime_type", "") == "application/json":
+            payload["response_format"] = {"type": "json_object"}
+
+        async with httpx.AsyncClient(timeout=settings.effective_ai_timeout_seconds) as client:
+            response = await client.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers=headers,
+                json=payload,
+            )
+            response.raise_for_status()
+            data = response.json()
+
+        return str(data["choices"][0]["message"]["content"])
+
+    def _build_groq_messages(self, contents: list[Any]) -> list[dict[str, Any]]:
+        """Convert the existing content shape into Groq chat-completions messages."""
+        if not contents:
+            return []
+
+        messages: list[dict[str, Any]] = []
+        content_parts = list(contents)
+
+        if len(content_parts) > 1 and isinstance(content_parts[0], str):
+            messages.append({"role": "system", "content": content_parts[0]})
+            content_parts = content_parts[1:]
+
+        user_content: list[dict[str, Any]] = []
+        for item in content_parts:
+            if isinstance(item, str):
+                user_content.append({"type": "text", "text": item})
+                continue
+
+            if isinstance(item, dict) and {"mime_type", "data"} <= set(item):
+                data_url = f"data:{item['mime_type']};base64,{item['data']}"
+                user_content.append({"type": "image_url", "image_url": {"url": data_url}})
+
+        if user_content:
+            messages.append({"role": "user", "content": user_content})
+
+        return messages
+
     async def _generate_with_fallback(
         self,
-        contents: list,
+        contents: list[Any],
         generation_config: genai.GenerationConfig,
         vision_only: bool = False,
     ) -> str:
@@ -569,43 +687,56 @@ class GeminiService:
         Raises:
             Exception: If all models fail
         """
-        model_list = self.vision_models if vision_only else self.models
+        provider_chain = self._build_provider_chains(vision_only)
         last_error = None
 
-        for model_name in model_list:
+        for provider_name, model_name in provider_chain:
             # Skip exhausted models
-            if model_name in self._exhausted_models:
+            if self._get_model_key(provider_name, model_name) in self._exhausted_models:
                 continue
 
             try:
-                logger.debug(f"Trying model: {model_name}")
+                logger.debug("Trying model %s via provider %s", model_name, provider_name)
 
-                response = await asyncio.wait_for(
-                    asyncio.to_thread(
-                        self._generate_content_sync,
-                        model_name,
-                        contents,
-                        generation_config,
-                    ),
-                    timeout=settings.effective_gemini_timeout_seconds,
+                if provider_name == "gemini":
+                    response = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            self._generate_content_sync,
+                            model_name,
+                            contents,
+                            generation_config,
+                        ),
+                        timeout=settings.effective_ai_timeout_seconds,
+                    )
+                    logger.info("Successfully used model: %s via Gemini", model_name)
+                    return response.text
+
+                response_text = await self._generate_content_groq(
+                    model_name,
+                    contents,
+                    generation_config,
                 )
-
-                logger.info(f"Successfully used model: {model_name}")
-                return response.text
+                logger.info("Successfully used model: %s via Groq", model_name)
+                return response_text
 
             except TimeoutError as e:
                 last_error = e
                 logger.warning(
-                    "Gemini model %s timed out after %ss, trying next model",
+                    "Model %s via %s timed out after %ss, trying next model",
                     model_name,
-                    settings.effective_gemini_timeout_seconds,
+                    provider_name,
+                    settings.effective_ai_timeout_seconds,
                 )
                 continue
             except Exception as e:
                 last_error = e
                 if self._is_quota_error(e):
-                    self._mark_model_exhausted(model_name)
-                    logger.warning(f"Quota exceeded for {model_name}, trying next model")
+                    self._mark_model_exhausted(model_name, provider=provider_name)
+                    logger.warning(
+                        "Quota exceeded for %s via %s, trying next model",
+                        model_name,
+                        provider_name,
+                    )
                     continue
                 else:
                     # Non-quota error, re-raise
@@ -614,7 +745,7 @@ class GeminiService:
         # All models failed
         if last_error:
             raise last_error
-        raise Exception("No models available")
+        raise Exception("No AI models available")
 
     async def process_message(self, text: str) -> dict:
         """Process text message and extract intent/data."""
@@ -633,7 +764,7 @@ class GeminiService:
 
             # Parse JSON response
             result = json.loads(response_text)
-            logger.debug(f"Gemini response: {result}")
+            logger.debug(f"AI response: {result}")
 
             if result.get("intent") == "export":
                 export_data = result.setdefault("data", {})
@@ -644,10 +775,10 @@ class GeminiService:
             return result
 
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse Gemini response: {e}")
+            logger.error(f"Failed to parse AI response: {e}")
             return {"intent": "unknown", "data": {}, "confidence": 0}
         except Exception as e:
-            logger.error(f"Gemini error: {e}")
+            logger.error(f"AI provider error: {e}")
             return {"intent": "unknown", "data": {}, "confidence": 0}
 
     async def process_image(
@@ -682,15 +813,15 @@ class GeminiService:
             )
 
             result = json.loads(response_text)
-            logger.debug(f"Gemini vision response: {result}")
+            logger.debug(f"AI vision response: {result}")
 
             return result
 
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse Gemini vision response: {e}")
+            logger.error(f"Failed to parse AI vision response: {e}")
             return {"success": False, "error": "Falha ao interpretar resposta"}
         except Exception as e:
-            logger.error(f"Gemini vision error: {e}")
+            logger.error(f"AI vision error: {e}")
             return {"success": False, "error": str(e)}
 
     async def process_pdf_text(
@@ -714,15 +845,15 @@ class GeminiService:
             )
 
             result = json.loads(response_text)
-            logger.debug(f"Gemini PDF response: {result}")
+            logger.debug(f"AI PDF response: {result}")
 
             return result
 
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse Gemini PDF response: {e}")
+            logger.error(f"Failed to parse AI PDF response: {e}")
             return {"success": False, "error": "Falha ao interpretar comprovante em PDF"}
         except Exception as e:
-            logger.error(f"Gemini PDF error: {e}")
+            logger.error(f"AI PDF error: {e}")
             return {"success": False, "error": str(e)}
 
     async def evaluate_confirmation_response(
@@ -792,7 +923,7 @@ class GeminiService:
                 return {"action": "cancel", "adjustments": {}, "confidence": 1.0}
 
             # Use LLM for more complex responses
-            logger.info(f"Using LLM for confirmation evaluation: '{user_response}'")
+            logger.info(f"Using AI provider for confirmation evaluation: '{user_response}'")
             prompt = CONFIRMATION_PROMPT.format(
                 expense_summary=expense_summary,
                 user_response=user_response,
@@ -806,29 +937,35 @@ class GeminiService:
                 ),
             )
 
-            logger.debug(f"Gemini confirmation raw response: {response_text}")
+            logger.debug(f"AI confirmation raw response: {response_text}")
             result = json.loads(response_text)
-            logger.info(f"Gemini confirmation evaluation: action={result.get('action')}")
+            logger.info(f"AI confirmation evaluation: action={result.get('action')}")
 
             return result
 
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse Gemini confirmation response: {e}")
+            logger.error(f"Failed to parse AI confirmation response: {e}")
             # Default to asking for clarification
             return {"action": "unknown", "adjustments": {}, "confidence": 0}
         except Exception as e:
-            logger.error(f"Gemini confirmation error: {e}")
+            logger.error(f"AI confirmation error: {e}")
             return {"action": "unknown", "adjustments": {}, "confidence": 0}
 
     def get_model_status(self) -> dict:
         """Get current status of all models (for debugging/monitoring)."""
         now = datetime.now()
         status = {}
-        for model in self.models:
-            if model in self._exhausted_models:
-                exhausted_at = self._exhausted_models[model]
+        all_models = (
+            [("gemini", model) for model in self.models]
+            + [("groq", model) for model in self.groq_models]
+        )
+        for provider_name, model in all_models:
+            model_key = self._get_model_key(provider_name, model)
+            status_key = f"{provider_name}:{model}"
+            if model_key in self._exhausted_models:
+                exhausted_at = self._exhausted_models[model_key]
                 time_remaining = self._exhausted_timeout - (now - exhausted_at)
-                status[model] = {
+                status[status_key] = {
                     "available": False,
                     "exhausted_at": exhausted_at.isoformat(),
                     "available_in": str(time_remaining)
@@ -836,7 +973,7 @@ class GeminiService:
                     else "soon",
                 }
             else:
-                status[model] = {"available": True}
+                status[status_key] = {"available": True}
         return status
 
     def format_budget_alert(self, alert: dict) -> str:

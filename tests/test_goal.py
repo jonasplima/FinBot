@@ -439,17 +439,17 @@ class TestGoalService:
         assert progress["percentage"] == 0.0
 
 
-class TestGeminiServiceGoalFormatting:
-    """Tests for GeminiService goal motivation formatting."""
+class TestAIServiceGoalFormatting:
+    """Tests for AIService goal motivation formatting."""
 
     @pytest.fixture
-    def gemini_service(self):
-        """Create GeminiService instance."""
-        from app.services.gemini import GeminiService
+    def ai_service(self):
+        """Create AIService instance."""
+        from app.services.ai import AIService
 
-        return GeminiService()
+        return AIService()
 
-    def test_format_goal_motivation_achieved(self, gemini_service):
+    def test_format_goal_motivation_achieved(self, ai_service):
         """Test formatting achieved goal message."""
         progress = {
             "goal_id": 1,
@@ -465,13 +465,13 @@ class TestGeminiServiceGoalFormatting:
             "is_achieved": True,
         }
 
-        msg = gemini_service.format_goal_motivation(progress)
+        msg = ai_service.format_goal_motivation(progress)
 
         assert "Parabens" in msg
         assert "atingiu" in msg
         assert "Viagem" in msg
 
-    def test_format_goal_motivation_75_percent(self, gemini_service):
+    def test_format_goal_motivation_75_percent(self, ai_service):
         """Test formatting 75%+ progress message."""
         progress = {
             "goal_id": 1,
@@ -487,12 +487,12 @@ class TestGeminiServiceGoalFormatting:
             "is_achieved": False,
         }
 
-        msg = gemini_service.format_goal_motivation(progress)
+        msg = ai_service.format_goal_motivation(progress)
 
         assert "Quase la" in msg
         assert "80%" in msg
 
-    def test_format_goal_motivation_50_percent(self, gemini_service):
+    def test_format_goal_motivation_50_percent(self, ai_service):
         """Test formatting 50%+ progress message."""
         progress = {
             "goal_id": 1,
@@ -508,12 +508,12 @@ class TestGeminiServiceGoalFormatting:
             "is_achieved": False,
         }
 
-        msg = gemini_service.format_goal_motivation(progress)
+        msg = ai_service.format_goal_motivation(progress)
 
         assert "Metade do caminho" in msg
         assert "50%" in msg
 
-    def test_format_goal_motivation_low_progress(self, gemini_service):
+    def test_format_goal_motivation_low_progress(self, ai_service):
         """Test formatting low progress message."""
         progress = {
             "goal_id": 1,
@@ -529,7 +529,7 @@ class TestGeminiServiceGoalFormatting:
             "is_achieved": False,
         }
 
-        msg = gemini_service.format_goal_motivation(progress)
+        msg = ai_service.format_goal_motivation(progress)
 
         assert "10%" in msg
         assert "30.00" in msg  # daily rate
