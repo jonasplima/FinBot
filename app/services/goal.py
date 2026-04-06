@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.database.models import Expense, Goal, GoalUpdate
+from app.database.models import Expense, Goal, GoalTransaction, GoalUpdate
 from app.utils.validators import normalize_phone
 
 logger = logging.getLogger(__name__)
@@ -141,6 +141,53 @@ class GoalService:
             logger.error(f"Error listing goals: {e}")
             return {"success": False, "error": str(e)}
 
+    async def list_goal_transactions(
+        self,
+        session: AsyncSession,
+        phone: str,
+        limit: int = 30,
+    ) -> list[dict[str, str | float | int | None]]:
+        """List recent goal contribution and withdrawal movements for the dashboard."""
+        normalized_phone = normalize_phone(phone)
+        result = await session.execute(
+            select(GoalTransaction)
+            .options(selectinload(GoalTransaction.goal))
+            .where(GoalTransaction.user_phone == normalized_phone)
+            .order_by(GoalTransaction.transaction_date.desc(), GoalTransaction.created_at.desc())
+            .limit(limit)
+        )
+        transactions = result.scalars().all()
+        return [
+            {
+                "id": int(item.id),
+                "goal_id": int(item.goal_id),
+                "goal_description": item.goal.description if item.goal else "",
+                "transaction_type": str(item.transaction_type),
+                "amount": float(item.amount),
+                "description": str(item.description or ""),
+                "related_expense_id": int(item.related_expense_id)
+                if item.related_expense_id is not None
+                else None,
+                "transaction_date": item.transaction_date.isoformat(),
+                "transaction_date_label": item.transaction_date.strftime("%d/%m/%Y"),
+            }
+            for item in transactions
+        ]
+
+    async def get_available_goal_balance(
+        self,
+        session: AsyncSession,
+        phone: str,
+        goal_id: int,
+    ) -> Decimal | None:
+        """Return the currently available balance for a goal, including legacy contributions."""
+        normalized_phone = normalize_phone(phone)
+        goal = await self.get_goal_by_id(session, normalized_phone, goal_id)
+        if goal is None:
+            return None
+        await self._migrate_legacy_goal_balance(session, normalized_phone, goal)
+        return goal.current_amount
+
     async def check_goal_progress(
         self,
         session: AsyncSession,
@@ -201,7 +248,7 @@ class GoalService:
         amount: Decimal,
     ) -> dict:
         """
-        Add a manual deposit to a goal.
+        Add a contribution to a goal.
 
         Args:
             session: Database session
@@ -227,21 +274,14 @@ class GoalService:
                     "error": f"Meta '{description}' nao encontrada.",
                 }
 
-            # Record update
-            previous_amount = goal.current_amount
-            goal.current_amount = goal.current_amount + amount
-            goal.updated_at = datetime.now()
-
-            # Create update record
-            update = GoalUpdate(
-                goal_id=goal.id,
-                previous_amount=previous_amount,
-                new_amount=goal.current_amount,
-                update_type="deposit",
+            await self._record_goal_transaction(
+                session,
+                goal=goal,
+                user_phone=normalized_phone,
+                transaction_type="contribution",
+                amount=amount,
+                description="Aporte registrado pelo fluxo de metas",
             )
-            session.add(update)
-
-            await session.commit()
 
             # Calculate new progress
             progress = await self.calculate_progress(session, normalized_phone, goal)
@@ -258,6 +298,110 @@ class GoalService:
             logger.error(f"Error adding to goal: {e}")
             await session.rollback()
             return {"success": False, "error": str(e)}
+
+    async def contribute_to_goal(
+        self,
+        session: AsyncSession,
+        phone: str,
+        goal_id: int,
+        amount: Decimal,
+        *,
+        description: str | None = None,
+        transaction_date: date | None = None,
+    ) -> dict:
+        """Add a dedicated contribution movement to a goal."""
+        normalized_phone = normalize_phone(phone)
+        if amount <= 0:
+            return {"success": False, "error": "O valor do aporte deve ser maior que zero."}
+
+        goal = await self.get_goal_by_id(session, normalized_phone, goal_id)
+        if goal is None:
+            return {"success": False, "error": "Meta selecionada nao encontrada."}
+        await self._migrate_legacy_goal_balance(session, normalized_phone, goal)
+
+        try:
+            await self._record_goal_transaction(
+                session,
+                goal=goal,
+                user_phone=normalized_phone,
+                transaction_type="contribution",
+                amount=amount,
+                description=description or f"Aporte para {goal.description}",
+                transaction_date=transaction_date,
+            )
+            progress = await self.calculate_progress(session, normalized_phone, goal)
+            if progress["percentage"] >= 100 and not goal.is_achieved:
+                goal.is_achieved = True
+                await session.commit()
+            return {"success": True, "progress": progress}
+        except Exception as exc:
+            logger.error(f"Error contributing to goal: {exc}")
+            await session.rollback()
+            return {"success": False, "error": str(exc)}
+
+    async def withdraw_from_goal(
+        self,
+        session: AsyncSession,
+        phone: str,
+        goal_id: int,
+        amount: Decimal,
+        *,
+        description: str | None = None,
+        related_expense_id: int | None = None,
+        transaction_date: date | None = None,
+    ) -> dict:
+        """Withdraw funds from a goal balance, optionally linking the withdrawal to an expense."""
+        normalized_phone = normalize_phone(phone)
+        if amount <= 0:
+            return {"success": False, "error": "O valor do resgate deve ser maior que zero."}
+
+        goal = await self.get_goal_by_id(session, normalized_phone, goal_id)
+        if goal is None:
+            return {"success": False, "error": "Meta selecionada nao encontrada."}
+        await self._migrate_legacy_goal_balance(session, normalized_phone, goal)
+        if goal.current_amount < amount:
+            return {
+                "success": False,
+                "error": "A meta nao possui saldo suficiente para esse resgate.",
+            }
+
+        try:
+            await self._record_goal_transaction(
+                session,
+                goal=goal,
+                user_phone=normalized_phone,
+                transaction_type="withdrawal",
+                amount=amount,
+                description=description or f"Resgate da meta {goal.description}",
+                related_expense_id=related_expense_id,
+                transaction_date=transaction_date,
+            )
+            progress = await self.calculate_progress(session, normalized_phone, goal)
+            if progress["percentage"] < 100 and goal.is_achieved:
+                goal.is_achieved = False
+                await session.commit()
+            return {"success": True, "progress": progress}
+        except Exception as exc:
+            logger.error(f"Error withdrawing from goal: {exc}")
+            await session.rollback()
+            return {"success": False, "error": str(exc)}
+
+    async def get_goal_by_id(
+        self,
+        session: AsyncSession,
+        phone: str,
+        goal_id: int,
+    ) -> Goal | None:
+        """Return an active goal by id scoped to the current user."""
+        normalized_phone = normalize_phone(phone)
+        result = await session.execute(
+            select(Goal)
+            .options(selectinload(Goal.updates))
+            .where(Goal.id == goal_id)
+            .where(Goal.user_phone == normalized_phone)
+            .where(Goal.is_active == True)
+        )
+        return result.scalar_one_or_none()
 
     async def remove_goal(
         self,
@@ -307,12 +451,7 @@ class GoalService:
         goal: Goal,
     ) -> dict:
         """
-        Calculate goal progress based on net savings in the period.
-
-        The progress is calculated as:
-        - Total income in period (Positivo expenses)
-        - Minus total expenses in period (Negativo expenses)
-        - Plus manual deposits (current_amount)
+        Calculate goal progress based on amounts explicitly allocated to the goal.
 
         Args:
             session: Database session
@@ -324,34 +463,26 @@ class GoalService:
         """
         normalized_phone = normalize_phone(phone)
         today = date.today()
-
-        # Get total income in the period
-        income_result = await session.execute(
-            select(func.coalesce(func.sum(Expense.amount), 0))
-            .where(Expense.user_phone == normalized_phone)
-            .where(Expense.type == "Positivo")
-            .where(Expense.date >= goal.start_date)
-            .where(Expense.date <= today)
+        transaction_count_result = await session.execute(
+            select(func.count(GoalTransaction.id)).where(GoalTransaction.goal_id == goal.id)
         )
-        total_income = Decimal(str(income_result.scalar() or 0))
+        has_dedicated_transactions = int(transaction_count_result.scalar() or 0) > 0
 
-        # Get total expenses in the period
-        expense_result = await session.execute(
-            select(func.coalesce(func.sum(Expense.amount), 0))
-            .where(Expense.user_phone == normalized_phone)
-            .where(Expense.type == "Negativo")
-            .where(Expense.date >= goal.start_date)
-            .where(Expense.date <= today)
-        )
-        total_expenses = Decimal(str(expense_result.scalar() or 0))
+        if has_dedicated_transactions:
+            legacy_goal_contributions = Decimal("0")
+        else:
+            # Legacy linked expenses from the old "Metas" category flow still count toward the goal
+            # until the goal receives its first dedicated transaction.
+            legacy_contribution_result = await session.execute(
+                select(func.coalesce(func.sum(Expense.amount), 0))
+                .where(Expense.user_phone == normalized_phone)
+                .where(Expense.goal_id == goal.id)
+                .where(Expense.date >= goal.start_date)
+                .where(Expense.date <= today)
+            )
+            legacy_goal_contributions = Decimal(str(legacy_contribution_result.scalar() or 0))
 
-        # Net savings + manual deposits
-        net_savings = total_income - total_expenses
-        total_progress = net_savings + goal.current_amount
-
-        # Calculate percentage (cap at 0 if negative)
-        if total_progress < 0:
-            total_progress = Decimal("0")
+        total_progress = goal.current_amount + legacy_goal_contributions
 
         percentage = (
             (total_progress / goal.target_amount * 100) if goal.target_amount > 0 else Decimal("0")
@@ -378,6 +509,8 @@ class GoalService:
             "description": goal.description,
             "target_amount": float(goal.target_amount),
             "current_progress": float(total_progress),
+            "goal_contributions": float(total_progress),
+            "legacy_goal_contributions": float(legacy_goal_contributions),
             "percentage": float(percentage),
             "remaining_amount": float(max(0, remaining_amount)),
             "remaining_days": remaining_days,
@@ -386,6 +519,89 @@ class GoalService:
             "deadline": goal.deadline.strftime("%d/%m/%Y"),
             "is_achieved": goal.is_achieved or float(percentage) >= 100,
         }
+
+    async def _migrate_legacy_goal_balance(
+        self,
+        session: AsyncSession,
+        phone: str,
+        goal: Goal,
+    ) -> None:
+        """Promote legacy goal-linked expenses into the cached balance when the new flow is first used."""
+        normalized_phone = normalize_phone(phone)
+        transaction_count_result = await session.execute(
+            select(func.count(GoalTransaction.id)).where(GoalTransaction.goal_id == goal.id)
+        )
+        transaction_count = int(transaction_count_result.scalar() or 0)
+        if transaction_count > 0:
+            return
+
+        legacy_contribution_result = await session.execute(
+            select(func.coalesce(func.sum(Expense.amount), 0))
+            .where(Expense.user_phone == normalized_phone)
+            .where(Expense.goal_id == goal.id)
+            .where(Expense.date >= goal.start_date)
+            .where(Expense.date <= date.today())
+        )
+        legacy_goal_contributions = Decimal(str(legacy_contribution_result.scalar() or 0))
+        if legacy_goal_contributions <= 0:
+            return
+
+        goal.current_amount = goal.current_amount + legacy_goal_contributions
+        goal.updated_at = datetime.now()
+        session.add(
+            GoalUpdate(
+                goal_id=goal.id,
+                previous_amount=Decimal("0"),
+                new_amount=goal.current_amount,
+                update_type="legacy_migration",
+            )
+        )
+        await session.commit()
+
+    async def _record_goal_transaction(
+        self,
+        session: AsyncSession,
+        *,
+        goal: Goal,
+        user_phone: str,
+        transaction_type: str,
+        amount: Decimal,
+        description: str | None = None,
+        related_expense_id: int | None = None,
+        transaction_date: date | None = None,
+    ) -> None:
+        """Persist a goal transaction and keep the cached current balance updated."""
+        previous_amount = goal.current_amount
+        if transaction_type == "contribution":
+            new_amount = previous_amount + amount
+            update_type = "contribution"
+        elif transaction_type == "withdrawal":
+            new_amount = previous_amount - amount
+            update_type = "withdrawal"
+        else:
+            raise ValueError("Tipo de transacao de meta invalido.")
+
+        goal.current_amount = new_amount
+        goal.updated_at = datetime.now()
+
+        transaction = GoalTransaction(
+            goal_id=goal.id,
+            user_phone=user_phone,
+            transaction_type=transaction_type,
+            amount=amount,
+            description=description,
+            related_expense_id=related_expense_id,
+            transaction_date=transaction_date or date.today(),
+        )
+        update = GoalUpdate(
+            goal_id=goal.id,
+            previous_amount=previous_amount,
+            new_amount=new_amount,
+            update_type=update_type,
+        )
+        session.add(transaction)
+        session.add(update)
+        await session.commit()
 
     async def get_weekly_motivation(
         self,

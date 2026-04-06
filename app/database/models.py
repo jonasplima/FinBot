@@ -101,6 +101,7 @@ class Expense(Base):
     # Foreign keys
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=False)
     payment_method_id = Column(Integer, ForeignKey("payment_methods.id"), nullable=False)
+    goal_id = Column(Integer, nullable=True, index=True)
 
     # Type (inherited from category, but stored for quick access)
     type = Column(String(10), nullable=False)  # "Positivo" or "Negativo"
@@ -241,7 +242,7 @@ class Goal(Base):
     user_phone = Column(String(20), nullable=False, index=True)
     description = Column(String(200), nullable=False)
     target_amount = Column(Numeric(12, 2), nullable=False)
-    current_amount = Column(Numeric(12, 2), default=0, nullable=False)  # Manual deposits
+    current_amount = Column(Numeric(12, 2), default=0, nullable=False)  # Cached current balance
     deadline = Column(Date, nullable=False)
     start_date = Column(Date, nullable=False, default=date.today)
     is_active = Column(Boolean, default=True, nullable=False)
@@ -251,6 +252,11 @@ class Goal(Base):
 
     # Relationships
     updates = relationship("GoalUpdate", back_populates="goal", cascade="all, delete-orphan")
+    transactions = relationship(
+        "GoalTransaction",
+        back_populates="goal",
+        cascade="all, delete-orphan",
+    )
 
     # Indexes for query performance
     __table_args__ = (
@@ -281,6 +287,33 @@ class GoalUpdate(Base):
 
     def __repr__(self) -> str:
         return f"<GoalUpdate(goal_id={self.goal_id}, type='{self.update_type}', amount={self.new_amount})>"
+
+
+class GoalTransaction(Base):
+    """Detailed movement log for goal contributions and withdrawals."""
+
+    __tablename__ = "goal_transactions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    goal_id = Column(Integer, ForeignKey("goals.id"), nullable=False, index=True)
+    user_phone = Column(String(20), nullable=False, index=True)
+    transaction_type = Column(String(20), nullable=False)  # contribution | withdrawal
+    amount = Column(Numeric(12, 2), nullable=False)
+    description = Column(String(255), nullable=True)
+    related_expense_id = Column(Integer, ForeignKey("expenses.id"), nullable=True, index=True)
+    transaction_date = Column(Date, nullable=False, default=date.today)
+    created_at = Column(DateTime, nullable=False, default=datetime.now, server_default=func.now())
+
+    goal = relationship("Goal", back_populates="transactions")
+
+    __table_args__ = (
+        Index(
+            "ix_goal_transactions_goal_type_date", "goal_id", "transaction_type", "transaction_date"
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return f"<GoalTransaction(goal_id={self.goal_id}, type='{self.transaction_type}', amount={self.amount})>"
 
 
 class ExchangeRate(Base):

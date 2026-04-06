@@ -11,7 +11,16 @@ from sqlalchemy import extract, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.database.models import Category, Expense, ExpenseUpdateAudit, PaymentMethod, User
+from app.database.models import (
+    Category,
+    Expense,
+    ExpenseUpdateAudit,
+    Goal,
+    GoalTransaction,
+    GoalUpdate,
+    PaymentMethod,
+    User,
+)
 from app.services.category import CategoryService
 from app.services.user import UserService
 from app.utils.parser import parse_date
@@ -121,6 +130,7 @@ class ExpenseService:
             "shared_percentage": float(expense.shared_percentage)
             if expense.shared_percentage is not None
             else None,
+            "goal_id": int(expense.goal_id) if expense.goal_id is not None else None,
         }
 
     async def create_expense(
@@ -190,6 +200,7 @@ class ExpenseService:
                 custom_category_name=custom_category_name,
                 category_id=category.id,
                 payment_method_id=payment_method.id,
+                goal_id=data.get("goal_id"),
                 type=category.type,
                 is_shared=data.get("is_shared", False),
                 shared_percentage=data.get("shared_percentage"),
@@ -262,6 +273,7 @@ class ExpenseService:
                     custom_category_name=custom_category_name,
                     category_id=category.id,
                     payment_method_id=payment_method.id,
+                    goal_id=data.get("goal_id"),
                     type=category.type,
                     installment_current=i,
                     installment_total=installments,
@@ -464,6 +476,9 @@ class ExpenseService:
                 return {"success": False, "error": "Data da despesa invalida."}
             expense.date = parsed_date
 
+        if "new_goal_id" in update_data:
+            expense.goal_id = update_data.get("new_goal_id")
+
         new_is_shared = update_data.get("new_is_shared")
         new_shared_percentage = update_data.get("new_shared_percentage")
         if new_is_shared is not None:
@@ -559,6 +574,11 @@ class ExpenseService:
                 "shared_percentage": float(expense.shared_percentage)
                 if expense.shared_percentage is not None
                 else None,
+                "goal_id": int(expense.goal_id) if expense.goal_id is not None else None,
+                "goal_description": await self._get_goal_description(session, expense.goal_id),
+                "funding_goal_description": await self._get_funding_goal_description(
+                    session, expense.id
+                ),
                 "original_currency": str(expense.original_currency)
                 if expense.original_currency
                 else None,
@@ -571,6 +591,34 @@ class ExpenseService:
             }
             for expense in expenses
         ]
+
+    async def _get_goal_description(
+        self,
+        session: AsyncSession,
+        goal_id: int | None,
+    ) -> str | None:
+        """Resolve a goal description when an expense is linked to a goal."""
+        if goal_id is None:
+            return None
+        result = await session.execute(select(Goal.description).where(Goal.id == goal_id))
+        return result.scalar_one_or_none()
+
+    async def _get_funding_goal_description(
+        self,
+        session: AsyncSession,
+        expense_id: int | None,
+    ) -> str | None:
+        """Resolve the goal description that funded a given expense, when available."""
+        if expense_id is None:
+            return None
+        result = await session.execute(
+            select(Goal.description)
+            .join(GoalTransaction, GoalTransaction.goal_id == Goal.id)
+            .where(GoalTransaction.related_expense_id == expense_id)
+            .where(GoalTransaction.transaction_type == "withdrawal")
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
 
     async def undo_last_expense(
         self,
@@ -632,6 +680,68 @@ class ExpenseService:
 
         except Exception as e:
             logger.error(f"Error undoing expense: {e}")
+            await session.rollback()
+            return {"success": False, "error": str(e)}
+
+    async def delete_expense(
+        self,
+        session: AsyncSession,
+        phone: str,
+        expense_id: int,
+    ) -> dict:
+        """Delete a specific expense and revert linked goal withdrawals when necessary."""
+        try:
+            normalized_phone = normalize_phone(phone)
+            result = await session.execute(
+                select(Expense)
+                .options(selectinload(Expense.category), selectinload(Expense.payment_method))
+                .where(Expense.id == expense_id)
+                .where(Expense.user_phone == normalized_phone)
+            )
+            expense = result.scalar_one_or_none()
+            if not expense:
+                return {"success": False, "error": "Lancamento nao encontrado."}
+
+            withdrawal_result = await session.execute(
+                select(GoalTransaction, Goal)
+                .join(Goal, Goal.id == GoalTransaction.goal_id)
+                .where(GoalTransaction.related_expense_id == expense.id)
+                .where(GoalTransaction.transaction_type == "withdrawal")
+                .limit(1)
+            )
+            withdrawal_row = withdrawal_result.first()
+            restored_goal_description = None
+            if withdrawal_row is not None:
+                withdrawal_transaction, goal = withdrawal_row
+                previous_amount = goal.current_amount
+                goal.current_amount = goal.current_amount + withdrawal_transaction.amount
+                goal.updated_at = datetime.now()
+                session.add(
+                    GoalUpdate(
+                        goal_id=goal.id,
+                        previous_amount=previous_amount,
+                        new_amount=goal.current_amount,
+                        update_type="withdrawal_reversal",
+                    )
+                )
+                restored_goal_description = goal.description
+                await session.delete(withdrawal_transaction)
+
+            expense_details = {
+                "description": expense.description,
+                "amount": float(expense.amount),
+                "category": expense.display_category,
+                "restored_goal": restored_goal_description,
+            }
+
+            await session.delete(expense)
+            await session.commit()
+
+            logger.info(f"Deleted expense: {expense.id} for {normalized_phone}")
+            return {"success": True, "expense": expense_details}
+
+        except Exception as e:
+            logger.error(f"Error deleting expense: {e}")
             await session.rollback()
             return {"success": False, "error": str(e)}
 

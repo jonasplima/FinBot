@@ -72,3 +72,11 @@ async def init_db() -> None:
                     """
                 )
             )
+            await conn.execute(
+                text(
+                    """
+                    ALTER TABLE expenses
+                    ADD COLUMN IF NOT EXISTS goal_id INTEGER NULL
+                    """
+                )
+            )

@@ -1,3 +1,4 @@
+from datetime import date, timedelta
 from unittest.mock import AsyncMock, patch
 
 from fastapi import Response
@@ -16,21 +17,26 @@ from app.main import (
     DashboardExpenseRecognitionRequest,
     DashboardExpenseUpdateRequest,
     DashboardExportRequest,
+    DashboardGoalContributionRequest,
     DashboardGoalDeleteRequest,
     DashboardGoalRequest,
+    DashboardGoalWithdrawalRequest,
     RegisterRequest,
     auth_register,
+    dashboard_contribute_to_goal,
     dashboard_create_budget,
     dashboard_create_expense,
     dashboard_create_goal,
     dashboard_currency_convert,
     dashboard_delete_budget,
+    dashboard_delete_expense,
     dashboard_delete_goal,
     dashboard_export,
     dashboard_recognize_expense,
     dashboard_state,
     dashboard_update_base_currency,
     dashboard_update_expense,
+    dashboard_withdraw_from_goal,
     web_dashboard_page,
 )
 
@@ -196,6 +202,12 @@ class TestDashboardWeb:
         assert updated_state["expenses"][0]["description"] == "Hotel em Buenos Aires - ajuste"
         assert updated_state["expenses"][0]["amount"] == 600.0
 
+        deleted = await dashboard_delete_expense(request, expense_id)
+        assert deleted["status"] == "ok"
+
+        empty_state = await dashboard_state(request, month=4, year=2026)
+        assert empty_state["summary"]["expense_count"] == 0
+
     async def test_dashboard_create_and_update_shared_expense(self):
         """Dashboard should persist shared expense metadata and allow updates."""
         await self._reset_real_db()
@@ -237,6 +249,94 @@ class TestDashboardWeb:
 
         updated_state = await dashboard_state(request, month=4, year=2026)
         assert updated_state["expenses"][0]["shared_percentage"] == 60.0
+
+    async def test_dashboard_goal_contribution_via_dedicated_goal_flow(self):
+        """Dashboard should add dedicated contribution movements to a goal."""
+        await self._reset_real_db()
+        request = await self._register_dashboard_request(
+            email="goals-dashboard@example.com",
+            phone="5511911313131",
+        )
+        today = date.today()
+
+        created_goal = await dashboard_create_goal(
+            request,
+            DashboardGoalRequest(
+                description="Viagem ao Chile",
+                target_amount=4000,
+                deadline=(today + timedelta(days=180)).isoformat(),
+            ),
+        )
+        assert created_goal["status"] == "ok"
+
+        contribution = await dashboard_contribute_to_goal(
+            request,
+            DashboardGoalContributionRequest(
+                goal_id=created_goal["goal_id"],
+                amount=300,
+                transaction_date=today.isoformat(),
+                description="Aporte mensal",
+            ),
+        )
+        assert contribution["status"] == "ok"
+
+        payload = await dashboard_state(request, month=today.month, year=today.year)
+        assert payload["goals"][0]["goal_contributions"] == 300.0
+        assert payload["goals"][0]["current_progress"] == 300.0
+        assert payload["goal_transactions"][0]["transaction_type"] == "contribution"
+        assert payload["goal_transactions"][0]["amount"] == 300.0
+
+    async def test_dashboard_withdrawing_from_goal_creates_expense(self):
+        """Using money from a goal should reduce the goal and create the destination expense."""
+        await self._reset_real_db()
+        request = await self._register_dashboard_request(
+            email="goal-reclassify@example.com",
+            phone="5511911414141",
+        )
+        today = date.today()
+
+        created_goal = await dashboard_create_goal(
+            request,
+            DashboardGoalRequest(
+                description="Reserva de Emergencia",
+                target_amount=5000,
+                deadline=(today + timedelta(days=180)).isoformat(),
+            ),
+        )
+
+        contribution = await dashboard_contribute_to_goal(
+            request,
+            DashboardGoalContributionRequest(
+                goal_id=created_goal["goal_id"],
+                amount=400,
+                transaction_date=today.isoformat(),
+                description="Aporte reserva",
+            ),
+        )
+        assert contribution["status"] == "ok"
+
+        before = await dashboard_state(request, month=today.month, year=today.year)
+        assert before["goals"][0]["current_progress"] == 400.0
+
+        withdrawal = await dashboard_withdraw_from_goal(
+            request,
+            DashboardGoalWithdrawalRequest(
+                goal_id=created_goal["goal_id"],
+                amount=300,
+                category="Saúde e Beleza",
+                payment_method="Pix",
+                description="Urgencia medica",
+                expense_date=today.isoformat(),
+            ),
+        )
+        assert withdrawal["status"] == "ok"
+
+        after = await dashboard_state(request, month=today.month, year=today.year)
+        assert after["goals"][0]["goal_contributions"] == 100.0
+        assert after["goals"][0]["current_progress"] == 100.0
+        assert after["expenses"][0]["funding_goal_description"] == "Reserva de Emergencia"
+        assert after["expenses"][0]["category"] == "Saúde e Beleza"
+        assert after["goal_transactions"][0]["transaction_type"] == "withdrawal"
 
     async def test_dashboard_budget_goal_export_and_conversion(self):
         """Dashboard should manage budgets, goals, exports and quick conversions."""

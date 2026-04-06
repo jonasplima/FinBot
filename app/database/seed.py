@@ -33,6 +33,7 @@ CATEGORIES = [
     ("Viagem", "Negativo"),
     ("Reserva de Emergencia", "Negativo"),
     ("Investimento", "Negativo"),
+    ("Metas", "Negativo"),
     # Positive (income)
     ("Salario - Adiantamento", "Positivo"),
     ("Salario", "Positivo"),

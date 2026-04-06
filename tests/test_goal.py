@@ -6,7 +6,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import select
 
-from tests.conftest import Category, Expense, Goal, GoalUpdate, PaymentMethod
+from tests.conftest import Category, Expense, Goal, GoalTransaction, GoalUpdate, PaymentMethod
 
 
 class TestGoalService:
@@ -225,18 +225,18 @@ class TestGoalService:
         seeded_session.add(expense)
         await seeded_session.commit()
 
-        # Check progress (net savings = 1500 - 1000 = 500, which is 50% of 1000)
+        # Financial movimentation without aporte/deposito explicito does not advance the goal.
         result = await goal_service.check_goal_progress(seeded_session, test_phone, "Viagem")
 
         assert result["success"] is True
         progress = result["progress"]
-        assert progress["current_progress"] == 500.00
-        assert progress["percentage"] == 50.0
-        assert progress["remaining_amount"] == 500.00
+        assert progress["current_progress"] == 0.0
+        assert progress["percentage"] == 0.0
+        assert progress["remaining_amount"] == 1000.00
 
     @pytest.mark.anyio
     async def test_add_to_goal(self, seeded_session, goal_service, test_phone):
-        """Test manual deposit to goal."""
+        """Test dedicated contribution to goal."""
         deadline = date.today() + timedelta(days=90)
 
         # Create goal
@@ -254,12 +254,148 @@ class TestGoalService:
         assert progress["current_progress"] == 200.00
         assert progress["percentage"] == 20.0
 
-        # Verify GoalUpdate was created
+        # Verify GoalUpdate and GoalTransaction were created
         updates = await seeded_session.execute(select(GoalUpdate))
         update = updates.scalar_one()
         assert update.previous_amount == Decimal("0")
         assert update.new_amount == Decimal("200.00")
-        assert update.update_type == "deposit"
+        assert update.update_type == "contribution"
+
+        transactions = await seeded_session.execute(select(GoalTransaction))
+        transaction = transactions.scalar_one()
+        assert transaction.transaction_type == "contribution"
+        assert transaction.amount == Decimal("200.00")
+
+    @pytest.mark.anyio
+    async def test_goal_progress_includes_linked_goal_expense(
+        self, seeded_session, goal_service, test_phone
+    ):
+        """Legacy explicit expenses linked to a goal should still count toward progress."""
+        deadline = date.today() + timedelta(days=90)
+
+        create_result = await goal_service.create_goal(
+            seeded_session, test_phone, "Reserva", Decimal("1000.00"), deadline
+        )
+        goal_id = create_result["goal_id"]
+
+        cat_goal = await seeded_session.execute(select(Category).where(Category.name == "Metas"))
+        cat_goal = cat_goal.scalar_one()
+
+        pm_result = await seeded_session.execute(
+            select(PaymentMethod).where(PaymentMethod.name == "Pix")
+        )
+        payment_method = pm_result.scalar_one()
+
+        expense = Expense(
+            user_phone=test_phone,
+            description="Aporte reserva",
+            amount=Decimal("250.00"),
+            category_id=cat_goal.id,
+            payment_method_id=payment_method.id,
+            goal_id=goal_id,
+            type="Negativo",
+            date=date.today(),
+            created_at=datetime.now(),
+        )
+        seeded_session.add(expense)
+        await seeded_session.commit()
+
+        result = await goal_service.check_goal_progress(seeded_session, test_phone, "Reserva")
+
+        assert result["success"] is True
+        progress = result["progress"]
+        assert progress["goal_contributions"] == 250.0
+        assert progress["current_progress"] == 250.0
+        assert progress["percentage"] == 25.0
+
+    @pytest.mark.anyio
+    async def test_withdraw_from_goal_creates_lower_balance(
+        self, seeded_session, goal_service, test_phone
+    ):
+        """Withdrawals should reduce the cached goal balance and create a transaction."""
+        deadline = date.today() + timedelta(days=90)
+        create_result = await goal_service.create_goal(
+            seeded_session, test_phone, "Reserva", Decimal("1000.00"), deadline
+        )
+
+        contribution = await goal_service.contribute_to_goal(
+            seeded_session,
+            test_phone,
+            create_result["goal_id"],
+            Decimal("550.00"),
+            description="Aporte inicial",
+        )
+        assert contribution["success"] is True
+
+        withdrawal = await goal_service.withdraw_from_goal(
+            seeded_session,
+            test_phone,
+            create_result["goal_id"],
+            Decimal("300.00"),
+            description="Consulta medica",
+        )
+        assert withdrawal["success"] is True
+        assert withdrawal["progress"]["current_progress"] == 250.0
+        assert withdrawal["progress"]["percentage"] == 25.0
+
+        goal_result = await seeded_session.execute(
+            select(Goal).where(Goal.id == create_result["goal_id"])
+        )
+        goal = goal_result.scalar_one()
+        assert goal.current_amount == Decimal("250.00")
+
+        transactions = await seeded_session.execute(
+            select(GoalTransaction).order_by(GoalTransaction.id.asc())
+        )
+        rows = transactions.scalars().all()
+        assert len(rows) == 2
+        assert rows[0].transaction_type == "contribution"
+        assert rows[1].transaction_type == "withdrawal"
+
+    @pytest.mark.anyio
+    async def test_withdraw_from_goal_uses_legacy_linked_balance(
+        self, seeded_session, goal_service, test_phone
+    ):
+        """Legacy balances linked by old goal expenses should be withdrawable."""
+        deadline = date.today() + timedelta(days=90)
+        create_result = await goal_service.create_goal(
+            seeded_session, test_phone, "Reserva", Decimal("1000.00"), deadline
+        )
+        goal_id = create_result["goal_id"]
+
+        cat_goal = await seeded_session.execute(select(Category).where(Category.name == "Metas"))
+        payment_method = (
+            await seeded_session.execute(select(PaymentMethod).where(PaymentMethod.name == "Pix"))
+        ).scalar_one()
+        goal_category = cat_goal.scalar_one()
+
+        seeded_session.add(
+            Expense(
+                user_phone=test_phone,
+                description="Aporte legado",
+                amount=Decimal("550.00"),
+                category_id=goal_category.id,
+                payment_method_id=payment_method.id,
+                goal_id=goal_id,
+                type="Negativo",
+                date=date.today(),
+                created_at=datetime.now(),
+            )
+        )
+        await seeded_session.commit()
+
+        withdrawal = await goal_service.withdraw_from_goal(
+            seeded_session,
+            test_phone,
+            goal_id,
+            Decimal("300.00"),
+            description="Uso da reserva",
+        )
+        assert withdrawal["success"] is True
+        assert withdrawal["progress"]["current_progress"] == 250.0
+
+        goal = (await seeded_session.execute(select(Goal).where(Goal.id == goal_id))).scalar_one()
+        assert goal.current_amount == Decimal("250.00")
 
     @pytest.mark.anyio
     async def test_add_to_goal_not_found(self, seeded_session, goal_service, test_phone):

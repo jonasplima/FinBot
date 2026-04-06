@@ -109,6 +109,7 @@ class Expense(TestBase):
     custom_category_name = Column(String(100), nullable=True)
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=False)
     payment_method_id = Column(Integer, ForeignKey("payment_methods.id"), nullable=False)
+    goal_id = Column(Integer, nullable=True, index=True)
     type = Column(String(10), nullable=False)
     installment_current = Column(Integer, nullable=True)
     installment_total = Column(Integer, nullable=True)
@@ -203,6 +204,9 @@ class Goal(TestBase):
     updated_at = Column(DateTime, nullable=True)
 
     updates = relationship("GoalUpdate", back_populates="goal", cascade="all, delete-orphan")
+    transactions = relationship(
+        "GoalTransaction", back_populates="goal", cascade="all, delete-orphan"
+    )
 
 
 class GoalUpdate(TestBase):
@@ -218,6 +222,24 @@ class GoalUpdate(TestBase):
     created_at = Column(DateTime, nullable=False, default=datetime.now)
 
     goal = relationship("Goal", back_populates="updates")
+
+
+class GoalTransaction(TestBase):
+    """Detailed goal movement log for tests."""
+
+    __tablename__ = "goal_transactions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    goal_id = Column(Integer, ForeignKey("goals.id"), nullable=False, index=True)
+    user_phone = Column(String(20), nullable=False, index=True)
+    transaction_type = Column(String(20), nullable=False)
+    amount = Column(Numeric(12, 2), nullable=False)
+    description = Column(String(255), nullable=True)
+    related_expense_id = Column(Integer, ForeignKey("expenses.id"), nullable=True, index=True)
+    transaction_date = Column(Date, nullable=False, default=date.today)
+    created_at = Column(DateTime, nullable=False, default=datetime.now)
+
+    goal = relationship("Goal", back_populates="transactions")
 
 
 class ExchangeRate(TestBase):
@@ -400,6 +422,7 @@ async def seeded_session(db_session):
         Category(name="Transporte", type="Negativo"),
         Category(name="Lazer", type="Negativo"),
         Category(name="Mercado", type="Negativo"),
+        Category(name="Metas", type="Negativo"),
         Category(name="Assinatura", type="Negativo"),
         Category(name="Vestuario", type="Negativo"),
         Category(name="Outros", type="Negativo"),

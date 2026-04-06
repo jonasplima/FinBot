@@ -179,6 +179,7 @@ class DashboardExpenseCreateRequest(BaseModel):
     currency: str = "BRL"
     is_shared: bool = False
     shared_percentage: float | None = None
+    goal_id: int | None = None
 
 
 class DashboardExpenseUpdateRequest(BaseModel):
@@ -192,6 +193,7 @@ class DashboardExpenseUpdateRequest(BaseModel):
     currency: str | None = None
     is_shared: bool | None = None
     shared_percentage: float | None = None
+    goal_id: int | None = None
 
 
 class DashboardExpenseRecognitionRequest(BaseModel):
@@ -220,6 +222,26 @@ class DashboardGoalRequest(BaseModel):
     description: str
     target_amount: float
     deadline: str
+
+
+class DashboardGoalContributionRequest(BaseModel):
+    """Payload to add money to a goal from the dashboard."""
+
+    goal_id: int
+    amount: float
+    description: str | None = None
+    transaction_date: str | None = None
+
+
+class DashboardGoalWithdrawalRequest(BaseModel):
+    """Payload to use money from a goal and register the destination expense."""
+
+    goal_id: int
+    amount: float
+    category: str
+    payment_method: str
+    expense_date: str | None = None
+    description: str | None = None
 
 
 class DashboardGoalDeleteRequest(BaseModel):
@@ -547,6 +569,7 @@ async def _build_dashboard_payload(
     )
     budgets_result = await budget_service.list_budgets(session, user.phone)
     goals_result = await goal_service.list_goals(session, user.phone)
+    goal_transactions = await goal_service.list_goal_transactions(session, user.phone)
     category_payload = await category_service.list_available_categories(
         session,
         user,
@@ -612,6 +635,7 @@ async def _build_dashboard_payload(
         "expenses": expenses,
         "budgets": budgets_result.get("budgets", []),
         "goals": goals_result.get("goals", []),
+        "goal_transactions": goal_transactions,
         "categories": category_payload,
         "payment_methods": payment_methods,
         "charts": {
@@ -3204,23 +3228,92 @@ async def web_dashboard_page(request: Request):
                     <div class="stack">
                         <section class="card">
                             <h2>Metas</h2>
-                            <p>Cadastre objetivos de economia e acompanhe o progresso.</p>
-                            <form id="goal-form">
-                                <label>Descrição da meta
-                                    <input name="description" required placeholder="Ex.: Reserva de emergência">
-                                </label>
-                                <div class="two-col">
-                                    <label>Valor alvo
-                                        <input name="target_amount" type="number" step="0.01" min="0.01" required>
-                                    </label>
-                                    <label>Prazo
-                                        <input name="deadline" type="date" required>
-                                    </label>
+                            <p>Cadastre objetivos, faça aportes dedicados e use valores guardados sem misturar com a categorização normal de despesas.</p>
+                            <div class="two-col" style="align-items: start;">
+                                <div class="stack">
+                                    <form id="goal-form">
+                                        <label>Descrição da meta
+                                            <input name="description" required placeholder="Ex.: Reserva de emergência">
+                                        </label>
+                                        <div class="two-col">
+                                            <label>Valor alvo
+                                                <input name="target_amount" type="number" step="0.01" min="0.01" required>
+                                            </label>
+                                            <label>Prazo
+                                                <input name="deadline" type="date" required>
+                                            </label>
+                                        </div>
+                                        <button class="primary" type="submit">Salvar meta</button>
+                                    </form>
+                                    <div class="status" id="goal-status"></div>
+                                    <form id="goal-contribution-form">
+                                        <div class="two-col">
+                                            <label>Meta para aportar
+                                                <select name="goal_id" required></select>
+                                            </label>
+                                            <label>Valor do aporte
+                                                <input name="amount" type="number" step="0.01" min="0.01" required>
+                                            </label>
+                                        </div>
+                                        <div class="two-col">
+                                            <label>Data do aporte
+                                                <input name="transaction_date" type="date">
+                                            </label>
+                                            <label>Descrição opcional
+                                                <input name="description" placeholder="Ex.: transferência para reserva">
+                                            </label>
+                                        </div>
+                                        <button class="ghost" type="submit">Adicionar aporte</button>
+                                    </form>
+                                    <div class="status" id="goal-contribution-status"></div>
+                                    <form id="goal-withdrawal-form">
+                                        <div class="two-col">
+                                            <label>Meta de origem
+                                                <select name="goal_id" required></select>
+                                            </label>
+                                            <label>Valor utilizado
+                                                <input name="amount" type="number" step="0.01" min="0.01" required>
+                                            </label>
+                                        </div>
+                                        <div class="two-col">
+                                            <label>Categoria do gasto
+                                                <select name="category" required></select>
+                                            </label>
+                                            <label>Forma de pagamento
+                                                <select name="payment_method" required></select>
+                                            </label>
+                                        </div>
+                                        <div class="two-col">
+                                            <label>Data do gasto
+                                                <input name="expense_date" type="date">
+                                            </label>
+                                            <label>Descrição do uso
+                                                <input name="description" placeholder="Ex.: consulta médica urgente">
+                                            </label>
+                                        </div>
+                                        <button class="ghost" type="submit">Usar valor da meta</button>
+                                    </form>
+                                    <div class="status" id="goal-withdrawal-status"></div>
                                 </div>
-                                <button class="primary" type="submit">Salvar meta</button>
-                            </form>
-                            <div class="status" id="goal-status"></div>
-                            <div class="list" id="goals-list"></div>
+                                <div class="stack">
+                                    <div class="list" id="goals-list"></div>
+                                    <div class="table-wrap">
+                                        <table>
+                                            <thead>
+                                                <tr>
+                                                    <th>Data</th>
+                                                    <th>Tipo</th>
+                                                    <th>Meta</th>
+                                                    <th>Descrição</th>
+                                                    <th>Valor</th>
+                                                    <th>Vínculo</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="goal-transactions-list"></tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
                         </section>
 
                         <section class="card">
@@ -3307,8 +3400,12 @@ async def web_dashboard_page(request: Request):
                     }).join('');
                 }
 
-                function categoryOptions(categories, selectedValue) {
-                    return (categories.active || []).map((item) => {
+                function categoryOptions(categories, selectedValue, { includeMetas = false, onlyNegative = false } = {}) {
+                    return (categories.active || []).filter((item) => {
+                        if (!includeMetas && item.name === 'Metas') return false;
+                        if (onlyNegative && item.type !== 'Negativo') return false;
+                        return true;
+                    }).map((item) => {
                         const value = item.name;
                         const label = `${item.name} • ${item.type === 'Negativo' ? 'Gasto' : 'Entrada'}`;
                         const selected = value === selectedValue ? 'selected' : '';
@@ -3440,7 +3537,7 @@ async def web_dashboard_page(request: Request):
                         <div class="list-item">
                             <div>
                                 <strong>${escapeHtml(item.description)}</strong>
-                                <small>Progresso ${money(item.current_progress)} de ${money(item.target_amount)} • Prazo ${escapeHtml(item.deadline)}</small>
+                                <small>Guardado ${money(item.current_progress)} de ${money(item.target_amount)} • Prazo ${escapeHtml(item.deadline)}</small>
                             </div>
                             <div class="actions">
                                 <span class="mono">${Number(item.percentage).toFixed(1)}%</span>
@@ -3448,6 +3545,43 @@ async def web_dashboard_page(request: Request):
                             </div>
                         </div>
                     `).join('');
+                }
+
+                function renderGoalTransactions(transactions) {
+                    const container = document.getElementById('goal-transactions-list');
+                    if (!transactions.length) {
+                        container.innerHTML = '<tr><td colspan="6"><div class="empty">Nenhuma movimentação de meta registrada ainda.</div></td></tr>';
+                        return;
+                    }
+                    container.innerHTML = transactions.map((item) => `
+                        <tr>
+                            <td>${escapeHtml(item.transaction_date_label)}</td>
+                            <td><strong>${item.transaction_type === 'contribution' ? 'Aporte' : 'Uso da meta'}</strong></td>
+                            <td>${escapeHtml(item.goal_description)}</td>
+                            <td>${escapeHtml(item.description || '-')}</td>
+                            <td class="mono">${item.transaction_type === 'contribution' ? '+' : '-'} ${money(item.amount)}</td>
+                            <td>${item.related_expense_id ? `Lançamento #${item.related_expense_id}` : '-'}</td>
+                        </tr>
+                    `).join('');
+                }
+
+                function openChartModal(title, imageId) {
+                    const modal = document.getElementById('chart-modal');
+                    const modalTitle = document.getElementById('chart-modal-title');
+                    const modalImage = document.getElementById('chart-modal-image');
+                    const image = document.getElementById(imageId);
+                    if (!image?.src) return;
+                    modalTitle.textContent = title;
+                    modalImage.src = image.src;
+                    modalImage.alt = title;
+                    modal.classList.add('is-open');
+                    modal.setAttribute('aria-hidden', 'false');
+                }
+
+                function closeChartModal() {
+                    const modal = document.getElementById('chart-modal');
+                    modal.classList.remove('is-open');
+                    modal.setAttribute('aria-hidden', 'true');
                 }
 
                 function renderExpenses(expenses) {
@@ -3459,7 +3593,7 @@ async def web_dashboard_page(request: Request):
                     body.innerHTML = expenses.map((expense) => `
                         <tr>
                             <td>${escapeHtml(expense.date_label)}</td>
-                            <td><strong>${escapeHtml(expense.description)}</strong><br><small>${escapeHtml(expense.type)}</small></td>
+                            <td><strong>${escapeHtml(expense.description)}</strong><br><small>${escapeHtml(expense.type)}${expense.funding_goal_description ? ` • Origem: ${escapeHtml(expense.funding_goal_description)}` : ''}${expense.goal_description ? ` • Meta legado: ${escapeHtml(expense.goal_description)}` : ''}</small></td>
                             <td>${escapeHtml(expense.category)}</td>
                             <td>${escapeHtml(expense.payment_method)}</td>
                             <td>${money(expense.amount)}</td>
@@ -3492,15 +3626,25 @@ async def web_dashboard_page(request: Request):
                     document.querySelector('#currency-form [name="to_currency"]').innerHTML = selectOptions(payload.currencies, 'BRL');
 
                     const categoryHtml = categoryOptions(payload.categories, '');
+                    const negativeCategoryHtml = categoryOptions(payload.categories, '', { onlyNegative: true });
                     document.querySelector('#expense-form [name="category"]').innerHTML = categoryHtml;
                     document.querySelector('#budget-form [name="category_name"]').innerHTML = '<option value="">Geral</option>' + categoryHtml;
+                    const goalOptions = '<option value="">Selecione uma meta</option>' +
+                        (payload.goals || []).map((item) =>
+                            `<option value="${item.goal_id}">${escapeHtml(item.description)}</option>`
+                        ).join('');
+                    document.querySelector('#goal-contribution-form [name="goal_id"]').innerHTML = goalOptions;
+                    document.querySelector('#goal-withdrawal-form [name="goal_id"]').innerHTML = goalOptions;
+                    document.querySelector('#goal-withdrawal-form [name="category"]').innerHTML = negativeCategoryHtml;
 
                     const paymentMethodOptions = payload.payment_methods.map((item) => `<option value="${escapeHtml(item)}">${escapeHtml(item)}</option>`).join('');
                     document.querySelector('#expense-form [name="payment_method"]').innerHTML = paymentMethodOptions;
+                    document.querySelector('#goal-withdrawal-form [name="payment_method"]').innerHTML = paymentMethodOptions;
 
                     renderExpenses(payload.expenses || []);
                     renderBudgets(payload.budgets || []);
                     renderGoals(payload.goals || []);
+                    renderGoalTransactions(payload.goal_transactions || []);
                     document.getElementById('chart-categories').src = payload.charts.categories;
                     document.getElementById('chart-top-expenses').src = payload.charts.top_expenses;
                     document.getElementById('chart-daily').src = payload.charts.daily;
@@ -3681,6 +3825,54 @@ async def web_dashboard_page(request: Request):
                         await loadState();
                     } catch (error) {
                         setStatus('goal-status', error.message, true);
+                    }
+                });
+
+                document.getElementById('goal-contribution-form').addEventListener('submit', async (event) => {
+                    event.preventDefault();
+                    const form = event.currentTarget;
+                    const data = Object.fromEntries(new FormData(form).entries());
+                    try {
+                        await fetchJson('/dashboard/goals/contribute', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({
+                                goal_id: Number(data.goal_id),
+                                amount: Number(data.amount),
+                                description: data.description || null,
+                                transaction_date: data.transaction_date || null,
+                            }),
+                        });
+                        setStatus('goal-contribution-status', 'Aporte registrado com sucesso.');
+                        form.reset();
+                        await loadState();
+                    } catch (error) {
+                        setStatus('goal-contribution-status', error.message, true);
+                    }
+                });
+
+                document.getElementById('goal-withdrawal-form').addEventListener('submit', async (event) => {
+                    event.preventDefault();
+                    const form = event.currentTarget;
+                    const data = Object.fromEntries(new FormData(form).entries());
+                    try {
+                        await fetchJson('/dashboard/goals/withdraw', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({
+                                goal_id: Number(data.goal_id),
+                                amount: Number(data.amount),
+                                category: data.category,
+                                payment_method: data.payment_method,
+                                expense_date: data.expense_date || null,
+                                description: data.description || null,
+                            }),
+                        });
+                        setStatus('goal-withdrawal-status', 'Uso da meta registrado com sucesso.');
+                        form.reset();
+                        await loadState();
+                    } catch (error) {
+                        setStatus('goal-withdrawal-status', error.message, true);
                     }
                 });
 
@@ -4121,6 +4313,11 @@ async def dashboard_create_expense(
         amount_decimal = Decimal(str(payload.amount))
         if amount_decimal <= 0:
             raise HTTPException(status_code=400, detail="Valor invalido.")
+        if payload.category == "Metas":
+            raise HTTPException(
+                status_code=400,
+                detail="Use o painel de metas para registrar aportes, em vez da categoria Metas no lancamento comum.",
+            )
 
         expense_data: dict[str, Any] = {
             "description": payload.description,
@@ -4130,6 +4327,7 @@ async def dashboard_create_expense(
             "expense_date": payload.expense_date,
             "is_shared": payload.is_shared,
             "shared_percentage": payload.shared_percentage,
+            "goal_id": None,
         }
 
         if currency_code != "BRL":
@@ -4241,6 +4439,11 @@ async def dashboard_update_expense(
         if payload.description is not None:
             update_data["new_description"] = payload.description
         if payload.category is not None:
+            if payload.category == "Metas":
+                raise HTTPException(
+                    status_code=400,
+                    detail="Use o painel de metas para movimentar aportes ou resgates, em vez de recategorizar um gasto para Metas.",
+                )
             update_data["new_category"] = payload.category
         if payload.payment_method is not None:
             update_data["new_payment_method"] = payload.payment_method
@@ -4251,6 +4454,8 @@ async def dashboard_update_expense(
             update_data["new_shared_percentage"] = (
                 payload.shared_percentage if payload.is_shared else None
             )
+        if payload.goal_id is not None or payload.category is not None:
+            update_data["new_goal_id"] = None
 
         if payload.amount is not None:
             amount_decimal = Decimal(str(payload.amount))
@@ -4290,6 +4495,21 @@ async def dashboard_update_expense(
             expense_id,
             update_data,
         )
+        if not result["success"]:
+            raise HTTPException(status_code=400, detail=result["error"])
+        return {"status": "ok", **result}
+
+
+@app.delete("/dashboard/expenses/{expense_id}")
+async def dashboard_delete_expense(
+    request: Request,
+    expense_id: int,
+):
+    """Delete an existing expense from the web dashboard."""
+    await _get_current_web_user(request)
+    async with async_session() as session:
+        refreshed_user = await _get_current_web_user_in_session(session, request)
+        result = await expense_service.delete_expense(session, refreshed_user.phone, expense_id)
         if not result["success"]:
             raise HTTPException(status_code=400, detail=result["error"])
         return {"status": "ok", **result}
@@ -4358,6 +4578,105 @@ async def dashboard_create_goal(
         if not result["success"]:
             raise HTTPException(status_code=400, detail=result["error"])
         return {"status": "ok", **result}
+
+
+@app.post("/dashboard/goals/contribute")
+async def dashboard_contribute_to_goal(
+    request: Request,
+    payload: DashboardGoalContributionRequest,
+):
+    """Add a new contribution movement to a goal."""
+    await _get_current_web_user(request)
+    transaction_date = None
+    if payload.transaction_date:
+        try:
+            transaction_date = date.fromisoformat(payload.transaction_date)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Data do aporte invalida.")
+
+    async with async_session() as session:
+        refreshed_user = await _get_current_web_user_in_session(session, request)
+        result = await goal_service.contribute_to_goal(
+            session,
+            refreshed_user.phone,
+            payload.goal_id,
+            Decimal(str(payload.amount)),
+            description=payload.description,
+            transaction_date=transaction_date,
+        )
+        if not result["success"]:
+            raise HTTPException(status_code=400, detail=result["error"])
+        return {"status": "ok", **result}
+
+
+@app.post("/dashboard/goals/withdraw")
+async def dashboard_withdraw_from_goal(
+    request: Request,
+    payload: DashboardGoalWithdrawalRequest,
+):
+    """Use money from a goal and register the corresponding expense."""
+    await _get_current_web_user(request)
+    amount_decimal = Decimal(str(payload.amount))
+    if amount_decimal <= 0:
+        raise HTTPException(status_code=400, detail="Valor invalido.")
+
+    expense_date = None
+    if payload.expense_date:
+        try:
+            expense_date = date.fromisoformat(payload.expense_date)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Data do uso da meta invalida.")
+
+    async with async_session() as session:
+        refreshed_user = await _get_current_web_user_in_session(session, request)
+        goal = await goal_service.get_goal_by_id(session, refreshed_user.phone, payload.goal_id)
+        if goal is None:
+            raise HTTPException(status_code=400, detail="Meta selecionada nao encontrada.")
+        available_balance = await goal_service.get_available_goal_balance(
+            session,
+            refreshed_user.phone,
+            payload.goal_id,
+        )
+        if available_balance is None:
+            raise HTTPException(status_code=400, detail="Meta selecionada nao encontrada.")
+        if available_balance < amount_decimal:
+            raise HTTPException(
+                status_code=400,
+                detail="A meta nao possui saldo suficiente para esse resgate.",
+            )
+
+        expense_result = await expense_service.create_expense(
+            session,
+            refreshed_user.phone,
+            {
+                "description": payload.description or f"Uso de valor da meta {goal.description}",
+                "amount": amount_decimal,
+                "category": payload.category,
+                "payment_method": payload.payment_method,
+                "expense_date": expense_date.isoformat() if expense_date else None,
+            },
+        )
+        if not expense_result["success"]:
+            raise HTTPException(status_code=400, detail=expense_result["error"])
+
+        withdrawal_result = await goal_service.withdraw_from_goal(
+            session,
+            refreshed_user.phone,
+            payload.goal_id,
+            amount_decimal,
+            description=payload.description
+            or f"Uso da meta {goal.description} em {payload.category}",
+            related_expense_id=expense_result["expense_id"],
+            transaction_date=expense_date,
+        )
+        if not withdrawal_result["success"]:
+            raise HTTPException(status_code=400, detail=withdrawal_result["error"])
+
+        return {
+            "status": "ok",
+            "expense_id": expense_result["expense_id"],
+            **withdrawal_result,
+        }
 
 
 @app.delete("/dashboard/goals")
