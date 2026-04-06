@@ -52,6 +52,36 @@ class PaymentMethod(Base):
         return f"<PaymentMethod(id={self.id}, name='{self.name}')>"
 
 
+class User(Base):
+    """Application user profile for WhatsApp and future web access."""
+
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    phone = Column(String(20), nullable=False, unique=True, index=True)
+    name = Column(String(120), nullable=True)
+    display_name = Column(String(120), nullable=True)
+    email = Column(String(255), nullable=True)
+    accepted_terms = Column(Boolean, default=False, nullable=False)
+    accepted_terms_at = Column(DateTime, nullable=True)
+    terms_version = Column(String(30), nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    preferred_channel = Column(String(30), default="whatsapp", nullable=False)
+    timezone = Column(String(50), nullable=True)
+    web_access_enabled = Column(Boolean, default=False, nullable=False)
+    limits_enabled = Column(Boolean, default=True, nullable=False)
+    daily_text_limit = Column(Integer, default=100, nullable=False)
+    daily_media_limit = Column(Integer, default=20, nullable=False)
+    daily_ai_limit = Column(Integer, default=50, nullable=False)
+    notification_preferences = Column(JSON, nullable=True)
+    last_seen_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.now, server_default=func.now())
+    updated_at = Column(DateTime, nullable=True, onupdate=datetime.now)
+
+    def __repr__(self) -> str:
+        return f"<User(id={self.id}, phone='{self.phone}', accepted_terms={self.accepted_terms})>"
+
+
 class Expense(Base):
     """Expense or income record."""
 

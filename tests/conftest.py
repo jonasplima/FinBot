@@ -62,6 +62,33 @@ class PaymentMethod(TestBase):
     expenses = relationship("Expense", back_populates="payment_method")
 
 
+class User(TestBase):
+    """Test User model."""
+
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    phone = Column(String(20), nullable=False, unique=True, index=True)
+    name = Column(String(120), nullable=True)
+    display_name = Column(String(120), nullable=True)
+    email = Column(String(255), nullable=True)
+    accepted_terms = Column(Boolean, default=False, nullable=False)
+    accepted_terms_at = Column(DateTime, nullable=True)
+    terms_version = Column(String(30), nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    preferred_channel = Column(String(30), default="whatsapp", nullable=False)
+    timezone = Column(String(50), nullable=True)
+    web_access_enabled = Column(Boolean, default=False, nullable=False)
+    limits_enabled = Column(Boolean, default=True, nullable=False)
+    daily_text_limit = Column(Integer, default=100, nullable=False)
+    daily_media_limit = Column(Integer, default=20, nullable=False)
+    daily_ai_limit = Column(Integer, default=50, nullable=False)
+    notification_preferences = Column(JSON, nullable=True)
+    last_seen_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.now)
+    updated_at = Column(DateTime, nullable=True)
+
+
 class Expense(TestBase):
     """Test Expense model."""
 
@@ -371,9 +398,18 @@ def mock_settings():
         mock_settings.evolution_api_key = "test-key"
         mock_settings.evolution_instance = "test-instance"
         mock_settings.owner_phone = "5511999999999"
-        mock_settings.allowed_phones = ["5511999999999"]
+        mock_settings.allowed_phones = []
         mock_settings.gemini_api_key = "test-gemini-key"
         mock_settings.admin_secret = "test-secret"
+        mock_settings.terms_version = "2026-04"
+        mock_settings.default_daily_text_limit = 100
+        mock_settings.default_daily_media_limit = 20
+        mock_settings.default_daily_ai_limit = 50
+        mock_settings.user_limit_defaults.return_value = {
+            "daily_text_limit": 100,
+            "daily_media_limit": 20,
+            "daily_ai_limit": 50,
+        }
         mock_get.return_value = mock_settings
         yield mock_settings
 
@@ -434,3 +470,27 @@ async def pending_confirmation_in_db(seeded_session, test_phone):
     await seeded_session.refresh(pending)
 
     return pending
+
+
+@pytest.fixture
+async def accepted_user_in_db(seeded_session, test_phone):
+    """Create an accepted user in the database for testing."""
+    user = User(
+        phone=test_phone,
+        accepted_terms=True,
+        accepted_terms_at=datetime.now(),
+        terms_version="2026-04",
+        is_active=True,
+        preferred_channel="whatsapp",
+        timezone="America/Sao_Paulo",
+        limits_enabled=True,
+        daily_text_limit=100,
+        daily_media_limit=20,
+        daily_ai_limit=50,
+        notification_preferences={"whatsapp": True},
+        last_seen_at=datetime.now(),
+    )
+    seeded_session.add(user)
+    await seeded_session.commit()
+    await seeded_session.refresh(user)
+    return user

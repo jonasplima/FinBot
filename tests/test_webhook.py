@@ -7,6 +7,7 @@ import pytest
 
 from app.database.models import PendingConfirmation
 from app.handlers.webhook import WebhookHandler
+from app.services.rate_limit import RateLimitService
 
 
 class TestWebhookHandlerMessageExtraction:
@@ -33,6 +34,7 @@ class TestWebhookHandlerMessageExtraction:
             handler = WebhookHandler()
             handler.evolution = mock_evolution
             handler.gemini = mock_gemini
+            RateLimitService._fallback_counters.clear()
 
             yield handler
 
@@ -351,8 +353,98 @@ class TestWebhookHandlerIntentHandling:
         call_args = handler.evolution.send_text.call_args
         assert "forma de pagamento" in call_args[0][1].lower()
 
-    async def test_process_message_routes_pdf_to_specific_handler(
+    async def test_process_message_new_user_starts_onboarding(
         self, handler, seeded_session, test_phone
+    ):
+        """Test that a new user is asked to accept terms before using the bot."""
+        msg_data = {
+            "phone": test_phone,
+            "text": "oi",
+            "has_image": False,
+            "has_document": False,
+            "message_key": {"id": "onboarding-1"},
+        }
+
+        await handler.process_message(seeded_session, msg_data)
+
+        handler.evolution.send_text.assert_awaited_once()
+        call_args = handler.evolution.send_text.call_args
+        assert "aceite nos termos" in call_args.args[1].lower()
+
+        pending = await handler.get_pending_confirmation(seeded_session, test_phone)
+        assert pending is not None
+        assert pending.data["type"] == "user_onboarding"
+
+    async def test_process_message_accepts_terms_and_unlocks_user(
+        self, handler, seeded_session, test_phone
+    ):
+        """Test that the user can accept terms via onboarding."""
+        await handler.save_pending_confirmation(
+            seeded_session,
+            test_phone,
+            {"type": "user_onboarding", "terms_version": "2026-04"},
+        )
+        await handler.user_service.get_or_create_user(seeded_session, test_phone)
+
+        await handler.process_message(
+            seeded_session,
+            {
+                "phone": test_phone,
+                "text": "sim",
+                "has_image": False,
+                "has_document": False,
+                "message_key": {"id": "onboarding-2"},
+            },
+        )
+
+        handler.evolution.send_text.assert_awaited_once()
+        call_args = handler.evolution.send_text.call_args
+        assert "termos aceitos" in call_args.args[1].lower()
+
+    async def test_process_message_direct_show_limits_bypasses_gemini(
+        self, handler, seeded_session, test_phone, accepted_user_in_db
+    ):
+        """Test that direct limit commands are handled locally."""
+        await handler.process_message(
+            seeded_session,
+            {
+                "phone": test_phone,
+                "text": "meus limites",
+                "has_image": False,
+                "has_document": False,
+                "message_key": {"id": "limit-show"},
+            },
+        )
+
+        handler.gemini.process_message.assert_not_awaited()
+        handler.evolution.send_text.assert_awaited_once()
+        call_args = handler.evolution.send_text.call_args
+        assert "seus limites diarios atuais" in call_args.args[1].lower()
+
+    async def test_process_message_blocks_when_text_limit_reached(
+        self, handler, seeded_session, test_phone, accepted_user_in_db
+    ):
+        """Test that text messages are blocked when the daily text limit is reached."""
+        accepted_user_in_db.daily_text_limit = 0
+        await seeded_session.commit()
+
+        await handler.process_message(
+            seeded_session,
+            {
+                "phone": test_phone,
+                "text": "oi de novo",
+                "has_image": False,
+                "has_document": False,
+                "message_key": {"id": "limit-block"},
+            },
+        )
+
+        handler.evolution.send_text.assert_awaited_once()
+        call_args = handler.evolution.send_text.call_args
+        assert "atingiu seu limite diario" in call_args.args[1].lower()
+
+    async def test_process_message_routes_pdf_to_specific_handler(
+        self, handler, seeded_session, test_phone, accepted_user_in_db
     ):
         """Test that PDF documents are routed to the PDF handler."""
         handler.handle_pdf_message = AsyncMock()
@@ -368,10 +460,10 @@ class TestWebhookHandlerIntentHandling:
 
         await handler.process_message(seeded_session, msg_data)
 
-        handler.handle_pdf_message.assert_awaited_once_with(seeded_session, msg_data)
+        handler.handle_pdf_message.assert_awaited_once()
 
     async def test_process_message_routes_json_document_to_backup_handler(
-        self, handler, seeded_session, test_phone
+        self, handler, seeded_session, test_phone, accepted_user_in_db
     ):
         """Test that JSON documents are routed to the backup handler."""
         handler.handle_backup_document = AsyncMock()
@@ -390,7 +482,9 @@ class TestWebhookHandlerIntentHandling:
 
         handler.handle_backup_document.assert_awaited_once_with(seeded_session, msg_data)
 
-    async def test_handle_pdf_message_success(self, handler, seeded_session, test_phone):
+    async def test_handle_pdf_message_success(
+        self, handler, seeded_session, test_phone, accepted_user_in_db
+    ):
         """Test successful PDF receipt processing."""
         handler.evolution.download_media.return_value = b"%PDF fake"
         handler.gemini.process_pdf_text.return_value = {
@@ -413,6 +507,7 @@ class TestWebhookHandlerIntentHandling:
                     "text": "comprovante uber",
                     "message_key": {"id": "123"},
                 },
+                accepted_user_in_db,
             )
 
         handler.gemini.process_pdf_text.assert_awaited_once_with(
@@ -422,7 +517,7 @@ class TestWebhookHandlerIntentHandling:
         handler.handle_register_expense.assert_awaited_once()
 
     async def test_handle_pdf_message_without_extractable_text(
-        self, handler, seeded_session, test_phone
+        self, handler, seeded_session, test_phone, accepted_user_in_db
     ):
         """Test PDF processing when text extraction fails."""
         handler.evolution.download_media.return_value = b"%PDF fake"
@@ -435,6 +530,7 @@ class TestWebhookHandlerIntentHandling:
                     "text": "",
                     "message_key": {"id": "123"},
                 },
+                accepted_user_in_db,
             )
 
         handler.evolution.send_text.assert_awaited_once()
@@ -506,7 +602,7 @@ class TestWebhookHandlerIntentHandling:
         handler.evolution.send_text.assert_awaited_once()
 
     async def test_handle_backup_restore_confirmation_success(
-        self, handler, seeded_session, test_phone
+        self, handler, seeded_session, test_phone, accepted_user_in_db
     ):
         """Test confirmed backup restore."""
         handler.backup_service.restore_user_backup = AsyncMock(
@@ -538,6 +634,7 @@ class TestWebhookHandlerIntentHandling:
                     "goal_updates": 2,
                 },
             },
+            accepted_user_in_db,
         )
 
         handler.backup_service.restore_user_backup.assert_awaited_once()

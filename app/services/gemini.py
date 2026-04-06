@@ -101,11 +101,13 @@ Analise a mensagem do usuario e retorne um JSON com a intencao e dados extraidos
 - convert_currency: converter valor entre moedas (sem registrar gasto)
 - export_backup: exportar backup completo dos dados do usuario
 - import_backup: orientar/importar um backup enviado como JSON
+- show_limits: mostrar limites diarios configurados para o usuario
+- set_user_limit: ajustar um limite diario do usuario
 - unknown: nao entendi a mensagem
 
 ## Formato de resposta (JSON):
 {
-  "intent": "register_expense|register_recurring|cancel_recurring|query_month|export|list_recurring|undo_last|set_budget|check_budget|list_budgets|remove_budget|show_chart|create_goal|check_goal|list_goals|remove_goal|add_to_goal|convert_currency|export_backup|import_backup|unknown",
+  "intent": "register_expense|register_recurring|cancel_recurring|query_month|export|list_recurring|undo_last|set_budget|check_budget|list_budgets|remove_budget|show_chart|create_goal|check_goal|list_goals|remove_goal|add_to_goal|convert_currency|export_backup|import_backup|show_limits|set_user_limit|unknown",
   "data": {
     "description": "descricao do gasto",
     "amount": 0.00,
@@ -125,7 +127,9 @@ Analise a mensagem do usuario e retorne um JSON com a intencao e dados extraidos
     "goal_deadline": null ou data limite formato "YYYY-MM-DD" (para create_goal),
     "goal_deposit": null ou valor a depositar na meta (para add_to_goal),
     "currency": null ou codigo ISO da moeda estrangeira (USD, EUR, GBP, KRW, HUF, etc.),
-    "target_currency": null ou codigo ISO da moeda destino (para convert_currency, default BRL)
+    "target_currency": null ou codigo ISO da moeda destino (para convert_currency, default BRL),
+    "limit_type": null ou "daily_text_limit" ou "daily_media_limit" ou "daily_ai_limit",
+    "daily_limit": null ou numero inteiro positivo
   },
   "confidence": 0.0 a 1.0
 }
@@ -151,6 +155,12 @@ Analise a mensagem do usuario e retorne um JSON com a intencao e dados extraidos
 18. Para conversao sem gasto ("quanto e 100 dolares", "converter 50 euros pra reais"), use convert_currency
 19. Frases como "exporta meu backup", "fazer backup dos meus dados" indicam export_backup
 20. Frases como "importar backup", "restaurar backup", "recuperar backup" indicam import_backup
+21. Frases como "meus limites", "mostrar limites", "ver limites" indicam show_limits
+22. Frases como "ajustar limite de ia para 30 por dia" indicam set_user_limit
+23. Mapeamento de limites:
+   - texto/mensagem -> daily_text_limit
+   - midia/media/arquivo -> daily_media_limit
+   - ia/ai -> daily_ai_limit
 
 ## Exemplos:
 
@@ -315,6 +325,12 @@ Saida: {"intent": "export_backup", "data": {}, "confidence": 0.95}
 
 Entrada: "quero restaurar backup"
 Saida: {"intent": "import_backup", "data": {}, "confidence": 0.95}
+
+Entrada: "meus limites"
+Saida: {"intent": "show_limits", "data": {}, "confidence": 0.95}
+
+Entrada: "ajustar limite de ia para 30 por dia"
+Saida: {"intent": "set_user_limit", "data": {"limit_type": "daily_ai_limit", "daily_limit": 30}, "confidence": 0.95}
 
 Responda APENAS com o JSON, sem texto adicional.
 """

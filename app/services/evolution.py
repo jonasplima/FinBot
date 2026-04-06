@@ -86,10 +86,11 @@ class EvolutionService:
         data = {
             "instanceName": self.instance,
             "integration": "WHATSAPP-BAILEYS",
-            "number": settings.owner_phone,
             "qrcode": True,
             "token": self.api_key,
         }
+        if settings.owner_phone:
+            data["number"] = settings.owner_phone
 
         result = await self._request("POST", "/instance/create", json=data)
         logger.info(f"Instance created: {result}")

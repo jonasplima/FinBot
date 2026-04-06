@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.database.connection import async_session
-from app.database.models import PendingConfirmation
+from app.database.models import PendingConfirmation, User
 from app.services.backup import BackupService
 from app.services.budget import BudgetService
 from app.services.chart import ChartService
@@ -19,6 +19,8 @@ from app.services.evolution import EvolutionService
 from app.services.expense import ExpenseService
 from app.services.gemini import GeminiService
 from app.services.goal import GoalService
+from app.services.rate_limit import RateLimitService
+from app.services.user import UserService
 from app.utils.validators import is_phone_allowed, normalize_phone
 
 logger = logging.getLogger(__name__)
@@ -37,6 +39,8 @@ class WebhookHandler:
         self.goal_service = GoalService()
         self.currency_service = CurrencyService()
         self.backup_service = BackupService()
+        self.user_service = UserService()
+        self.rate_limit_service = RateLimitService()
 
     async def handle(self, webhook_data: dict) -> None:
         """Process incoming webhook event."""
@@ -51,13 +55,12 @@ class WebhookHandler:
 
         logger.info(f"Message from {phone}: {text[:100] if text else '(empty)'}...")
 
-        # Check if phone is allowed
-        logger.info(f"Checking if {phone} is in allowed list: {settings.allowed_phones}")
-        if not is_phone_allowed(phone, settings.allowed_phones):
+        # Optional allowlist for controlled rollout
+        if settings.allowed_phones and not is_phone_allowed(phone, settings.allowed_phones):
             logger.warning(f"Unauthorized phone: {phone}")
             return
 
-        logger.info(f"Phone {phone} is authorized, processing message...")
+        logger.info(f"Phone {phone} accepted for processing")
 
         # Process message
         async with async_session() as session:
@@ -71,8 +74,23 @@ class WebhookHandler:
         """Process a single message."""
         phone = msg_data["phone"]
         text = msg_data["text"].strip().lower()
+        user = await self.user_service.get_or_create_user(session, phone)
 
         logger.info(f"Processing message: '{text}' from {phone}")
+
+        if not self.user_service.has_accepted_current_terms(user):
+            await self.handle_user_onboarding(session, msg_data, user)
+            return
+
+        direct_limit_command = self.user_service.parse_limit_command(msg_data["text"])
+        if direct_limit_command:
+            await self.handle_limit_command(session, phone, user, direct_limit_command)
+            return
+
+        if msg_data["text"]:
+            text_allowed = await self._check_daily_limit(session, phone, user, "daily_text_limit")
+            if not text_allowed:
+                return
 
         # Check for pending confirmation first
         pending = await self.get_pending_confirmation(session, phone)
@@ -83,27 +101,37 @@ class WebhookHandler:
             logger.info(
                 f"Handling confirmation response for pending type: {pending.data.get('type')}"
             )
-            await self.handle_confirmation_response(session, phone, text, pending)
+            await self.handle_confirmation_response(session, phone, text, pending, user)
             return
 
         # Check if message is media
         if msg_data["has_image"]:
-            await self.handle_image_message(session, msg_data)
+            media_allowed = await self._check_daily_limit(session, phone, user, "daily_media_limit")
+            if not media_allowed:
+                return
+            await self.handle_image_message(session, msg_data, user)
             return
         if msg_data.get("has_document") and msg_data.get("document_mimetype") == "application/pdf":
-            await self.handle_pdf_message(session, msg_data)
+            media_allowed = await self._check_daily_limit(session, phone, user, "daily_media_limit")
+            if not media_allowed:
+                return
+            await self.handle_pdf_message(session, msg_data, user)
             return
         if msg_data.get("has_document") and self._is_json_document(msg_data):
+            media_allowed = await self._check_daily_limit(session, phone, user, "daily_media_limit")
+            if not media_allowed:
+                return
             await self.handle_backup_document(session, msg_data)
             return
 
         # Process text message with Gemini
-        await self.handle_text_message(session, msg_data)
+        await self.handle_text_message(session, msg_data, user)
 
     async def handle_text_message(
         self,
         session: AsyncSession,
         msg_data: dict,
+        user: User,
     ) -> None:
         """Handle text message with Gemini AI."""
         phone = msg_data["phone"]
@@ -113,6 +141,10 @@ class WebhookHandler:
             return
 
         try:
+            ai_allowed = await self._check_daily_limit(session, phone, user, "daily_ai_limit")
+            if not ai_allowed:
+                return
+
             # Process with Gemini
             result = await self.gemini.process_message(text)
 
@@ -154,6 +186,10 @@ class WebhookHandler:
                 await self.handle_add_to_goal(session, phone, result)
             elif intent == "convert_currency":
                 await self.handle_convert_currency(session, phone, result)
+            elif intent == "show_limits":
+                await self.handle_show_limits(phone, user)
+            elif intent == "set_user_limit":
+                await self.handle_set_user_limit(session, phone, user, result)
             elif intent == "export_backup":
                 await self.handle_export_backup(session, phone)
             elif intent == "import_backup":
@@ -177,6 +213,7 @@ class WebhookHandler:
                     "- Ver grafico: 'mostra grafico de pizza'\n"
                     "- Criar meta: 'quero economizar 1000 reais ate dezembro'\n"
                     "- Ver metas: 'minhas metas'\n"
+                    "- Ver limites: 'meus limites'\n"
                     "- Backup: 'exporta meu backup'",
                 )
 
@@ -197,10 +234,141 @@ class WebhookHandler:
 
             await self.evolution.send_text(phone, error_msg)
 
+    async def handle_user_onboarding(
+        self,
+        session: AsyncSession,
+        msg_data: dict,
+        user: User,
+    ) -> None:
+        """Handle onboarding flow for users who have not accepted current terms."""
+        phone = msg_data["phone"]
+        text = msg_data["text"]
+
+        pending = await self.get_pending_confirmation(session, phone)
+        if pending and pending.data.get("type") == "user_onboarding":
+            if self.user_service.is_terms_acceptance(text):
+                await session.delete(pending)
+                await session.commit()
+                await self.user_service.accept_terms(session, user)
+                await self.evolution.send_text(
+                    phone,
+                    "Termos aceitos com sucesso! Agora voce pode usar o FinBot normalmente.",
+                )
+                return
+
+            if self.user_service.is_terms_rejection(text):
+                await session.delete(pending)
+                await session.commit()
+                await self.user_service.reject_terms(session, user)
+                await self.evolution.send_text(
+                    phone,
+                    "Sem o aceite dos termos eu nao posso continuar. "
+                    "Quando quiser tentar de novo, envie qualquer mensagem.",
+                )
+                return
+
+            await self.evolution.send_text(
+                phone,
+                "Para continuar, responda *sim* para aceitar os termos ou *nao* para recusar.",
+            )
+            return
+
+        if pending:
+            await session.delete(pending)
+            await session.commit()
+
+        await self.save_pending_confirmation(
+            session,
+            phone,
+            {"type": "user_onboarding", "terms_version": settings.terms_version},
+        )
+        await self.evolution.send_text(phone, self.user_service.build_terms_message())
+
+    async def handle_limit_command(
+        self,
+        session: AsyncSession,
+        phone: str,
+        user: User,
+        command_data: dict,
+    ) -> None:
+        """Handle direct local commands related to daily usage limits."""
+        action = command_data.get("action")
+        if action == "show":
+            await self.handle_show_limits(phone, user)
+            return
+
+        if action == "set":
+            try:
+                updated_user = await self.user_service.update_user_limit(
+                    session,
+                    user,
+                    command_data["limit_type"],
+                    command_data["limit_value"],
+                )
+                await self.evolution.send_text(
+                    phone,
+                    self.user_service.format_updated_limit_message(
+                        updated_user, command_data["limit_type"]
+                    ),
+                )
+            except ValueError as e:
+                await self.evolution.send_text(phone, str(e))
+
+    async def handle_show_limits(
+        self,
+        phone: str,
+        user: User,
+    ) -> None:
+        """Handle showing current user limits and daily usage."""
+        usage = await self.rate_limit_service.get_usage_summary(user)
+        await self.evolution.send_text(phone, self.user_service.format_user_limits(user, usage))
+
+    async def handle_set_user_limit(
+        self,
+        session: AsyncSession,
+        phone: str,
+        user: User,
+        result: dict,
+    ) -> None:
+        """Handle AI-parsed limit updates."""
+        data = result.get("data", {})
+        limit_type = data.get("limit_type")
+        limit_value = data.get("daily_limit")
+
+        if limit_type not in {"daily_text_limit", "daily_media_limit", "daily_ai_limit"}:
+            await self.evolution.send_text(
+                phone,
+                "Nao consegui identificar qual limite voce quer alterar. "
+                "Use: texto, midia ou ia.",
+            )
+            return
+
+        if limit_value is None:
+            await self.evolution.send_text(
+                phone,
+                "Nao consegui identificar o novo valor do limite.",
+            )
+            return
+
+        try:
+            updated_user = await self.user_service.update_user_limit(
+                session,
+                user,
+                limit_type,
+                int(limit_value),
+            )
+            await self.evolution.send_text(
+                phone,
+                self.user_service.format_updated_limit_message(updated_user, limit_type),
+            )
+        except ValueError as e:
+            await self.evolution.send_text(phone, str(e))
+
     async def handle_image_message(
         self,
         session: AsyncSession,
         msg_data: dict,
+        user: User,
     ) -> None:
         """Handle image message (receipt/invoice)."""
         phone = msg_data["phone"]
@@ -214,6 +382,10 @@ class WebhookHandler:
                     phone,
                     "Nao consegui baixar a imagem. Tente enviar novamente.",
                 )
+                return
+
+            ai_allowed = await self._check_daily_limit(session, phone, user, "daily_ai_limit")
+            if not ai_allowed:
                 return
 
             # Process with Gemini Vision
@@ -239,6 +411,7 @@ class WebhookHandler:
         self,
         session: AsyncSession,
         msg_data: dict,
+        user: User,
     ) -> None:
         """Handle PDF receipt/invoice messages."""
         phone = msg_data["phone"]
@@ -260,6 +433,10 @@ class WebhookHandler:
                     "Nao consegui extrair texto do PDF. "
                     "Se for um documento escaneado, envie como imagem ou digite manualmente.",
                 )
+                return
+
+            ai_allowed = await self._check_daily_limit(session, phone, user, "daily_ai_limit")
+            if not ai_allowed:
                 return
 
             result = await self.gemini.process_pdf_text(pdf_text, msg_data.get("text", ""))
@@ -1088,6 +1265,7 @@ class WebhookHandler:
         phone: str,
         response: str,
         pending: PendingConfirmation,
+        user: User,
     ) -> None:
         """Handle user response to confirmation using LLM evaluation."""
         pending_data = pending.data
@@ -1104,20 +1282,26 @@ class WebhookHandler:
 
         # Handle recurring expense confirmation
         if pending_type == "recurring_confirmation":
-            await self._handle_recurring_confirmation(session, phone, response, pending_data)
+            await self._handle_recurring_confirmation(session, phone, response, pending_data, user)
             return
 
         # Handle goal confirmation
         if pending_type == "goal_confirmation":
-            await self._handle_goal_confirmation(session, phone, response, pending_data)
+            await self._handle_goal_confirmation(session, phone, response, pending_data, user)
             return
 
         if pending_type == "backup_restore":
-            await self._handle_backup_restore_confirmation(session, phone, response, pending_data)
+            await self._handle_backup_restore_confirmation(
+                session, phone, response, pending_data, user
+            )
             return
 
         # Build expense summary for LLM context
         expense_summary = self._build_expense_summary(expense_data, pending_type)
+
+        ai_allowed = await self._check_daily_limit(session, phone, user, "daily_ai_limit")
+        if not ai_allowed:
+            return
 
         # Evaluate response using LLM
         evaluation = await self.gemini.evaluate_confirmation_response(expense_summary, response)
@@ -1406,6 +1590,7 @@ class WebhookHandler:
         phone: str,
         response: str,
         pending_data: dict,
+        user: User,
     ) -> None:
         """Handle user response to recurring expense confirmation."""
         from datetime import date
@@ -1499,6 +1684,10 @@ class WebhookHandler:
             )
         else:
             # Unknown response - try LLM evaluation
+            ai_allowed = await self._check_daily_limit(session, phone, user, "daily_ai_limit")
+            if not ai_allowed:
+                return
+
             evaluation = await self.gemini.evaluate_confirmation_response(
                 f"Confirmacao de {len(expenses)} despesa(s) recorrente(s) no valor de R$ {total:.2f}",
                 response,
@@ -1513,6 +1702,7 @@ class WebhookHandler:
                     phone,
                     "sim",
                     {"expenses": expenses, "total": total, "type": "recurring_confirmation"},
+                    user,
                 )
             elif action == "cancel":
                 await self.evolution.send_text(
@@ -1541,6 +1731,7 @@ class WebhookHandler:
         phone: str,
         response: str,
         pending_data: dict,
+        user: User,
     ) -> None:
         """Handle user response to goal creation confirmation."""
         from datetime import datetime
@@ -1620,6 +1811,10 @@ class WebhookHandler:
                 f"R$ {goal_data.get('target_amount')}, "
                 f"prazo {goal_data.get('deadline')}"
             )
+            ai_allowed = await self._check_daily_limit(session, phone, user, "daily_ai_limit")
+            if not ai_allowed:
+                return
+
             evaluation = await self.gemini.evaluate_confirmation_response(summary, response)
 
             action = evaluation.get("action", "unknown")
@@ -1631,6 +1826,7 @@ class WebhookHandler:
                     phone,
                     "sim",
                     {"type": "goal_confirmation", "goal_data": goal_data},
+                    user,
                 )
             elif action == "cancel":
                 await self.evolution.send_text(
@@ -1658,6 +1854,7 @@ class WebhookHandler:
         phone: str,
         response: str,
         pending_data: dict,
+        user: User,
     ) -> None:
         """Handle user response to backup restore confirmation."""
         summary = pending_data.get("summary", {})
@@ -1714,6 +1911,10 @@ class WebhookHandler:
             await self.evolution.send_text(phone, "Restauracao cancelada.")
             return
 
+        ai_allowed = await self._check_daily_limit(session, phone, user, "daily_ai_limit")
+        if not ai_allowed:
+            return
+
         evaluation = await self.gemini.evaluate_confirmation_response(
             self._build_backup_restore_summary(summary),
             response,
@@ -1721,7 +1922,7 @@ class WebhookHandler:
         action = evaluation.get("action", "unknown")
 
         if action == "confirm":
-            await self._handle_backup_restore_confirmation(session, phone, "sim", pending_data)
+            await self._handle_backup_restore_confirmation(session, phone, "sim", pending_data, user)
         elif action == "cancel":
             await self.evolution.send_text(phone, "Restauracao cancelada.")
         else:
@@ -1738,6 +1939,29 @@ class WebhookHandler:
                     "summary": summary,
                 },
             )
+
+    async def _check_daily_limit(
+        self,
+        session: AsyncSession,
+        phone: str,
+        user: User,
+        limit_field: str,
+    ) -> bool:
+        """Check and increment a daily limit for the user."""
+        usage = await self.rate_limit_service.check_and_increment(user, limit_field)
+        if usage["allowed"]:
+            return True
+
+        refreshed_user = await self.user_service.get_or_create_user(session, user.phone)
+        user.daily_text_limit = refreshed_user.daily_text_limit
+        user.daily_media_limit = refreshed_user.daily_media_limit
+        user.daily_ai_limit = refreshed_user.daily_ai_limit
+
+        await self.evolution.send_text(
+            phone,
+            self.rate_limit_service.format_limit_reached_message(limit_field, usage),
+        )
+        return False
 
     def _is_json_document(self, msg_data: dict) -> bool:
         """Check whether the incoming document looks like a JSON backup file."""

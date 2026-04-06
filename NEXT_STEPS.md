@@ -253,15 +253,50 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
 
 ## Fase 5: Escalabilidade (Prioridade Baixa)
 
-### 5.1 Onboarding Multi-Usuários
+### 5.1 Onboarding Multi-Usuários ✅
 - **Complexidade:** Alta 🔴
 - **Valor:** Alto (mas estrutura já suporta)
-- **Orientações:**
-  - Remover `OWNER_PHONE` do `.env`
-  - Criar tabela `users` com: phone, name, created_at, accepted_terms
-  - Fluxo de primeiro contato: "Olá! Aceita os termos de uso?"
-  - Rate limiting por usuário (evitar abuso)
-  - **Nota:** Modelo atual já usa `user_phone` em todas as queries
+- **Status:** Implementado
+- **Implementação:**
+  - ✅ Tabela `users` criada com identidade, aceite de termos, metadados de uso e limites configuráveis
+  - ✅ Remoção do gate funcional de usuário único baseado em `OWNER_PHONE`
+  - ✅ Allowlist operacional opcional via `allowed_numbers`, sem bloquear o modelo multi-usuário
+  - ✅ `UserService` para criação automática de usuário, aceite de termos e atualização de limites
+  - ✅ Onboarding com aceite obrigatório antes de registrar dados, processar mídia ou chamar Gemini
+  - ✅ Reaproveitamento de `PendingConfirmation` para fluxo de `user_onboarding`
+  - ✅ `RateLimitService` com Redis e fallback em memória
+  - ✅ Limites diários por usuário para texto, mídia e chamadas de IA
+  - ✅ Comandos locais para consultar e ajustar limites sem depender de IA
+  - ✅ Intents adicionais no Gemini para limites por usuário
+  - ✅ Base preparada para futura interface web com campos persistidos de perfil e preferências
+  - ✅ 7 testes adicionais cobrindo usuários, rate limit, onboarding e comandos de limites
+- **Termos de Uso - Diretriz Inicial:**
+  - O texto deve deixar claro que o FinBot é operado em ambiente `self-hosted`
+  - Os dados permanecem sob a infraestrutura administrada pelo operador da instância
+  - A guarda, segurança, backup e disponibilidade dependem da configuração e da operação desse ambiente
+  - Formulação recomendada:
+    - "Como o FinBot opera em ambiente self-hosted, a guarda e a segurança dos dados dependem da infraestrutura administrada pelo operador da instância."
+- **Decisões Iniciais:**
+  - O controle de acesso deixa de depender de um único telefone
+  - O aceite de termos passa a ser obrigatório antes do uso efetivo
+  - Limites de uso serão configuráveis por usuário
+  - A modelagem já deve nascer preparada para a futura interface web
+- **Critérios de Aceite:**
+  - Um número novo consegue iniciar conversa sem pré-cadastro manual no `.env`
+  - Antes do aceite, o usuário não consegue registrar dados nem consumir IA
+  - Após o aceite, o usuário usa normalmente o sistema com isolamento por `user_phone`
+  - Cada usuário consegue consultar e ajustar seus limites diários
+  - A estrutura criada permite reaproveitamento em futura interface web sem refatoração profunda
+- **Arquivos:**
+  - `app/database/models.py` - tabela `users` e campos de preferências/limites
+  - `app/services/user.py` - gestão de usuários e onboarding
+  - `app/services/rate_limit.py` - limites de uso por usuário
+  - `app/handlers/webhook.py` - gate de onboarding e integração com rate limit
+  - `app/services/gemini.py` - intents para consultar/ajustar limites
+  - `app/config.py` - defaults globais de limites e configuração inicial
+  - `tests/test_user.py` - testes do fluxo de usuários
+  - `tests/test_rate_limit.py` - testes de limites configuráveis
+  - `tests/test_webhook.py` - testes do onboarding e bloqueios antes do aceite
 
 ### 5.2 Backup e Restauração
 - **Complexidade:** Média 🟡
@@ -313,7 +348,7 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
 | ~~Leitura PDF~~ | ✅ | 🟡 | Webhook de mídia (existe) | ⭐⭐⭐ |
 | ~~Metas~~ | ✅ | 🟡 | ~~Alertas~~ ✅ | ⭐⭐⭐ |
 | ~~Conversão Moeda~~ | ✅ | 🟢 | Nenhuma | ⭐⭐⭐ |
-| Multi-Usuários | 🔴 | 🔴 | ~~Testes, CI~~ ✅ | ⭐⭐ |
+| ~~Multi-Usuários~~ | ✅ | 🔴 | ~~Testes, CI~~ ✅ | ⭐⭐ |
 | ~~Backup~~ | ✅ | 🟡 | Multi-usuários | ⭐⭐ |
 
 ---
@@ -324,5 +359,5 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
 2. **Sprint 2:** ~~Alertas/Limites~~ ✅ + ~~Scheduler Recorrentes~~ ✅
 3. **Sprint 3:** ~~Gráficos~~ ✅ + ~~Metas~~ ✅
 4. **Sprint 4:** ~~PDF~~ ✅ + ~~Conversão Moeda~~ ✅
-5. **Sprint 5:** ~~Leitura de PDF~~ ✅ + Multi-Usuários ⬅️ **PRÓXIMO**
+5. **Sprint 5:** ~~Leitura de PDF~~ ✅ + ~~Multi-Usuários~~ ✅
 6. **Sprint 6:** ~~Backup~~ ✅
