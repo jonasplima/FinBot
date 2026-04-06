@@ -134,6 +134,10 @@ SCHEDULER_HOUR=8                 # Hora do lembrete diário
 docker-compose up -d
 ```
 
+Observação:
+- O build Docker ignora `.env` e outros arquivos locais sensíveis via `.dockerignore`
+- As credenciais são injetadas no container em runtime pelo `docker-compose`, não copiadas para a imagem
+
 ### 4. Conecte o WhatsApp
 
 Acesse no navegador:

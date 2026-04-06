@@ -78,25 +78,26 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
 ### 0.3 Blindagem do Build Docker Contra Vazamento de `.env`
 - **Complexidade:** Baixa 🟢
 - **Valor:** Muito Alto
-- **Status:** Pendente
+- **Status:** Implementado
 - **Problema identificado:**
   - O `Dockerfile` usa `COPY . .` sem `.dockerignore`
   - O arquivo `.env` local pode ir para dentro da imagem e ficar preservado nas layers
   - Parte das variáveis em runtime parece depender desse vazamento implícito
-- **Plano de correção:**
-  - Criar `.dockerignore` excluindo `.env`, caches, cobertura, `.git` e artefatos locais
-  - Garantir que toda configuração necessária entre via `environment` ou `env_file`, nunca por cópia do workspace
-  - Revisar o `docker-compose` para declarar explicitamente as variáveis consumidas em produção
-  - Validar inicialização do container sem nenhum arquivo sensível copiado para a imagem
+- **Implementação:**
+  - ✅ Criação de `.dockerignore` excluindo `.env`, `.git`, caches, cobertura e artefatos locais de desenvolvimento
+  - ✅ Configuração do serviço `finbot` para carregar variáveis em runtime via `env_file` e `environment`, sem depender de arquivos copiados para a imagem
+  - ✅ Explicitação das variáveis da aplicação no `docker-compose`, incluindo scheduler, limites padrão e integrações opcionais
+  - ✅ Inclusão de defaults seguros no Compose para variáveis opcionais com fallback já previsto na aplicação
+  - ✅ Atualização da documentação para deixar claro que segredos entram no container em runtime, não no build
+  - ✅ Validação estrutural com `docker compose config --services` sem warnings
 - **Critérios de aceite:**
   - O build não inclui `.env` nem outros arquivos locais sensíveis
   - O container sobe com as variáveis declaradas explicitamente
   - O comportamento da aplicação não depende mais do conteúdo acidental da imagem
 - **Arquivos impactados:**
-  - `Dockerfile`
   - `docker-compose.yml`
   - `.dockerignore`
-  - `.env.example`
+  - `README.md`
 
 ### 0.4 Sanitização de Dados na Exportação XLSX
 - **Complexidade:** Baixa 🟢
