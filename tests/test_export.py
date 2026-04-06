@@ -3,11 +3,13 @@
 import base64
 import io
 from datetime import date
+from unittest.mock import AsyncMock
 
 import pytest
 from openpyxl import load_workbook
 
 from app.services.export import ExportService
+from app.utils.validators import sanitize_for_spreadsheet
 
 
 class TestExportServiceExportMonth:
@@ -203,3 +205,81 @@ class TestExportServiceWithMultipleExpenses:
                     break
 
         assert found_correct_total
+
+
+class TestSpreadsheetSanitization:
+    """Tests for spreadsheet-safe export behavior."""
+
+    @pytest.fixture
+    def service(self):
+        return ExportService()
+
+    @pytest.mark.parametrize(
+        ("raw_value", "expected"),
+        [
+            ("=SUM(A1:A2)", "'=SUM(A1:A2)"),
+            ("+cmd", "'+cmd"),
+            ("-10", "'-10"),
+            ("@user", "'@user"),
+            ("almoco", "almoco"),
+        ],
+    )
+    def test_sanitize_for_spreadsheet(self, raw_value, expected):
+        """Test spreadsheet sanitizer neutralizes formula-like prefixes."""
+        assert sanitize_for_spreadsheet(raw_value) == expected
+
+    async def test_export_sanitizes_formula_like_description(
+        self, service, seeded_session, test_phone, sample_expense_data
+    ):
+        """Test XLSX export neutralizes formula-like text fields."""
+        service.expense_service.get_expenses_for_export = AsyncMock(
+            return_value=[
+                {
+                    "Data": "2026-04-06",
+                    "Descricao": "=SUM(A1:A2)",
+                    "Categoria": "@mercado",
+                    "Forma de Pagamento": "+pix",
+                    "Tipo": "Negativo",
+                    "Parcela": "-1/3",
+                    "Valor": 50.0,
+                    "Compartilhada": "Nao",
+                    "Percentual": 0,
+                }
+            ]
+        )
+
+        result = await service.export_month(seeded_session, test_phone)
+
+        assert result["success"] is True
+
+        file_bytes = base64.b64decode(result["file_base64"])
+        wb = load_workbook(io.BytesIO(file_bytes))
+        ws = wb.active
+
+        assert ws["B2"].value == "'=SUM(A1:A2)"
+        assert ws["C2"].value == "'@mercado"
+        assert ws["D2"].value == "'+pix"
+
+    async def test_export_preserves_numeric_value_column(
+        self, service, seeded_session, test_phone, sample_expense_data
+    ):
+        """Test XLSX export keeps monetary values as numbers."""
+        from app.services.expense import ExpenseService
+
+        expense_service = ExpenseService()
+        data = sample_expense_data.copy()
+        data["description"] = "-mercado"
+        data["amount"] = 123.45
+        await expense_service.create_expense(seeded_session, test_phone, data)
+
+        result = await service.export_month(seeded_session, test_phone)
+
+        assert result["success"] is True
+
+        file_bytes = base64.b64decode(result["file_base64"])
+        wb = load_workbook(io.BytesIO(file_bytes))
+        ws = wb.active
+
+        assert ws["B2"].value == "'-mercado"
+        assert ws["G2"].value == pytest.approx(123.45)
+        assert isinstance(ws["G2"].value, float)

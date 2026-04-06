@@ -18,8 +18,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.chart import ChartService
 from app.services.expense import MONTH_NAMES, ExpenseService
+from app.utils.validators import sanitize_for_spreadsheet
 
 logger = logging.getLogger(__name__)
+
+TEXT_EXPORT_HEADERS = {
+    "Data",
+    "Descricao",
+    "Categoria",
+    "Forma de Pagamento",
+    "Tipo",
+    "Parcela",
+    "Compartilhada",
+}
 
 
 class ExportService:
@@ -122,6 +133,8 @@ class ExportService:
         for row_idx, expense in enumerate(expenses, 2):
             for col_idx, header in enumerate(headers, 1):
                 value = expense.get(header, "")
+                if isinstance(value, str) and header in TEXT_EXPORT_HEADERS:
+                    value = sanitize_for_spreadsheet(value)
                 cell = ws.cell(row=row_idx, column=col_idx, value=value)
                 cell.border = thin_border
 

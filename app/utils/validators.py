@@ -80,3 +80,14 @@ def sanitize_text(text: str, max_length: int = 500) -> str:
         cleaned = cleaned[:max_length]
 
     return cleaned.strip()
+
+
+def sanitize_for_spreadsheet(value: str) -> str:
+    """Prevent spreadsheet formula injection for text cells."""
+    if not value:
+        return value
+
+    if value[0] in ("=", "+", "-", "@"):
+        return f"'{value}"
+
+    return value

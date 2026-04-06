@@ -102,15 +102,16 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
 ### 0.4 Sanitização de Dados na Exportação XLSX
 - **Complexidade:** Baixa 🟢
 - **Valor:** Alto
-- **Status:** Pendente
+- **Status:** Implementado
 - **Problema identificado:**
   - Campos livres como descrição são exportados para Excel sem sanitização
   - Valores iniciados por `=`, `+`, `-` ou `@` podem ser interpretados como fórmula por planilhas
   - Isso abre espaço para formula injection em arquivos exportados
-- **Plano de correção:**
-  - Escapar células iniciadas por caracteres especiais antes de escrever o XLSX
-  - Reaproveitar ou adaptar o sanitizador já existente para exportação
-  - Adicionar testes específicos cobrindo descrições maliciosas e conteúdo normal
+- **Implementação:**
+  - ✅ Inclusão de `sanitize_for_spreadsheet()` para neutralizar conteúdo textual iniciado por `=`, `+`, `-` ou `@`
+  - ✅ Aplicação da sanitização apenas nas colunas textuais da exportação XLSX
+  - ✅ Preservação de colunas numéricas, como `Valor`, para não quebrar formatação e cálculos
+  - ✅ Testes cobrindo descrições maliciosas, casos normais e garantia de que valores monetários continuam numéricos
 - **Critérios de aceite:**
   - Dados livres continuam legíveis no arquivo exportado
   - Células potencialmente executáveis deixam de ser interpretadas como fórmula
