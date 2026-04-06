@@ -104,6 +104,9 @@ class EvolutionService:
         """Configure webhook for receiving messages."""
         logger.info("Setting up webhook...")
 
+        if not settings.webhook_secret:
+            raise ValueError("WEBHOOK_SECRET is not configured")
+
         # Get the container's internal URL
         webhook_url = "http://finbot:3003/webhook/evolution"
 
@@ -111,6 +114,9 @@ class EvolutionService:
             "webhook": {
                 "enabled": True,
                 "url": webhook_url,
+                "headers": {
+                    "Authorization": f"Bearer {settings.webhook_secret}",
+                },
                 "webhookByEvents": False,
                 "webhookBase64": True,
                 "events": [

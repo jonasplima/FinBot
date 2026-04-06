@@ -74,6 +74,7 @@ services:
       - OWNER_PHONE=${OWNER_PHONE}
       - ALLOWED_NUMBERS=${ALLOWED_NUMBERS}
       - ADMIN_SECRET=${ADMIN_SECRET}
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET}
     depends_on:
       postgres:
         condition: service_healthy

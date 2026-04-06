@@ -1,6 +1,6 @@
-"""Tests for EvolutionService message extraction."""
+"""Tests for EvolutionService."""
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from app.services.evolution import EvolutionService
 
@@ -39,3 +39,40 @@ class TestEvolutionServiceMessageExtraction:
         assert result["document_filename"] == "comprovante.pdf"
         assert result["text"] == "segue comprovante"
         assert result["has_image"] is False
+
+
+class TestEvolutionServiceWebhookSetup:
+    """Tests for webhook setup payload sent to Evolution API."""
+
+    async def test_setup_webhook_sends_authorization_header(self):
+        """Test webhook configuration includes the authorization header."""
+        with patch("app.services.evolution.settings") as mock_settings:
+            mock_settings.evolution_api_url = "http://localhost:8080"
+            mock_settings.evolution_api_key = "test-key"
+            mock_settings.evolution_instance = "test-instance"
+            mock_settings.webhook_secret = "test-webhook-secret"
+
+            service = EvolutionService()
+            service._request = AsyncMock(return_value={"success": True})
+
+            await service.setup_webhook()
+
+            service._request.assert_awaited_once_with(
+                "POST",
+                "/webhook/set/test-instance",
+                json={
+                    "webhook": {
+                        "enabled": True,
+                        "url": "http://finbot:3003/webhook/evolution",
+                        "headers": {
+                            "Authorization": "Bearer test-webhook-secret",
+                        },
+                        "webhookByEvents": False,
+                        "webhookBase64": True,
+                        "events": [
+                            "MESSAGES_UPSERT",
+                            "CONNECTION_UPDATE",
+                        ],
+                    },
+                },
+            )

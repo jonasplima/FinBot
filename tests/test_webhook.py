@@ -4,10 +4,13 @@ from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import HTTPException
+from starlette.requests import Request
 
 from app.database.models import PendingConfirmation
 from app.handlers.webhook import WebhookHandler
 from app.services.rate_limit import RateLimitService
+from app.main import evolution_webhook
 
 
 class TestWebhookHandlerMessageExtraction:
@@ -119,6 +122,77 @@ class TestWebhookHandlerPendingConfirmation:
 
         result = await handler.get_pending_confirmation(seeded_session, test_phone)
         assert result.data["data"]["description"] == "New Test"
+
+
+class TestEvolutionWebhookAuthentication:
+    """Tests for webhook authentication at the FastAPI boundary."""
+
+    @staticmethod
+    def _build_request(headers: dict[str, str] | None = None, body: dict | None = None) -> Request:
+        payload = body or {"event": "messages.upsert", "data": {}}
+        header_pairs = []
+        for key, value in (headers or {}).items():
+            header_pairs.append((key.lower().encode("latin-1"), value.encode("latin-1")))
+
+        async def receive() -> dict:
+            return {
+                "type": "http.request",
+                "body": __import__("json").dumps(payload).encode("utf-8"),
+                "more_body": False,
+            }
+
+        scope = {
+            "type": "http",
+            "asgi": {"version": "3.0"},
+            "http_version": "1.1",
+            "method": "POST",
+            "scheme": "http",
+            "path": "/webhook/evolution",
+            "raw_path": b"/webhook/evolution",
+            "query_string": b"",
+            "headers": header_pairs,
+            "client": ("testclient", 123),
+            "server": ("testserver", 80),
+        }
+        return Request(scope, receive)
+
+    async def test_rejects_when_webhook_secret_is_missing(self):
+        """Test webhook is rejected if authentication is not configured."""
+        request = self._build_request(headers={"Authorization": "Bearer anything"})
+
+        with patch("app.main.settings.webhook_secret", ""):
+            with pytest.raises(HTTPException) as exc_info:
+                await evolution_webhook(request)
+
+        assert exc_info.value.status_code == 503
+
+    async def test_rejects_when_authorization_is_invalid(self):
+        """Test webhook is rejected before processing when auth is invalid."""
+        request = self._build_request(headers={"Authorization": "Bearer wrong-secret"})
+
+        with patch("app.main.settings.webhook_secret", "test-webhook-secret"):
+            with patch("app.handlers.webhook.WebhookHandler") as mock_handler_cls:
+                with pytest.raises(HTTPException) as exc_info:
+                    await evolution_webhook(request)
+
+        assert exc_info.value.status_code == 401
+        mock_handler_cls.assert_not_called()
+
+    async def test_accepts_when_authorization_is_valid(self):
+        """Test webhook is processed when the Authorization header is valid."""
+        request = self._build_request(headers={"Authorization": "Bearer test-webhook-secret"})
+
+        with patch("app.main.settings.webhook_secret", "test-webhook-secret"):
+            with patch("app.handlers.webhook.WebhookHandler") as mock_handler_cls:
+                mock_handler = MagicMock()
+                mock_handler.handle = AsyncMock()
+                mock_handler_cls.return_value = mock_handler
+
+                response = await evolution_webhook(request)
+
+        assert response == {"status": "ok"}
+        mock_handler_cls.assert_called_once()
+        mock_handler.handle.assert_awaited_once()
 
 
 class TestWebhookHandlerBuildExpenseSummary:

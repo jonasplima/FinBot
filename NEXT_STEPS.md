@@ -23,6 +23,194 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
 
 ---
 
+## Fase 0: Hardening, Segurança e Confiabilidade (Prioridade Máxima)
+
+### 0.1 Autenticação do Webhook da Evolution API
+- **Complexidade:** Média 🟡
+- **Valor:** Muito Alto
+- **Status:** Pendente
+- **Problema identificado:**
+  - O endpoint `/webhook/evolution` aceita requisições sem autenticação forte
+  - Hoje é possível forjar payloads com `remoteJid` e simular mensagens de outros números caso a porta esteja acessível
+  - A publicação da porta do `finbot` no `docker-compose` amplia a superfície de ataque
+- **Plano de correção:**
+  - Exigir autenticação do webhook com token compartilhado ou assinatura HMAC em header dedicado
+  - Validar origem da requisição antes de processar payload
+  - Restringir a exposição do serviço `finbot` na rede quando ele só precisar receber tráfego interno do stack
+  - Adicionar testes cobrindo requisição válida, inválida e sem credencial
+- **Critérios de aceite:**
+  - Webhooks sem credencial válida são rejeitados antes de qualquer processamento
+  - Requisições legítimas da Evolution continuam funcionando normalmente
+  - Não é mais possível acionar o fluxo com payloads forjados apenas chamando a rota HTTP
+- **Arquivos impactados:**
+  - `app/main.py`
+  - `app/services/evolution.py`
+  - `docker-compose.yml`
+  - `tests/test_webhook.py`
+
+### 0.2 Proteção da Superfície Admin e Redução de Logs Sensíveis
+- **Complexidade:** Média 🟡
+- **Valor:** Muito Alto
+- **Status:** Pendente
+- **Problema identificado:**
+  - `ADMIN_SECRET` é enviado por query string em `/admin/qrcode` e `/admin/status`
+  - Logs atuais podem registrar QR code, pairing code, telefone, conteúdo da mensagem e metadados sensíveis
+  - O `logging.basicConfig()` está fixando `INFO`, reduzindo o controle operacional do que vaza
+- **Plano de correção:**
+  - Migrar autenticação admin para header `Authorization` ou outra forma que não exponha o segredo na URL
+  - Redigir ou remover logs de QR code, pairing code, telefone completo e texto de mensagens
+  - Passar a respeitar `LOG_LEVEL` da configuração da aplicação
+  - Criar utilitário de mascaramento para telefones e segredos
+- **Critérios de aceite:**
+  - URLs administrativas deixam de carregar segredo em texto puro
+  - Logs não exibem QR code, pairing code, payload bruto nem mensagem financeira do usuário
+  - O nível de log configurado no ambiente é respeitado pela aplicação
+- **Arquivos impactados:**
+  - `app/main.py`
+  - `app/services/evolution.py`
+  - `app/handlers/webhook.py`
+  - `app/config.py`
+
+### 0.3 Blindagem do Build Docker Contra Vazamento de `.env`
+- **Complexidade:** Baixa 🟢
+- **Valor:** Muito Alto
+- **Status:** Pendente
+- **Problema identificado:**
+  - O `Dockerfile` usa `COPY . .` sem `.dockerignore`
+  - O arquivo `.env` local pode ir para dentro da imagem e ficar preservado nas layers
+  - Parte das variáveis em runtime parece depender desse vazamento implícito
+- **Plano de correção:**
+  - Criar `.dockerignore` excluindo `.env`, caches, cobertura, `.git` e artefatos locais
+  - Garantir que toda configuração necessária entre via `environment` ou `env_file`, nunca por cópia do workspace
+  - Revisar o `docker-compose` para declarar explicitamente as variáveis consumidas em produção
+  - Validar inicialização do container sem nenhum arquivo sensível copiado para a imagem
+- **Critérios de aceite:**
+  - O build não inclui `.env` nem outros arquivos locais sensíveis
+  - O container sobe com as variáveis declaradas explicitamente
+  - O comportamento da aplicação não depende mais do conteúdo acidental da imagem
+- **Arquivos impactados:**
+  - `Dockerfile`
+  - `docker-compose.yml`
+  - `.dockerignore`
+  - `.env.example`
+
+### 0.4 Sanitização de Dados na Exportação XLSX
+- **Complexidade:** Baixa 🟢
+- **Valor:** Alto
+- **Status:** Pendente
+- **Problema identificado:**
+  - Campos livres como descrição são exportados para Excel sem sanitização
+  - Valores iniciados por `=`, `+`, `-` ou `@` podem ser interpretados como fórmula por planilhas
+  - Isso abre espaço para formula injection em arquivos exportados
+- **Plano de correção:**
+  - Escapar células iniciadas por caracteres especiais antes de escrever o XLSX
+  - Reaproveitar ou adaptar o sanitizador já existente para exportação
+  - Adicionar testes específicos cobrindo descrições maliciosas e conteúdo normal
+- **Critérios de aceite:**
+  - Dados livres continuam legíveis no arquivo exportado
+  - Células potencialmente executáveis deixam de ser interpretadas como fórmula
+  - Exportações existentes permanecem compatíveis
+- **Arquivos impactados:**
+  - `app/services/export.py`
+  - `app/utils/validators.py`
+  - `tests/test_export.py`
+
+### 0.5 Limites Defensivos para PDFs e Backups
+- **Complexidade:** Média 🟡
+- **Valor:** Alto
+- **Status:** Pendente
+- **Problema identificado:**
+  - PDFs e JSONs são carregados inteiros em memória
+  - Não há limite de tamanho, páginas, caracteres extraídos ou profundidade do backup
+  - O backup completo é salvo em `pending_confirmations.data`, aumentando uso de banco e risco operacional
+  - A validação do backup ainda é estrutural, mas pouco restritiva em enums, ranges e campos permitidos
+- **Plano de correção:**
+  - Definir limites de tamanho para documentos, páginas PDF e caracteres processados
+  - Rejeitar arquivos acima do limite com mensagem amigável
+  - Endurecer o schema do backup com validação explícita por campo
+  - Substituir o armazenamento integral do backup pendente por referência temporária, hash ou payload reduzido
+  - Cobrir casos de arquivo grande, arquivo truncado, schema inválido e campos fora do catálogo
+- **Critérios de aceite:**
+  - Arquivos excessivos são recusados sem derrubar a aplicação
+  - Backups inválidos falham antes da restauração com mensagens claras
+  - O banco não armazena blobs grandes desnecessariamente em confirmações pendentes
+- **Arquivos impactados:**
+  - `app/handlers/webhook.py`
+  - `app/services/backup.py`
+  - `app/database/models.py`
+  - `tests/test_backup.py`
+  - `tests/test_webhook.py`
+
+### 0.6 Idempotência, Retry e Confiabilidade do Webhook
+- **Complexidade:** Média/Alta 🔴
+- **Valor:** Alto
+- **Status:** Pendente
+- **Problema identificado:**
+  - Em caso de erro a API responde `200`, o que pode mascarar falhas e impedir retry da origem
+  - A deduplicação de mensagens está só em memória, perdendo eficácia em restart ou múltiplas instâncias
+  - O fluxo de confirmações pendentes depende de replace por usuário e pode sofrer com corridas
+- **Plano de correção:**
+  - Persistir identificadores processados em banco ou Redis com TTL e chave única
+  - Revisar a estratégia de resposta HTTP para não sinalizar sucesso quando o evento falhou internamente
+  - Adicionar proteção transacional e, se necessário, constraint para uma confirmação pendente por usuário
+  - Criar testes de duplicidade, retry e reinício do processo
+- **Critérios de aceite:**
+  - O mesmo evento não é processado duas vezes após retry ou reinício
+  - Falhas reais não retornam sucesso enganoso para a origem
+  - O fluxo de confirmação continua consistente sob concorrência
+- **Arquivos impactados:**
+  - `app/main.py`
+  - `app/services/evolution.py`
+  - `app/handlers/webhook.py`
+  - `app/database/models.py`
+  - `tests/test_webhook.py`
+
+### 0.7 Isolamento das Chamadas do Gemini do Event Loop
+- **Complexidade:** Média 🟡
+- **Valor:** Alto
+- **Status:** Pendente
+- **Problema identificado:**
+  - `generate_content()` do SDK atual é síncrono e está sendo chamado dentro do fluxo assíncrono
+  - Chamadas lentas podem bloquear o event loop, atrasando webhooks, scheduler e respostas HTTP
+- **Plano de correção:**
+  - Executar chamadas bloqueantes em threadpool ou migrar para cliente realmente assíncrono
+  - Adicionar timeout, observabilidade e tratamento explícito para backpressure
+  - Cobrir fallback e timeout em testes de serviço
+- **Critérios de aceite:**
+  - Uma chamada lenta de IA não degrada o processamento de outros eventos
+  - Timeouts geram resposta amigável sem travar a aplicação
+  - O fallback de modelos continua funcionando
+- **Arquivos impactados:**
+  - `app/services/gemini.py`
+  - `app/handlers/webhook.py`
+  - `tests/test_gemini.py`
+
+### 0.8 Correções de Lógica Financeira e Recorrência
+- **Complexidade:** Baixa/Média 🟡
+- **Valor:** Médio/Alto
+- **Status:** Pendente
+- **Problema identificado:**
+  - Parcelamentos podem perder centavos por arredondar todas as parcelas igualmente
+  - O preview de recorrências futuras simplifica datas com `min(..., 28)`, gerando resultados incorretos no fim do mês
+  - Alguns campos aceitos em restore e confirmação ainda dependem demais de inferência livre
+- **Plano de correção:**
+  - Distribuir resíduo de arredondamento na última parcela
+  - Reescrever cálculo de recorrências futuras usando aritmética correta de calendário
+  - Endurecer validações de campos financeiros críticos antes de persistir
+  - Adicionar testes cobrindo centavos residuais, virada de mês e datas longas
+- **Critérios de aceite:**
+  - A soma das parcelas sempre fecha exatamente com o valor original
+  - Recorrências futuras aparecem com dias corretos ao longo dos meses
+  - Persistência rejeita combinações inconsistentes de campos críticos
+- **Arquivos impactados:**
+  - `app/services/expense.py`
+  - `app/services/recurring.py`
+  - `app/services/backup.py`
+  - `tests/test_expense.py`
+  - `tests/test_scheduler.py`
+
+---
+
 ## Fase 1: Fundação e Qualidade (Prioridade Crítica)
 
 ### 1.1 Pipeline de CI/CD e Testes ✅
@@ -339,6 +527,14 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
 
 | Item | Valor | Complexidade | Dependências | Score |
 |------|-------|--------------|--------------|-------|
+| Hardening do webhook | Muito Alto | 🟡 | Nenhuma | ⭐⭐⭐⭐⭐ |
+| Proteção admin/logs | Muito Alto | 🟡 | Hardening do webhook | ⭐⭐⭐⭐⭐ |
+| Blindagem do build Docker | Muito Alto | 🟢 | Nenhuma | ⭐⭐⭐⭐⭐ |
+| Limites defensivos PDF/backup | Alto | 🟡 | Backup existente | ⭐⭐⭐⭐ |
+| Idempotência e retry do webhook | Alto | 🔴 | Hardening do webhook | ⭐⭐⭐⭐ |
+| Isolamento do Gemini | Alto | 🟡 | Nenhuma | ⭐⭐⭐⭐ |
+| Sanitização XLSX | Alto | 🟢 | XLSX existente | ⭐⭐⭐⭐ |
+| Correções financeiras/recorrência | Médio-Alto | 🟡 | Funcionalidades existentes | ⭐⭐⭐ |
 | ~~CI/CD e Testes~~ | ✅ | 🟢 | Nenhuma | ⭐⭐⭐⭐⭐ |
 | ~~Desfazer Ação~~ | ✅ | 🟢 | Nenhuma | ⭐⭐⭐⭐⭐ |
 | ~~Alertas/Limites~~ | ✅ | 🟡 | ~~Testes~~ ✅ | ⭐⭐⭐⭐ |
@@ -355,9 +551,13 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
 
 ## Ordem de Implementação Sugerida
 
-1. **Sprint 1:** ~~CI/CD + Testes~~ ✅ + ~~Desfazer Ação~~ ✅
-2. **Sprint 2:** ~~Alertas/Limites~~ ✅ + ~~Scheduler Recorrentes~~ ✅
-3. **Sprint 3:** ~~Gráficos~~ ✅ + ~~Metas~~ ✅
-4. **Sprint 4:** ~~PDF~~ ✅ + ~~Conversão Moeda~~ ✅
-5. **Sprint 5:** ~~Leitura de PDF~~ ✅ + ~~Multi-Usuários~~ ✅
-6. **Sprint 6:** ~~Backup~~ ✅
+1. **Sprint 0:** Hardening do webhook + blindagem do build Docker + proteção da superfície admin
+2. **Sprint 0.1:** Idempotência/retry do webhook + isolamento do Gemini
+3. **Sprint 0.2:** Limites defensivos para PDFs/backups + sanitização XLSX
+4. **Sprint 0.3:** Correções de lógica financeira e recorrência
+5. **Sprint 1:** ~~CI/CD + Testes~~ ✅ + ~~Desfazer Ação~~ ✅
+6. **Sprint 2:** ~~Alertas/Limites~~ ✅ + ~~Scheduler Recorrentes~~ ✅
+7. **Sprint 3:** ~~Gráficos~~ ✅ + ~~Metas~~ ✅
+8. **Sprint 4:** ~~PDF~~ ✅ + ~~Conversão Moeda~~ ✅
+9. **Sprint 5:** ~~Leitura de PDF~~ ✅ + ~~Multi-Usuários~~ ✅
+10. **Sprint 6:** ~~Backup~~ ✅

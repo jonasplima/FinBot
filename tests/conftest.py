@@ -402,6 +402,7 @@ def mock_settings():
         mock_settings.allowed_phones = []
         mock_settings.gemini_api_key = "test-gemini-key"
         mock_settings.admin_secret = "test-secret"
+        mock_settings.webhook_secret = "test-webhook-secret"
         mock_settings.terms_version = "2026-04"
         mock_settings.default_daily_text_limit = 100
         mock_settings.default_daily_media_limit = 20

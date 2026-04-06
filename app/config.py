@@ -33,6 +33,7 @@ class Settings(BaseSettings):
 
     # Security
     admin_secret: str
+    webhook_secret: str = ""
 
     # Scheduler
     scheduler_enabled: bool = True

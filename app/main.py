@@ -20,6 +20,15 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 
+def _is_valid_webhook_authorization(authorization: str | None) -> bool:
+    """Validate webhook Authorization header."""
+    if not settings.webhook_secret or not authorization:
+        return False
+
+    expected = f"Bearer {settings.webhook_secret}"
+    return authorization == expected
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
@@ -332,6 +341,14 @@ async def evolution_webhook(request: Request):
 
     This endpoint handles incoming WhatsApp messages.
     """
+    if not settings.webhook_secret:
+        logger.error("Webhook request rejected because WEBHOOK_SECRET is not configured")
+        raise HTTPException(status_code=503, detail="Webhook authentication is not configured")
+
+    if not _is_valid_webhook_authorization(request.headers.get("Authorization")):
+        logger.warning("Webhook request rejected due to invalid authorization")
+        raise HTTPException(status_code=401, detail="Invalid webhook authorization")
+
     try:
         body = await request.json()
         event = body.get("event", "unknown")
