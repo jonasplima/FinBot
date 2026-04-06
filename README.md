@@ -1,252 +1,441 @@
 <div align="center">
-  <img src="assets/logo.svg" alt="FinBot Logo" width="150" height="150">
+  <img src="assets/logo.svg" alt="FinBot Logo" width="140" height="140">
   <h1>FinBot</h1>
-  <p><b>Assistente Financeiro Inteligente via WhatsApp</b></p>
+  <p><b>Assistente financeiro via WhatsApp com IA multi-provider</b></p>
 
   [![CI](https://github.com/jonasplima/FinBot/actions/workflows/ci.yml/badge.svg)](https://github.com/jonasplima/FinBot/actions/workflows/ci.yml)
-  [![Python](https://img.shields.io/badge/Python_3.12-3776AB?style=for-the-badge&logo=python&logoColor=white)](#)
-  [![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](#)
-  [![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)](#)
-  [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-316192?style=for-the-badge&logo=postgresql&logoColor=white)](#)
-  [![AI](https://img.shields.io/badge/LLM-Multi_Provider-0F766E?style=for-the-badge)](#)
+  ![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white)
+  ![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)
+  ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-316192?style=for-the-badge&logo=postgresql&logoColor=white)
+  ![Redis](https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&logo=redis&logoColor=white)
+  ![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)
+  ![LLM](https://img.shields.io/badge/LLM-Gemini%20%2B%20Groq-0F766E?style=for-the-badge)
 </div>
 
-<br/>
+<p align="center">
+  Registre gastos, acompanhe orçamentos, metas, recorrências, gráficos, exportações e backups completos usando linguagem natural no WhatsApp.
+</p>
 
-O **FinBot** é um assistente financeiro pessoal que opera diretamente no WhatsApp. Registre gastos, receitas e controle seu orçamento através de mensagens de texto naturais ou fotos de notas fiscais.
+---
 
-Através da integração da **Evolution API** com provedores de **IA generativa**, o FinBot interpreta suas mensagens, categoriza despesas automaticamente e mantém seu controle financeiro organizado.
+## Visão Geral
+
+O **FinBot** é uma aplicação FastAPI conectada à **Evolution API** para operar pelo WhatsApp. O usuário envia mensagens de texto, imagens ou documentos, a camada de IA interpreta a intenção, e o sistema transforma isso em operações financeiras rastreáveis no banco.
+
+O projeto foi desenhado para uso real: possui **idempotência de webhook**, **health/readiness**, **scheduler com trava distribuída**, **limites defensivos para arquivos**, **backup/restauração com auditoria**, **lockfile com hashes**, **rate limit administrativo** e **fallback entre provedores de IA**.
+
+## O Que Ele Faz
+
+- Registra despesas e entradas por linguagem natural.
+- Entende parcelamento, despesa compartilhada e recorrência mensal.
+- Lê imagens e PDFs para extrair dados financeiros.
+- Gera resumos mensais, gráficos e exportações.
+- Controla orçamentos por categoria com alertas.
+- Cria e acompanha metas de economia.
+- Faz conversão de moeda.
+- Exporta e restaura backup completo do usuário.
+- Suporta migração de backup entre números com confirmação reforçada e auditoria.
+
+## Exemplo de Uso
+
+```text
+gastei 42 no almoço no pix
+comprei um tênis de 300 em 3x no cartão
+netflix 55 reais todo mês dia 15
+quanto gastei esse mês?
+limite de 800 para alimentação
+quero economizar 5000 até 2026-12-31 para viagem
+exportar meus gastos de março em pdf
+```
+
+## Arquitetura
+
+```text
+WhatsApp
+   |
+   v
+Evolution API
+   |
+   v
+FinBot (FastAPI)
+   |
+   +--> AI Service (Gemini / Groq)
+   +--> PostgreSQL
+   +--> Redis
+   +--> APScheduler
+```
+
+### Componentes principais
+
+- **FastAPI**: API principal, webhooks, healthchecks e endpoints administrativos.
+- **Evolution API**: integração com WhatsApp.
+- **AIService**: interpretação de texto, imagem e PDF com suporte a múltiplos provedores.
+- **PostgreSQL**: persistência de usuários, despesas, metas, orçamentos, auditorias e confirmações pendentes.
+- **Redis**: idempotência, rate limits, locks distribuídos e storage temporário.
+- **APScheduler**: lembretes de recorrência, motivação semanal de metas e atualização de câmbio.
 
 ---
 
 ## Funcionalidades
 
-### Registro de Despesas
-- **Linguagem natural**: "gastei 50 reais no almoço no pix"
-- **Parcelamento**: "comprei um tênis de 300 reais em 3x no cartão"
-- **Despesas compartilhadas**: "mercado 200 reais dividido 60% meu"
-- **Leitura de notas fiscais**: envie uma foto e o FinBot extrai os dados
+### Registro financeiro
 
-### Despesas Recorrentes
-- **Cadastro**: "netflix 55 reais todo mês dia 15"
-- **Scheduler automático**: às 08:00 pergunta se você já pagou as contas do dia
-- **Confirmação**: responda "sim" para lançar ou "não" para ignorar
+- Despesas e entradas
+- Parcelamento
+- Despesa compartilhada
+- Desfazer última operação
+- Categorização automática
+- Suporte a moeda estrangeira
 
-### Orçamentos e Alertas
-- **Definir limite**: "definir limite alimentação 500 reais"
-- **Alertas automáticos**: notificações em 50%, 80% e 100% do limite
-- **Consultar status**: "como está meu orçamento de alimentação?"
+### Automação
 
-### Consultas e Exportação
-- **Resumo mensal**: "quanto gastei esse mês?"
-- **Exportar Excel**: "exportar meus gastos de março"
-- **Desfazer**: "desfaz" ou "apaga o último"
+- Despesas recorrentes com lembrete diário
+- Confirmação explícita antes de lançar recorrências
+- Scheduler protegido contra execução duplicada em `multi_instance`
 
----
+### Gestão financeira
 
-## Comandos Disponíveis
+- Orçamentos por categoria
+- Alertas de orçamento
+- Metas de economia
+- Conversão de moeda
+- Resumo mensal
+- Gráficos
 
-| Comando | Exemplo |
-|---------|---------|
-| Registrar gasto | "gastei 45 reais no almoço no pix" |
-| Gasto parcelado | "comprei TV de 2000 em 10x no cartão" |
-| Gasto compartilhado | "mercado 300 reais dividido 50%" |
-| Despesa recorrente | "spotify 21.90 todo mês dia 5" |
-| Cancelar recorrente | "cancelar spotify" |
-| Listar recorrentes | "minhas despesas recorrentes" |
-| Resumo do mês | "quanto gastei esse mês?" |
-| Exportar Excel | "exportar março" |
-| Desfazer último | "desfaz" ou "apaga o último" |
-| Definir orçamento | "limite de 500 para alimentação" |
-| Ver orçamentos | "meus limites de gasto" |
-| Status orçamento | "como está meu orçamento?" |
-| Remover orçamento | "remover limite de lazer" |
+### Portabilidade e recuperação
+
+- Exportação em XLSX e PDF
+- Backup JSON completo
+- Restore com validação estrutural
+- Migração entre números com confirmação reforçada
+- Auditoria persistida de restore
 
 ---
 
-## Arquitetura
+## Stack Técnica
 
-```
-┌─────────────┐     ┌──────────────┐     ┌─────────────┐
-│  WhatsApp   │────▶│ Evolution API │────▶│   FinBot    │
-│   (User)    │◀────│   (Webhook)   │◀────│  (FastAPI)  │
-└─────────────┘     └──────────────┘     └──────┬──────┘
-                                                │
-                    ┌───────────────────────────┼───────────────────────────┐
-                    │                           │                           │
-              ┌─────▼─────┐             ┌───────▼───────┐           ┌───────▼───────┐
-              │ PostgreSQL │             │  AI Provider  │           │     Redis     │
-              │    (DB)    │             │     (AI)      │           │    (Cache)    │
-              └───────────┘             └───────────────┘           └───────────────┘
-```
-
-### Tecnologias
-
-- **FastAPI** - Framework web assíncrono de alta performance
-- **Evolution API** - Integração nativa com WhatsApp
-- **IA multi-provider** - interpretação de mensagens, imagens e documentos com Gemini/Groq
-- **PostgreSQL** - Banco de dados relacional
-- **Redis** - Cache e controle de estado
-- **APScheduler** - Agendamento de tarefas (despesas recorrentes)
-- **Docker** - Containerização completa
+| Camada | Tecnologia |
+| --- | --- |
+| API | FastAPI |
+| IA | Gemini e Groq |
+| Banco | PostgreSQL |
+| Cache / Coordenação | Redis |
+| Scheduler | APScheduler |
+| ORM | SQLAlchemy async |
+| Testes | Pytest |
+| Lint / Format | Ruff |
+| Type checking | MyPy |
+| Auditoria de dependências | pip-audit |
+| Infra local | Docker Compose |
 
 ---
 
-## Instalação
+## Quick Start
 
-### Pré-requisitos
-
-- [Docker](https://www.docker.com/) e [Docker Compose](https://docs.docker.com/compose/)
-- Conta no [Google AI Studio](https://aistudio.google.com/) e/ou [Groq](https://console.groq.com/) para chaves de IA
-
-### 1. Clone o repositório
+### 1. Clonar o projeto
 
 ```bash
 git clone https://github.com/jonasplima/FinBot.git
 cd FinBot
 ```
 
-### 2. Configure as variáveis de ambiente
+### 2. Criar o `.env`
 
 ```bash
 cp .env.example .env
 ```
 
-Edite o arquivo `.env`:
+Preencha ao menos:
 
 ```env
-# Obrigatórios
-OWNER_PHONE=5511999999999        # Seu número (formato internacional)
-GEMINI_API_KEY=sua_chave_gemini  # Do Google AI Studio
-GROQ_API_KEY=sua_chave_groq      # Opcional, para fallback/alternativa
-AI_PRIMARY_PROVIDER=gemini       # "gemini" ou "groq"
-AI_TIMEOUT_SECONDS=25            # Timeout comum dos provedores
-ADMIN_SECRET=senha_segura        # Para acessar endpoints admin via Authorization
-EVOLUTION_API_KEY=chave_aleatoria # Gere com: openssl rand -hex 32
-WEBHOOK_SECRET=chave_webhook     # Autenticação do webhook da Evolution
+DATABASE_URL=postgresql+asyncpg://finbot:finbot_secure_password@postgres:5432/finbot
+REDIS_URL=redis://:redis_secure_password@redis:6379
 
-# Opcionais
-ALLOWED_NUMBERS=5511988888888    # Números adicionais (separados por vírgula)
-SCHEDULER_ENABLED=true           # Ativar scheduler de recorrentes
-SCHEDULER_HOUR=8                 # Hora do lembrete diário
+EVOLUTION_API_URL=http://evolution-api:8080
+EVOLUTION_API_KEY=sua_chave_evolution
+EVOLUTION_INSTANCE=FinBot
+
+GEMINI_API_KEY=sua_chave_gemini
+GROQ_API_KEY=sua_chave_groq
+AI_PRIMARY_PROVIDER=gemini
+AI_TIMEOUT_SECONDS=25
+
+ADMIN_SECRET=uma_senha_forte
+WEBHOOK_SECRET=um_segredo_forte
+
+OWNER_PHONE=5511999999999
 ```
 
-### 3. Inicie os containers
+### 3. Subir o ambiente
 
 ```bash
-docker-compose up -d
+docker compose up -d --build
 ```
 
-Observação:
-- O build Docker ignora `.env` e outros arquivos locais sensíveis via `.dockerignore`
-- As credenciais são injetadas no container em runtime pelo `docker-compose`, não copiadas para a imagem
-- As portas publicadas por padrão ficam presas em `127.0.0.1`, reduzindo exposição acidental na rede local
-- O serviço `finbot` roda com filesystem somente leitura, `tmpfs` em `/tmp` e `no-new-privileges`
-- As imagens do Compose e do `Dockerfile` podem ser travadas por digest via `.env`, sem editar o YAML
-- O processamento de IA pode usar `Gemini` e `Groq`, com fallback automático entre provedores quando configurados
+### 4. Conectar o WhatsApp
 
-### 4. Conecte o WhatsApp
+Acesse:
 
-Acesse no navegador:
-```
+```text
 http://localhost:3003/admin/qrcode
 ```
 
 Envie o header:
+
 ```text
 Authorization: Bearer SUA_SENHA_ADMIN
 ```
 
-Escaneie o QR Code com o WhatsApp (como no WhatsApp Web).
+### 5. Testar
 
-### 5. Teste
+Envie no WhatsApp:
 
-Envie uma mensagem para o número conectado:
-```
+```text
 gastei 10 reais no café
 ```
 
 ---
 
+## Endpoints
+
+| Endpoint | Método | Descrição |
+| --- | --- | --- |
+| `/health` | `GET` | Readiness com checagem de dependências |
+| `/health/live` | `GET` | Liveness do processo |
+| `/health/ready` | `GET` | Readiness explícito |
+| `/admin/qrcode` | `GET` | QR Code de conexão do WhatsApp |
+| `/admin/status` | `GET` | Status da instância Evolution |
+| `/webhook/evolution` | `POST` | Webhook principal de mensagens |
+
+### Endpoints administrativos
+
+- Exigem `Authorization: Bearer <ADMIN_SECRET>`.
+- Possuem rate limit por IP e rota.
+- Retornam erro sanitizado em vez de detalhes internos.
+
+### Webhook
+
+- Pode exigir `Authorization: Bearer <WEBHOOK_SECRET>`.
+- Usa idempotência por `message_id`.
+- Evita reprocessamento perigoso após efeitos já persistidos.
+
+---
+
+## IA Multi-Provider
+
+O projeto possui uma camada de IA genérica em [`app/services/ai.py`](app/services/ai.py).
+
+### Estratégia atual
+
+- `Gemini` e `Groq` são suportados.
+- `AI_PRIMARY_PROVIDER` define quem responde primeiro.
+- Se o provedor principal falhar por quota, rate limit ou indisponibilidade, o sistema tenta fallback.
+- O nome da camada foi generalizado para permitir novos provedores no futuro sem acoplar o projeto a `Gemini`.
+
+### Variáveis relacionadas
+
+| Variável | Descrição |
+| --- | --- |
+| `GEMINI_API_KEY` | chave do Gemini |
+| `GROQ_API_KEY` | chave do Groq |
+| `AI_PRIMARY_PROVIDER` | `gemini` ou `groq` |
+| `AI_TIMEOUT_SECONDS` | timeout por chamada |
+
+---
+
+## Segurança e Resiliência
+
+### Segurança aplicada
+
+- Bearer token com comparação em tempo constante para endpoints sensíveis.
+- Rate limit administrativo.
+- Webhook autenticado.
+- Sanitização de erros HTTP.
+- `.env` ignorado no Git e excluído da imagem.
+- Containers com endurecimento adicional no `finbot`:
+  - `read_only: true`
+  - `tmpfs` em `/tmp`
+  - `cap_drop: [ALL]`
+  - `no-new-privileges`
+- Portas expostas em `127.0.0.1` por padrão.
+- Lockfile com hashes em [`requirements.lock`](requirements.lock).
+- CI com `pip check` e `pip-audit`.
+
+### Resiliência operacional
+
+- Healthchecks reais de banco, Redis e Evolution.
+- Scheduler com lock distribuído quando em `multi_instance`.
+- Fallbacks locais restritos ao modo `single_instance`.
+- Eventos operacionais recentes expostos nos health endpoints.
+- Backup temporário fora do banco com TTL.
+- Auditoria persistida para restore e migração entre números.
+
+---
+
+## Configuração
+
+O projeto possui muitas variáveis, mas a maioria já está documentada em [`.env.example`](.env.example). Abaixo estão os grupos mais importantes.
+
+### Aplicação
+
+| Variável | Default |
+| --- | --- |
+| `PORT` | `3003` |
+| `LOG_LEVEL` | `INFO` |
+
+### WhatsApp / Evolution
+
+| Variável | Descrição |
+| --- | --- |
+| `EVOLUTION_API_URL` | URL base da Evolution |
+| `EVOLUTION_API_KEY` | chave de autenticação |
+| `EVOLUTION_INSTANCE` | nome da instância |
+| `OWNER_PHONE` | número principal para bootstrap |
+| `ALLOWED_NUMBERS` | rollout controlado opcional |
+
+### Segurança
+
+| Variável | Descrição |
+| --- | --- |
+| `ADMIN_SECRET` | acesso aos endpoints admin |
+| `WEBHOOK_SECRET` | autenticação do webhook |
+| `ADMIN_RATE_LIMIT_MAX_ATTEMPTS` | tentativas por janela |
+| `ADMIN_RATE_LIMIT_WINDOW_SECONDS` | tamanho da janela |
+
+### Deploy / Scheduler
+
+| Variável | Descrição |
+| --- | --- |
+| `SCHEDULER_ENABLED` | ativa jobs agendados |
+| `SCHEDULER_TIMEZONE` | timezone do scheduler |
+| `SCHEDULER_HOUR` | hora do job diário |
+| `SCHEDULER_MINUTE` | minuto do job diário |
+| `DEPLOYMENT_MODE` | `single_instance` ou `multi_instance` |
+| `SCHEDULER_LOCK_TTL_SECONDS` | TTL da trava distribuída |
+| `INSTANCE_ID` | identificador da instância |
+
+### Limites defensivos
+
+| Variável | Descrição |
+| --- | --- |
+| `MAX_PDF_SIZE_BYTES` | tamanho máximo de PDF |
+| `MAX_PDF_PAGES` | páginas máximas |
+| `MAX_PDF_TEXT_CHARS` | texto máximo extraído |
+| `MAX_BACKUP_SIZE_BYTES` | tamanho máximo de backup |
+| `BACKUP_TEMP_TTL_SECONDS` | TTL do backup temporário |
+| `WEBHOOK_IDEMPOTENCY_TTL_SECONDS` | retenção da chave de idempotência |
+
+---
+
+## Backup e Migração de Número
+
+O FinBot exporta backup completo em JSON com metadata e validação de estrutura.
+
+### O que o backup cobre
+
+- despesas
+- orçamentos
+- alertas de orçamento
+- metas
+- atualizações de metas
+- metadata de origem
+
+### Proteções do fluxo
+
+- limite máximo de tamanho
+- validação de schema
+- whitelist de campos aceitos
+- restore sob confirmação
+- confirmação especial quando o backup vem de outro número
+- auditoria persistida da restauração
+- identidade estável de backup para reduzir dependência exclusiva do telefone
+
+---
+
 ## Desenvolvimento
 
-### Estrutura do Projeto
+### Estrutura do projeto
 
-```
+```text
 FinBot/
 ├── app/
-│   ├── database/        # Models, conexão e seeds
-│   ├── handlers/        # Webhook handlers
-│   ├── services/        # Serviços (Gemini, Evolution, Budget, etc)
-│   ├── utils/           # Utilitários e validadores
-│   ├── config.py        # Configurações (Pydantic Settings)
-│   └── main.py          # Aplicação FastAPI
-├── tests/               # Testes unitários (124 testes)
-├── .github/workflows/   # CI/CD (GitHub Actions)
+│   ├── database/
+│   ├── handlers/
+│   ├── services/
+│   ├── utils/
+│   ├── config.py
+│   └── main.py
+├── tests/
+├── assets/
+├── .github/workflows/
 ├── docker-compose.yml
 ├── Dockerfile
 ├── requirements.txt
 ├── requirements.lock
+├── NEXT_STEPS.md
 └── .env.example
 ```
 
-### Executar Testes
+### Serviços principais
+
+- [`app/services/ai.py`](app/services/ai.py)
+- [`app/services/backup.py`](app/services/backup.py)
+- [`app/services/budget.py`](app/services/budget.py)
+- [`app/services/currency.py`](app/services/currency.py)
+- [`app/services/evolution.py`](app/services/evolution.py)
+- [`app/services/expense.py`](app/services/expense.py)
+- [`app/services/export.py`](app/services/export.py)
+- [`app/services/goal.py`](app/services/goal.py)
+- [`app/services/rate_limit.py`](app/services/rate_limit.py)
+- [`app/services/scheduler.py`](app/services/scheduler.py)
+- [`app/services/webhook_idempotency.py`](app/services/webhook_idempotency.py)
+
+### Rodando localmente sem Docker
 
 ```bash
-# Instalar dependências de desenvolvimento
+python -m venv .venv
+source .venv/bin/activate
 pip install --require-hashes -r requirements.lock
-pip install pytest pytest-asyncio pytest-cov aiosqlite
-
-# Rodar todos os testes
-pytest tests/ -v
-
-# Com cobertura
-pytest tests/ --cov=app --cov-report=term-missing
+pip install pytest pytest-asyncio pytest-cov aiosqlite mypy types-python-dateutil
+uvicorn app.main:app --reload --port 3003
 ```
 
-### Linting e Type Checking
+---
+
+## Qualidade e CI
+
+Atualmente o repositório possui **14 arquivos de teste** cobrindo IA, webhook, scheduler, backup, exportação, metas, orçamento, câmbio e utilitários.
+
+### Comandos úteis
 
 ```bash
-# Lint
 ruff check .
-
-# Formatação
-ruff format .
-
-# Type checking
-mypy app/
-```
-
-### Auditoria de Dependências
-
-```bash
-# Auditoria local de dependências conhecidas
-pip install pip-audit
+ruff format --check .
+mypy app --ignore-missing-imports
+pytest -q
 pip-audit -r requirements.lock
-
-# Verificação adicional de consistência do ambiente instalado
-pip check
+docker compose config
 ```
 
-### Lockfile com Hashes
+### Pipeline de CI
 
-O projeto agora mantém:
+O GitHub Actions valida:
 
-- `requirements.txt`: lista fonte de dependências diretas
-- `requirements.lock`: lockfile gerado com versões resolvidas e hashes de integridade
+- lockfile com hashes
+- lint
+- formatação
+- type checking
+- testes com cobertura
+- consistência de dependências com `pip check`
+- auditoria de vulnerabilidades com `pip-audit`
 
-Para regenerar o lockfile depois de mudar o `requirements.txt`:
+Arquivo: [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
 
-```bash
-python -m pip install pip-tools
-python -m piptools compile --generate-hashes --strip-extras --output-file requirements.lock requirements.txt
-```
+---
 
-A CI valida se o `requirements.lock` está sincronizado e instala dependências com `--require-hashes`.
+## Supply Chain e Imagens
 
-### Pin por Digest em Produção
-
-Para produção, prefira travar imagens por digest em vez de depender apenas de tags mutáveis. O `docker-compose.yml` e o `Dockerfile` já aceitam isso via variáveis de ambiente:
+O projeto já está preparado para travar imagens por digest no deploy:
 
 ```env
 POSTGRES_IMAGE=postgres:16-alpine@sha256:...
@@ -256,66 +445,26 @@ PYTHON_BUILDER_IMAGE=python:3.12-slim@sha256:...
 PYTHON_RUNTIME_IMAGE=python:3.12-slim@sha256:...
 ```
 
-Assim o deploy continua igual, mas com origem de imagem mais reprodutível e auditável.
+As dependências Python podem ser instaladas com integridade verificada via:
 
----
-
-## Configurações do Scheduler
-
-O scheduler de despesas recorrentes pode ser configurado via variáveis de ambiente:
-
-| Variável | Default | Descrição |
-|----------|---------|-----------|
-| `SCHEDULER_ENABLED` | `true` | Ativar/desativar o scheduler |
-| `SCHEDULER_TIMEZONE` | `America/Sao_Paulo` | Fuso horário |
-| `SCHEDULER_HOUR` | `8` | Hora do lembrete (0-23) |
-| `SCHEDULER_MINUTE` | `0` | Minuto do lembrete (0-59) |
-
----
-
-## Categorias Disponíveis
-
-### Gastos (Negativo)
-Alimentação, Assinatura, Imprevistos, Despesa Fixa, Educação, Empréstimo, Lazer, Mercado, Moradia, Outros, Parcelamento de Fatura, Presente, Saúde e Beleza, Serviços, Transferência, Transporte, Vestuário, Viagem, Reserva de Emergência, Investimento
-
-### Entradas (Positivo)
-Salário, Salário - Adiantamento, Salário - 13º, Reembolso, Bônus, PLR, VR (Flash), Outros
-
-### Meios de Pagamento
-Cartão de Crédito, Cartão de Débito, Pix, Dinheiro, VR
+```bash
+pip install --require-hashes -r requirements.lock
+```
 
 ---
 
 ## Roadmap
 
-Veja o arquivo [NEXT_STEPS.md](NEXT_STEPS.md) para o roadmap completo.
-
-### Concluído
-- [x] Registro de despesas via linguagem natural
-- [x] Leitura de notas fiscais (imagem)
-- [x] Despesas parceladas e compartilhadas
-- [x] Despesas recorrentes com scheduler
-- [x] Alertas e limites de orçamento
-- [x] Exportação para Excel
-- [x] Desfazer última ação
-- [x] Pipeline CI/CD
-- [x] 124 testes unitários
-
-### Próximos
-- [ ] Gráficos no WhatsApp
-- [ ] Exportação PDF
-- [ ] Metas de economia
-- [ ] Conversão de moeda
-- [ ] Multi-usuários
+O roadmap e as próximas entregas estão em [`NEXT_STEPS.md`](NEXT_STEPS.md).
 
 ---
 
 ## Licença
 
-Este projeto é privado e de uso pessoal.
+Projeto privado para uso pessoal.
 
 ---
 
 <div align="center">
-  <sub>Desenvolvido com FastAPI + IA multi-provider</sub>
+  <sub>FinBot • WhatsApp + FastAPI + PostgreSQL + Redis + IA multi-provider</sub>
 </div>

@@ -62,7 +62,8 @@ class User(Base):
     backup_owner_id = Column(String(64), nullable=True, unique=True, index=True)
     name = Column(String(120), nullable=True)
     display_name = Column(String(120), nullable=True)
-    email = Column(String(255), nullable=True)
+    email = Column(String(255), nullable=True, unique=True, index=True)
+    password_hash = Column(String(255), nullable=True)
     accepted_terms = Column(Boolean, default=False, nullable=False)
     accepted_terms_at = Column(DateTime, nullable=True)
     terms_version = Column(String(30), nullable=True)
@@ -75,7 +76,9 @@ class User(Base):
     daily_media_limit = Column(Integer, default=20, nullable=False)
     daily_ai_limit = Column(Integer, default=50, nullable=False)
     notification_preferences = Column(JSON, nullable=True)
+    onboarding_completed = Column(Boolean, default=False, nullable=False)
     last_seen_at = Column(DateTime, nullable=True)
+    last_login_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.now, server_default=func.now())
     updated_at = Column(DateTime, nullable=True, onupdate=datetime.now)
 
@@ -305,4 +308,123 @@ class BackupRestoreAudit(Base):
         return (
             f"<BackupRestoreAudit(id={self.id}, target='{self.target_phone}', "
             f"source='{self.source_phone}', status='{self.status}')>"
+        )
+
+
+class UserProviderCredential(Base):
+    """Encrypted provider credentials stored per user."""
+
+    __tablename__ = "user_provider_credentials"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    provider = Column(String(50), nullable=False)
+    api_key_encrypted = Column(String(2000), nullable=False)
+    api_key_last4 = Column(String(4), nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    validated_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.now, server_default=func.now())
+    updated_at = Column(DateTime, nullable=True, onupdate=datetime.now)
+
+    __table_args__ = (Index("ix_user_provider_credentials_user_provider", "user_id", "provider"),)
+
+    def __repr__(self) -> str:
+        return (
+            f"<UserProviderCredential(id={self.id}, user_id={self.user_id}, "
+            f"provider='{self.provider}', active={self.is_active})>"
+        )
+
+
+class UserOnboardingState(Base):
+    """Track onboarding progress for a user across web steps."""
+
+    __tablename__ = "user_onboarding_states"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True, index=True)
+    current_step = Column(String(50), nullable=False, default="welcome")
+    is_completed = Column(Boolean, default=False, nullable=False)
+    completed_at = Column(DateTime, nullable=True)
+    whatsapp_connected_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.now, server_default=func.now())
+    updated_at = Column(DateTime, nullable=True, onupdate=datetime.now)
+
+    def __repr__(self) -> str:
+        return (
+            f"<UserOnboardingState(user_id={self.user_id}, step='{self.current_step}', "
+            f"completed={self.is_completed})>"
+        )
+
+
+class UserWebSession(Base):
+    """Browser session for authenticated access to the web interface."""
+
+    __tablename__ = "user_web_sessions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    session_token_hash = Column(String(128), nullable=False, unique=True, index=True)
+    expires_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.now, server_default=func.now())
+    last_seen_at = Column(DateTime, nullable=True)
+    revoked_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (Index("ix_user_web_sessions_user_expiry", "user_id", "expires_at"),)
+
+    def __repr__(self) -> str:
+        return (
+            f"<UserWebSession(id={self.id}, user_id={self.user_id}, expires_at='{self.expires_at}', "
+            f"revoked={self.revoked_at is not None})>"
+        )
+
+
+class UserWhatsAppSession(Base):
+    """WhatsApp session metadata for a user in a shared Evolution instance."""
+
+    __tablename__ = "user_whatsapp_sessions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True, index=True)
+    evolution_instance = Column(String(120), nullable=False)
+    session_key = Column(String(120), nullable=False, unique=True, index=True)
+    connection_status = Column(String(30), nullable=False, default="pending")
+    connected_at = Column(DateTime, nullable=True)
+    last_qrcode_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.now, server_default=func.now())
+    updated_at = Column(DateTime, nullable=True, onupdate=datetime.now)
+
+    __table_args__ = (
+        Index(
+            "ix_user_whatsapp_sessions_instance_status", "evolution_instance", "connection_status"
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<UserWhatsAppSession(user_id={self.user_id}, instance='{self.evolution_instance}', "
+            f"status='{self.connection_status}')>"
+        )
+
+
+class UserCategory(Base):
+    """Per-user category customization layered over the global category catalog."""
+
+    __tablename__ = "user_categories"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    name = Column(String(100), nullable=False)
+    type = Column(String(10), nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    is_system_default = Column(Boolean, default=False, nullable=False)
+    base_category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.now, server_default=func.now())
+    updated_at = Column(DateTime, nullable=True, onupdate=datetime.now)
+
+    __table_args__ = (Index("ix_user_categories_user_name_type", "user_id", "name", "type"),)
+
+    def __repr__(self) -> str:
+        return (
+            f"<UserCategory(id={self.id}, user_id={self.user_id}, name='{self.name}', "
+            f"type='{self.type}', system_default={self.is_system_default})>"
         )

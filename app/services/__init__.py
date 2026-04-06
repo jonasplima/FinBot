@@ -6,6 +6,7 @@ from .expense import ExpenseService
 from .export import ExportService
 from .rate_limit import RateLimitService
 from .recurring import RecurringService
+from .security import SecurityService
 from .user import UserService
 
 __all__ = [
@@ -14,6 +15,7 @@ __all__ = [
     "EvolutionService",
     "ExpenseService",
     "RecurringService",
+    "SecurityService",
     "ExportService",
     "UserService",
     "RateLimitService",

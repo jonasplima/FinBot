@@ -13,6 +13,7 @@ os.environ["GEMINI_API_KEY"] = "test-gemini-key"
 os.environ["GROQ_API_KEY"] = ""
 os.environ["AI_PRIMARY_PROVIDER"] = "gemini"
 os.environ["ADMIN_SECRET"] = "test-secret"
+os.environ["APP_ENCRYPTION_KEY"] = "test-app-encryption-key"
 
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -74,7 +75,8 @@ class User(TestBase):
     backup_owner_id = Column(String(64), nullable=True, unique=True, index=True)
     name = Column(String(120), nullable=True)
     display_name = Column(String(120), nullable=True)
-    email = Column(String(255), nullable=True)
+    email = Column(String(255), nullable=True, unique=True, index=True)
+    password_hash = Column(String(255), nullable=True)
     accepted_terms = Column(Boolean, default=False, nullable=False)
     accepted_terms_at = Column(DateTime, nullable=True)
     terms_version = Column(String(30), nullable=True)
@@ -87,7 +89,9 @@ class User(TestBase):
     daily_media_limit = Column(Integer, default=20, nullable=False)
     daily_ai_limit = Column(Integer, default=50, nullable=False)
     notification_preferences = Column(JSON, nullable=True)
+    onboarding_completed = Column(Boolean, default=False, nullable=False)
     last_seen_at = Column(DateTime, nullable=True)
+    last_login_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.now)
     updated_at = Column(DateTime, nullable=True)
 
@@ -232,6 +236,83 @@ class BackupRestoreAudit(TestBase):
     restored_counts = Column(JSON, nullable=True)
     error_message = Column(String(500), nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.now)
+
+
+class UserProviderCredential(TestBase):
+    """Test credential storage for user-scoped providers."""
+
+    __tablename__ = "user_provider_credentials"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    provider = Column(String(50), nullable=False)
+    api_key_encrypted = Column(String(2000), nullable=False)
+    api_key_last4 = Column(String(4), nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    validated_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.now)
+    updated_at = Column(DateTime, nullable=True)
+
+
+class UserOnboardingState(TestBase):
+    """Test onboarding state model."""
+
+    __tablename__ = "user_onboarding_states"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True, index=True)
+    current_step = Column(String(50), nullable=False, default="welcome")
+    is_completed = Column(Boolean, default=False, nullable=False)
+    completed_at = Column(DateTime, nullable=True)
+    whatsapp_connected_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.now)
+    updated_at = Column(DateTime, nullable=True)
+
+
+class UserWebSession(TestBase):
+    """Test web session model."""
+
+    __tablename__ = "user_web_sessions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    session_token_hash = Column(String(128), nullable=False, unique=True, index=True)
+    expires_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.now)
+    last_seen_at = Column(DateTime, nullable=True)
+    revoked_at = Column(DateTime, nullable=True)
+
+
+class UserWhatsAppSession(TestBase):
+    """Test WhatsApp session model."""
+
+    __tablename__ = "user_whatsapp_sessions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True, index=True)
+    evolution_instance = Column(String(120), nullable=False)
+    session_key = Column(String(120), nullable=False, unique=True, index=True)
+    connection_status = Column(String(30), nullable=False, default="pending")
+    connected_at = Column(DateTime, nullable=True)
+    last_qrcode_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.now)
+    updated_at = Column(DateTime, nullable=True)
+
+
+class UserCategory(TestBase):
+    """Test per-user category customization model."""
+
+    __tablename__ = "user_categories"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    name = Column(String(100), nullable=False)
+    type = Column(String(10), nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    is_system_default = Column(Boolean, default=False, nullable=False)
+    base_category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.now)
+    updated_at = Column(DateTime, nullable=True)
 
 
 @pytest.fixture
@@ -424,7 +505,9 @@ def mock_settings():
         mock_settings.groq_api_key = ""
         mock_settings.ai_primary_provider = "gemini"
         mock_settings.admin_secret = "test-secret"
+        mock_settings.app_encryption_key = "test-app-encryption-key"
         mock_settings.webhook_secret = "test-webhook-secret"
+        mock_settings.web_session_ttl_hours = 720
         mock_settings.terms_version = "2026-04"
         mock_settings.default_daily_text_limit = 100
         mock_settings.default_daily_media_limit = 20
@@ -435,6 +518,8 @@ def mock_settings():
             "daily_media_limit": 20,
             "daily_ai_limit": 50,
         }
+        mock_settings.effective_app_encryption_key_material = "test-app-encryption-key"
+        mock_settings.effective_web_session_ttl_hours = 720
         mock_get.return_value = mock_settings
         yield mock_settings
 
@@ -514,6 +599,7 @@ async def accepted_user_in_db(seeded_session, test_phone):
         daily_media_limit=20,
         daily_ai_limit=50,
         notification_preferences={"whatsapp": True},
+        onboarding_completed=False,
         last_seen_at=datetime.now(),
     )
     seeded_session.add(user)

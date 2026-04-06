@@ -83,8 +83,8 @@ class TestAIServiceModelExhaustion:
         with patch("app.services.ai.genai"):
             service = AIService()
             # Mark as exhausted more than 1 hour ago
-            service._exhausted_models["gemini:gemini-2.5-flash-lite"] = (
-                datetime.now() - timedelta(hours=2)
+            service._exhausted_models["gemini:gemini-2.5-flash-lite"] = datetime.now() - timedelta(
+                hours=2
             )
 
             available = service._get_available_model()

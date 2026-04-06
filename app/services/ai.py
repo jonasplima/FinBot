@@ -553,7 +553,10 @@ class AIService:
 
         # Find first available model
         for model in model_list:
-            if self._get_model_key(provider or self.primary_provider, model) not in self._exhausted_models:
+            if (
+                self._get_model_key(provider or self.primary_provider, model)
+                not in self._exhausted_models
+            ):
                 return model
 
         # All models exhausted - try the first one anyway (might have reset)
@@ -584,9 +587,7 @@ class AIService:
         groq_models = self.groq_vision_models if vision_only else self.groq_models
 
         ordered_providers = (
-            ["groq", "gemini"]
-            if self.primary_provider == "groq"
-            else ["gemini", "groq"]
+            ["groq", "gemini"] if self.primary_provider == "groq" else ["gemini", "groq"]
         )
 
         provider_chains: list[tuple[str, str]] = []
@@ -955,10 +956,9 @@ class AIService:
         """Get current status of all models (for debugging/monitoring)."""
         now = datetime.now()
         status = {}
-        all_models = (
-            [("gemini", model) for model in self.models]
-            + [("groq", model) for model in self.groq_models]
-        )
+        all_models = [("gemini", model) for model in self.models] + [
+            ("groq", model) for model in self.groq_models
+        ]
         for provider_name, model in all_models:
             model_key = self._get_model_key(provider_name, model)
             status_key = f"{provider_name}:{model}"

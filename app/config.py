@@ -42,8 +42,10 @@ class Settings(BaseSettings):
     # Security
     admin_secret: str
     webhook_secret: str = ""
+    app_encryption_key: str = ""
     admin_rate_limit_max_attempts: int = 10
     admin_rate_limit_window_seconds: int = 60
+    web_session_ttl_hours: int = 720
 
     # Scheduler
     scheduler_enabled: bool = True
@@ -193,6 +195,24 @@ class Settings(BaseSettings):
         """Normalize deployment mode to supported values."""
         mode = self.deployment_mode.strip().lower()
         return mode if mode in {"single_instance", "multi_instance"} else "single_instance"
+
+    @property
+    def effective_web_session_ttl_hours(self) -> int:
+        """Clamp web-session TTL to a sane operational range."""
+        return min(max(self.web_session_ttl_hours, 1), 24 * 90)
+
+    @property
+    def effective_app_encryption_key_material(self) -> str:
+        """Return key material for deriving application encryption keys."""
+        candidates = [
+            self.app_encryption_key.strip(),
+            f"{self.admin_secret}:{self.webhook_secret}".strip(":"),
+            self.admin_secret.strip(),
+        ]
+        for candidate in candidates:
+            if candidate:
+                return candidate
+        raise ValueError("No application encryption key material is configured.")
 
 
 @lru_cache
