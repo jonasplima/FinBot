@@ -2052,6 +2052,20 @@ async def web_settings_page(request: Request):
                     grid-template-columns: repeat(4, minmax(0, 1fr));
                     gap: 12px;
                 }
+                .quick-nav {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 10px;
+                    padding-top: 4px;
+                }
+                .quick-nav button {
+                    background: rgba(226, 232, 240, 0.92);
+                    color: var(--text);
+                }
+                .quick-nav button.is-active {
+                    background: var(--accent);
+                    color: white;
+                }
                 .stat {
                     border: 1px solid var(--line);
                     border-radius: 18px;
@@ -3215,7 +3229,8 @@ async def web_dashboard_page(request: Request):
                     }
                     .actions button,
                     .toolbar button,
-                    .toolbar label {
+                    .toolbar label,
+                    .quick-nav button {
                         width: 100%;
                     }
                     .stats,
@@ -3269,11 +3284,18 @@ async def web_dashboard_page(request: Request):
                         </label>
                         <button class="primary" type="submit">Atualizar visão</button>
                     </form>
+                    <div class="quick-nav" aria-label="Navegação rápida do painel">
+                        <button class="ghost" type="button" data-jump-section="expenses-section">Lançamentos</button>
+                        <button class="ghost" type="button" data-jump-section="budgets-section">Orçamentos</button>
+                        <button class="ghost" type="button" data-jump-section="goals-section">Metas</button>
+                        <button class="ghost" type="button" data-jump-section="tools-section">Ferramentas</button>
+                        <button class="ghost" type="button" data-jump-section="audits-section">Auditoria</button>
+                    </div>
                     <div class="stats" id="summary-stats"></div>
                 </section>
 
                 <div class="grid">
-                    <section class="card wide-card">
+                    <section class="card wide-card" id="expenses-section">
                         <div class="section-head">
                             <div class="section-copy">
                                 <p class="eyebrow">Registro diário</p>
@@ -3364,7 +3386,7 @@ async def web_dashboard_page(request: Request):
                         </div>
                     </section>
 
-                    <section class="card wide-card">
+                    <section class="card wide-card" id="budgets-section">
                             <div class="section-head">
                                 <div class="section-copy">
                                     <p class="eyebrow">Planejamento</p>
@@ -3444,7 +3466,7 @@ async def web_dashboard_page(request: Request):
                             </div>
                         </section>
 
-                    <section class="card wide-card">
+                    <section class="card wide-card" id="goals-section">
                             <div class="section-head">
                                 <div class="section-copy">
                                     <p class="eyebrow">Reserva e objetivos</p>
@@ -3556,7 +3578,7 @@ async def web_dashboard_page(request: Request):
                             </div>
                         </section>
 
-                    <section class="card wide-card">
+                    <section class="card wide-card" id="audits-section">
                         <div class="section-head">
                             <div class="section-copy">
                                 <p class="eyebrow">Rastreabilidade</p>
@@ -3581,7 +3603,7 @@ async def web_dashboard_page(request: Request):
                         </section>
                     </section>
 
-                    <div class="stack">
+                    <div class="stack" id="tools-section">
                         <section class="card">
                             <h2>Conversão de moeda</h2>
                             <p>Use a moeda base definida em configurações e faça conversões rápidas sem sair do painel.</p>
@@ -3897,6 +3919,45 @@ async def web_dashboard_page(request: Request):
                     const modal = document.getElementById('chart-modal');
                     modal.classList.remove('is-open');
                     modal.setAttribute('aria-hidden', 'true');
+                }
+
+                function setupQuickNavigation() {
+                    const buttons = Array.from(document.querySelectorAll('[data-jump-section]'));
+                    const sections = buttons
+                        .map((button) => document.getElementById(button.dataset.jumpSection || ''))
+                        .filter(Boolean);
+                    if (!buttons.length || !sections.length) {
+                        return;
+                    }
+
+                    buttons.forEach((button) => {
+                        button.addEventListener('click', () => {
+                            const target = document.getElementById(button.dataset.jumpSection || '');
+                            if (!target) return;
+                            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        });
+                    });
+
+                    const activateButton = (sectionId) => {
+                        buttons.forEach((button) => {
+                            button.classList.toggle('is-active', button.dataset.jumpSection === sectionId);
+                        });
+                    };
+
+                    const observer = new IntersectionObserver(
+                        (entries) => {
+                            const visible = entries
+                                .filter((entry) => entry.isIntersecting)
+                                .sort((left, right) => right.intersectionRatio - left.intersectionRatio)[0];
+                            if (visible?.target?.id) {
+                                activateButton(visible.target.id);
+                            }
+                        },
+                        { rootMargin: '-25% 0px -55% 0px', threshold: [0.2, 0.4, 0.7] },
+                    );
+
+                    sections.forEach((section) => observer.observe(section));
+                    activateButton('expenses-section');
                 }
 
                 function renderExpenses(expenses) {
@@ -4320,6 +4381,7 @@ async def web_dashboard_page(request: Request):
                     }
                 }
 
+                setupQuickNavigation();
                 loadState().catch((error) => {
                     document.getElementById('summary-stats').innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
                 });

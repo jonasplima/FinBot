@@ -25,7 +25,9 @@ O **FinBot** é uma aplicação FastAPI integrada à **Evolution API** para oper
 Hoje o projeto já inclui:
 
 - registro de despesas e entradas por linguagem natural;
-- metas, orçamentos e recorrências;
+- painel web com dashboard financeiro completo;
+- metas com aportes e usos dedicados;
+- orçamentos, gráficos, recorrências e conversão de moeda;
 - exportação em PDF/XLSX e backup JSON;
 - restore com auditoria e migração entre números;
 - onboarding web com autenticação, QR Code no navegador e painel de configurações;
@@ -36,13 +38,14 @@ Hoje o projeto já inclui:
 - Despesas e entradas com categorização automática
 - Parcelamento e despesa compartilhada
 - Despesas recorrentes com confirmação
-- Metas financeiras
+- Metas com aportes e saques vinculados a gastos reais
 - Orçamentos por categoria e alertas
 - Conversão de moeda
 - Leitura de imagens e PDFs
 - Exportação em PDF e XLSX
 - Backup e restauração de dados
-- Onboarding web e configurações pós-onboarding
+- Dashboard web, onboarding e configurações pós-onboarding
+- Auditoria de alterações de despesas
 
 ## Arquitetura
 
@@ -248,21 +251,34 @@ http://localhost:3003/web/onboarding
 Atualmente o onboarding web permite:
 
 - aceitar os termos
+- conectar o WhatsApp com QR Code no navegador
+- configurar credenciais pessoais de API
 - salvar perfil básico
-- preparar a sessão WhatsApp
-- gerar QR Code no navegador
-- acompanhar status da conexão
 - personalizar categorias
+- revisar o setup antes de concluir
 
-### 10. Conectar o WhatsApp
+### 10. Acessar o dashboard financeiro
 
-No onboarding:
+Depois de concluir o onboarding, o fluxo principal segue para:
 
-1. clique em `Preparar sessão`
-2. clique em `Gerar QR Code`
-3. escaneie o QR Code com o WhatsApp
+```text
+http://localhost:3003/web/dashboard
+```
 
-Esse é o fluxo recomendado hoje. Você não precisa montar header manual para obter o QR Code pelo browser.
+No dashboard você consegue:
+
+- acompanhar lançamentos do período;
+- registrar e editar despesas e entradas;
+- remover lançamentos;
+- reconhecer comprovantes por imagem colando ou enviando arquivo;
+- registrar despesas compartilhadas;
+- configurar orçamentos por categoria;
+- ver gráficos clicáveis do período;
+- criar metas, fazer aportes e usar valor guardado em um gasto real;
+- ver movimentações das metas;
+- exportar XLSX e PDF;
+- converter moedas usando a moeda base da conta;
+- acompanhar histórico de alterações em lançamentos.
 
 ### 11. Acessar configurações pós-onboarding
 
@@ -275,6 +291,8 @@ http://localhost:3003/web/settings
 No painel de configurações você consegue:
 
 - editar perfil
+- definir moeda base
+- definir separadores de milhar e decimal
 - ajustar notificações
 - configurar limites diários
 - exportar backup
@@ -325,6 +343,7 @@ Nesse caso você precisa fornecer PostgreSQL, Redis e Evolution manualmente.
 | `/auth/me` | `GET` | Usuário autenticado |
 | `/web/login` | `GET` | Tela web de acesso |
 | `/web/onboarding` | `GET` | Tela de onboarding |
+| `/web/dashboard` | `GET` | Dashboard financeiro web |
 | `/web/settings` | `GET` | Painel de configurações |
 | `/webhook/evolution` | `POST` | Webhook principal |
 | `/admin/qrcode` | `GET` | QR Code administrativo de fallback |
@@ -397,7 +416,7 @@ O backup JSON cobre:
 - orçamentos
 - alertas de orçamento
 - metas
-- atualizações de metas
+- movimentações de metas
 - metadata de origem
 
 Proteções do fluxo:
