@@ -182,22 +182,27 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
 ### 0.7 Isolamento das Chamadas do Gemini do Event Loop
 - **Complexidade:** Média 🟡
 - **Valor:** Alto
-- **Status:** Pendente
+- **Status:** Implementado
 - **Problema identificado:**
   - `generate_content()` do SDK atual é síncrono e está sendo chamado dentro do fluxo assíncrono
   - Chamadas lentas podem bloquear o event loop, atrasando webhooks, scheduler e respostas HTTP
-- **Plano de correção:**
-  - Executar chamadas bloqueantes em threadpool ou migrar para cliente realmente assíncrono
-  - Adicionar timeout, observabilidade e tratamento explícito para backpressure
-  - Cobrir fallback e timeout em testes de serviço
+- **Implementação:**
+  - ✅ Isolamento das chamadas bloqueantes do SDK do Gemini com `asyncio.to_thread(...)`
+  - ✅ Adição de timeout configurável por ambiente para chamadas ao Gemini
+  - ✅ Tratamento de timeout como falha recuperável dentro da cadeia de fallback de modelos
+  - ✅ Preservação do fallback automático entre modelos já existente
+  - ✅ Testes cobrindo sucesso, timeout com fallback, timeout total e execução fora do event loop
 - **Critérios de aceite:**
   - Uma chamada lenta de IA não degrada o processamento de outros eventos
   - Timeouts geram resposta amigável sem travar a aplicação
   - O fallback de modelos continua funcionando
 - **Arquivos impactados:**
+  - `app/config.py`
   - `app/services/gemini.py`
-  - `app/handlers/webhook.py`
   - `tests/test_gemini.py`
+  - `tests/conftest.py`
+  - `docker-compose.yml`
+  - `.env.example`
 
 ### 0.8 Correções de Lógica Financeira e Recorrência
 - **Complexidade:** Baixa/Média 🟡

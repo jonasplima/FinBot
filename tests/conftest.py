@@ -401,6 +401,7 @@ def mock_settings():
         mock_settings.owner_phone = "5511999999999"
         mock_settings.allowed_phones = []
         mock_settings.gemini_api_key = "test-gemini-key"
+        mock_settings.gemini_timeout_seconds = 25
         mock_settings.admin_secret = "test-secret"
         mock_settings.webhook_secret = "test-webhook-secret"
         mock_settings.terms_version = "2026-04"

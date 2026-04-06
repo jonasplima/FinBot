@@ -232,6 +232,62 @@ class TestGeminiServiceProcessMessage:
 
             assert result["intent"] == "unknown"
 
+    async def test_generate_with_fallback_uses_next_model_on_timeout(self):
+        """Test timeout on one model falls back to the next available model."""
+        slow_model = MagicMock()
+        slow_model.generate_content.side_effect = lambda *args, **kwargs: (_ for _ in ()).throw(
+            TimeoutError("timeout")
+        )
+
+        ok_response = MagicMock()
+        ok_response.text = json.dumps({"intent": "query_month", "data": {}, "confidence": 0.9})
+        ok_model = MagicMock()
+        ok_model.generate_content.return_value = ok_response
+
+        with patch("app.services.gemini.genai") as mock_genai:
+            mock_genai.GenerativeModel.side_effect = [slow_model, ok_model]
+
+            service = GeminiService()
+            with patch("app.services.gemini.settings.gemini_timeout_seconds", 5):
+                result = await service.process_message("quanto gastei esse mes?")
+
+        assert result["intent"] == "query_month"
+
+    async def test_process_message_returns_unknown_when_all_models_timeout(self):
+        """Test full timeout chain returns controlled unknown response."""
+        with patch("app.services.gemini.genai") as mock_genai:
+            timeout_model = MagicMock()
+            timeout_model.generate_content.side_effect = TimeoutError("timeout")
+            mock_genai.GenerativeModel.return_value = timeout_model
+
+            service = GeminiService()
+            with patch("app.services.gemini.settings.gemini_timeout_seconds", 5):
+                result = await service.process_message("test message")
+
+        assert result["intent"] == "unknown"
+        assert result["confidence"] == 0
+
+    async def test_generate_with_fallback_uses_asyncio_to_thread(self, mock_model):
+        """Test Gemini blocking call is delegated out of the event loop."""
+        mock_response = MagicMock()
+        mock_response.text = json.dumps({"intent": "query_month", "data": {}, "confidence": 0.9})
+        mock_model.generate_content.return_value = mock_response
+
+        async def fake_to_thread(func, *args, **kwargs):
+            return func(*args, **kwargs)
+
+        with (
+            patch("app.services.gemini.genai") as mock_genai,
+            patch("app.services.gemini.asyncio.to_thread", side_effect=fake_to_thread) as mock_to_thread,
+        ):
+            mock_genai.GenerativeModel.return_value = mock_model
+
+            service = GeminiService()
+            result = await service.process_message("quanto gastei esse mes?")
+
+        assert result["intent"] == "query_month"
+        assert mock_to_thread.await_count >= 1
+
 
 class TestGeminiServiceEvaluateConfirmation:
     """Tests for GeminiService.evaluate_confirmation_response method."""

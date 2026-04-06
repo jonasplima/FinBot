@@ -1,5 +1,6 @@
 """Google Gemini AI integration service."""
 
+import asyncio
 import base64
 import json
 import logging
@@ -535,6 +536,19 @@ class GeminiService:
         self._exhausted_models[model_name] = datetime.now()
         logger.warning(f"Model {model_name} marked as exhausted (quota exceeded)")
 
+    def _generate_content_sync(
+        self,
+        model_name: str,
+        contents: list,
+        generation_config: genai.GenerationConfig,
+    ):
+        """Run blocking Gemini SDK call synchronously."""
+        model = genai.GenerativeModel(model_name)
+        return model.generate_content(
+            contents,
+            generation_config=generation_config,
+        )
+
     async def _generate_with_fallback(
         self,
         contents: list,
@@ -564,17 +578,29 @@ class GeminiService:
                 continue
 
             try:
-                model = genai.GenerativeModel(model_name)
                 logger.debug(f"Trying model: {model_name}")
 
-                response = model.generate_content(
-                    contents,
-                    generation_config=generation_config,
+                response = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        self._generate_content_sync,
+                        model_name,
+                        contents,
+                        generation_config,
+                    ),
+                    timeout=settings.effective_gemini_timeout_seconds,
                 )
 
                 logger.info(f"Successfully used model: {model_name}")
                 return response.text
 
+            except TimeoutError as e:
+                last_error = e
+                logger.warning(
+                    "Gemini model %s timed out after %ss, trying next model",
+                    model_name,
+                    settings.effective_gemini_timeout_seconds,
+                )
+                continue
             except Exception as e:
                 last_error = e
                 if self._is_quota_error(e):

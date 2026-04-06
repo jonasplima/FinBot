@@ -30,6 +30,7 @@ class Settings(BaseSettings):
 
     # Gemini AI
     gemini_api_key: str
+    gemini_timeout_seconds: int = 25
 
     # Security
     admin_secret: str
@@ -148,6 +149,11 @@ class Settings(BaseSettings):
     def effective_webhook_idempotency_ttl_seconds(self) -> int:
         """Clamp webhook idempotency TTL to a safe server ceiling."""
         return min(max(self.webhook_idempotency_ttl_seconds, 3_600), 604_800)
+
+    @property
+    def effective_gemini_timeout_seconds(self) -> int:
+        """Clamp Gemini timeout to a safe server ceiling."""
+        return min(max(self.gemini_timeout_seconds, 5), 120)
 
 
 @lru_cache
