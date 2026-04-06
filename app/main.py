@@ -3061,7 +3061,53 @@ async def web_dashboard_page(request: Request):
                     grid-template-columns: repeat(2, minmax(0, 1fr));
                     gap: 12px;
                 }
+                .chart-button {
+                    display: grid;
+                    gap: 10px;
+                    text-align: left;
+                    background: transparent;
+                    padding: 0;
+                }
                 .chart-card img {
+                    width: 100%;
+                    border-radius: 18px;
+                    border: 1px solid var(--line);
+                    background: white;
+                }
+                .chart-button img {
+                    transition: transform 0.18s ease, box-shadow 0.18s ease;
+                }
+                .chart-button:hover img {
+                    transform: scale(1.01);
+                    box-shadow: 0 14px 28px rgba(15, 23, 42, 0.12);
+                }
+                .modal {
+                    position: fixed;
+                    inset: 0;
+                    display: none;
+                    place-items: center;
+                    padding: 24px;
+                    background: rgba(15, 23, 42, 0.72);
+                    z-index: 50;
+                }
+                .modal.is-open { display: grid; }
+                .modal-card {
+                    width: min(1100px, 100%);
+                    max-height: calc(100vh - 48px);
+                    overflow: auto;
+                    border-radius: 24px;
+                    background: white;
+                    padding: 20px;
+                    box-shadow: 0 28px 60px rgba(15, 23, 42, 0.28);
+                }
+                .modal-top {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    gap: 12px;
+                    margin-bottom: 14px;
+                }
+                .modal-card img {
                     width: 100%;
                     border-radius: 18px;
                     border: 1px solid var(--line);
@@ -3181,7 +3227,7 @@ async def web_dashboard_page(request: Request):
                                         <th>Valor</th>
                                         <th>Divisão</th>
                                         <th>Moeda original</th>
-                                        <th></th>
+                                        <th>Ações</th>
                                     </tr>
                                 </thead>
                                 <tbody id="expenses-table"></tbody>
@@ -3189,44 +3235,65 @@ async def web_dashboard_page(request: Request):
                         </div>
                     </section>
 
-                    <div class="stack">
-                        <section class="card">
+                    <section class="card wide-card">
                             <h2>Orçamentos, limites por categoria e gráficos</h2>
                             <p>Defina tetos mensais por categoria e acompanhe como os gastos se distribuem no período.</p>
-                            <form id="budget-form">
-                                <div class="two-col">
-                                    <label>Categoria
-                                        <select name="category_name">
-                                            <option value="">Geral</option>
-                                        </select>
-                                    </label>
-                                    <label>Limite mensal
-                                        <input name="monthly_limit" type="number" step="0.01" min="0.01" required>
-                                    </label>
+                            <div class="two-col" style="align-items: start;">
+                                <div class="stack">
+                                    <form id="budget-form">
+                                        <div class="two-col">
+                                            <label>Categoria
+                                                <select name="category_name">
+                                                    <option value="">Geral</option>
+                                                </select>
+                                            </label>
+                                            <label>Limite mensal
+                                                <input name="monthly_limit" type="number" step="0.01" min="0.01" required>
+                                            </label>
+                                        </div>
+                                        <button class="primary" type="submit">Salvar orçamento</button>
+                                    </form>
+                                    <div class="status" id="budget-status"></div>
+                                    <div class="table-wrap">
+                                        <table>
+                                            <thead>
+                                                <tr>
+                                                    <th>Categoria</th>
+                                                    <th>Limite</th>
+                                                    <th>Gasto</th>
+                                                    <th>Restante</th>
+                                                    <th>%</th>
+                                                    <th>Ações</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="budgets-list"></tbody>
+                                        </table>
+                                    </div>
                                 </div>
-                                <button class="primary" type="submit">Salvar orçamento</button>
-                            </form>
-                            <div class="status" id="budget-status"></div>
-                            <div class="list" id="budgets-list"></div>
-                            <div class="chart-grid">
-                                <div class="chart-card">
-                                    <h3>Gastos por categoria</h3>
-                                    <img id="chart-categories" alt="Gastos por categoria">
-                                </div>
-                                <div class="chart-card">
-                                    <h3>Maiores gastos</h3>
-                                    <img id="chart-top-expenses" alt="Maiores gastos">
-                                </div>
-                                <div class="chart-card" style="grid-column: 1 / -1;">
-                                    <h3>Evolução diária</h3>
-                                    <img id="chart-daily" alt="Evolução diária">
+                                <div class="chart-grid">
+                                    <div class="chart-card">
+                                        <button class="chart-button" type="button" data-chart-title="Gastos por categoria" data-chart-target="chart-categories">
+                                            <span><h3>Gastos por categoria</h3></span>
+                                            <img id="chart-categories" alt="Gastos por categoria">
+                                        </button>
+                                    </div>
+                                    <div class="chart-card">
+                                        <button class="chart-button" type="button" data-chart-title="Maiores gastos" data-chart-target="chart-top-expenses">
+                                            <span><h3>Maiores gastos</h3></span>
+                                            <img id="chart-top-expenses" alt="Maiores gastos">
+                                        </button>
+                                    </div>
+                                    <div class="chart-card" style="grid-column: 1 / -1;">
+                                        <button class="chart-button" type="button" data-chart-title="Evolução diária" data-chart-target="chart-daily">
+                                            <span><h3>Evolução diária</h3></span>
+                                            <img id="chart-daily" alt="Evolução diária">
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </section>
-                    </div>
 
-                    <div class="stack">
-                        <section class="card">
+                    <section class="card wide-card">
                             <h2>Metas</h2>
                             <p>Cadastre objetivos, faça aportes dedicados e use valores guardados sem misturar com a categorização normal de despesas.</p>
                             <div class="two-col" style="align-items: start;">
@@ -3316,6 +3383,7 @@ async def web_dashboard_page(request: Request):
                             </div>
                         </section>
 
+                    <div class="stack">
                         <section class="card">
                             <h2>Conversão de moeda</h2>
                             <p>Use a moeda base definida em configurações e faça conversões rápidas sem sair do painel.</p>
@@ -3346,6 +3414,16 @@ async def web_dashboard_page(request: Request):
                             <div class="status" id="export-status"></div>
                         </section>
                     </div>
+                </div>
+            </div>
+
+            <div class="modal" id="chart-modal" aria-hidden="true">
+                <div class="modal-card">
+                    <div class="modal-top">
+                        <h2 id="chart-modal-title">Visualização do gráfico</h2>
+                        <button class="ghost" id="close-chart-modal" type="button">Fechar</button>
+                    </div>
+                    <img id="chart-modal-image" alt="Gráfico ampliado">
                 </div>
             </div>
 
@@ -3510,20 +3588,18 @@ async def web_dashboard_page(request: Request):
                 function renderBudgets(budgets) {
                     const container = document.getElementById('budgets-list');
                     if (!budgets.length) {
-                        container.innerHTML = '<div class="empty">Nenhum orçamento ativo neste momento.</div>';
+                        container.innerHTML = '<tr><td colspan="6"><div class="empty">Nenhum orçamento ativo neste momento.</div></td></tr>';
                         return;
                     }
                     container.innerHTML = budgets.map((item) => `
-                        <div class="list-item">
-                            <div>
-                                <strong>${escapeHtml(item.category)}</strong>
-                                <small>Limite ${money(item.limit)} • Gasto ${money(item.spent)} • Restante ${money(item.remaining)}</small>
-                            </div>
-                            <div class="actions">
-                                <span class="mono">${Number(item.percentage).toFixed(1)}%</span>
-                                <button class="ghost" type="button" data-remove-budget="${escapeHtml(item.category === 'Geral' ? '' : item.category)}">Remover</button>
-                            </div>
-                        </div>
+                        <tr>
+                            <td><strong>${escapeHtml(item.category)}</strong></td>
+                            <td>${money(item.limit)}</td>
+                            <td>${money(item.spent)}</td>
+                            <td>${money(item.remaining)}</td>
+                            <td class="mono">${Number(item.percentage).toFixed(1)}%</td>
+                            <td><button class="ghost" type="button" data-remove-budget="${escapeHtml(item.category === 'Geral' ? '' : item.category)}">Remover</button></td>
+                        </tr>
                     `).join('');
                 }
 
@@ -3599,7 +3675,12 @@ async def web_dashboard_page(request: Request):
                             <td>${money(expense.amount)}</td>
                             <td>${expense.is_shared ? `Sim • ${Number(expense.shared_percentage || 0).toFixed(0)}% seu` : 'Nao'}</td>
                             <td>${expense.original_currency ? `${escapeHtml(expense.original_currency)} ${Number(expense.original_amount || 0).toFixed(2)}` : 'BRL'}</td>
-                            <td><button class="ghost" type="button" data-edit-expense="${expense.id}">Editar</button></td>
+                            <td>
+                                <div class="actions">
+                                    <button class="ghost" type="button" data-edit-expense="${expense.id}">Editar</button>
+                                    <button class="danger" type="button" data-delete-expense="${expense.id}">Remover</button>
+                                </div>
+                            </td>
                         </tr>
                     `).join('');
                 }
@@ -3918,13 +3999,36 @@ async def web_dashboard_page(request: Request):
 
                 document.getElementById('export-xlsx').addEventListener('click', () => exportPeriod('xlsx'));
                 document.getElementById('export-pdf').addEventListener('click', () => exportPeriod('pdf'));
+                document.getElementById('close-chart-modal').addEventListener('click', closeChartModal);
+                document.getElementById('chart-modal').addEventListener('click', (event) => {
+                    if (event.target.id === 'chart-modal') {
+                        closeChartModal();
+                    }
+                });
 
                 document.body.addEventListener('click', async (event) => {
+                    const chartButton = event.target.closest('[data-chart-target]');
+                    if (chartButton) {
+                        openChartModal(chartButton.dataset.chartTitle || 'Gráfico', chartButton.dataset.chartTarget);
+                        return;
+                    }
                     const target = event.target.closest('button');
                     if (!target) return;
                     if (target.dataset.editExpense) {
                         const expense = (appState.payload.expenses || []).find((item) => String(item.id) === target.dataset.editExpense);
                         if (expense) populateExpenseForm(expense);
+                        return;
+                    }
+                    if (target.dataset.deleteExpense) {
+                        try {
+                            await fetchJson(`/dashboard/expenses/${target.dataset.deleteExpense}`, {
+                                method: 'DELETE',
+                            });
+                            setStatus('expense-status', 'Lançamento removido com sucesso.');
+                            await loadState();
+                        } catch (error) {
+                            setStatus('expense-status', error.message, true);
+                        }
                         return;
                     }
                     if (target.dataset.removeBudget !== undefined) {
