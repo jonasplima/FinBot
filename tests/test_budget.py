@@ -23,13 +23,13 @@ class TestBudgetService:
     async def test_create_budget_for_category(self, seeded_session, budget_service, test_phone):
         """Test creating a budget for a specific category."""
         result = await budget_service.create_budget(
-            seeded_session, test_phone, "Alimentacao", Decimal("500.00")
+            seeded_session, test_phone, "Alimentação", Decimal("500.00")
         )
 
         assert result["success"] is True
         assert result["budget_id"] is not None
         assert result["updated"] is False
-        assert result["category"] == "Alimentacao"
+        assert result["category"] == "Alimentação"
         assert result["limit"] == 500.00
 
         # Verify budget was saved
@@ -43,12 +43,12 @@ class TestBudgetService:
         """Test that creating a budget for same category updates existing one."""
         # Create initial budget
         await budget_service.create_budget(
-            seeded_session, test_phone, "Alimentacao", Decimal("500.00")
+            seeded_session, test_phone, "Alimentação", Decimal("500.00")
         )
 
         # Create again with different limit
         result = await budget_service.create_budget(
-            seeded_session, test_phone, "Alimentacao", Decimal("800.00")
+            seeded_session, test_phone, "Alimentação", Decimal("800.00")
         )
 
         assert result["success"] is True
@@ -89,7 +89,7 @@ class TestBudgetService:
     async def test_create_budget_zero_limit_fails(self, seeded_session, budget_service, test_phone):
         """Test that creating a budget with zero limit fails."""
         result = await budget_service.create_budget(
-            seeded_session, test_phone, "Alimentacao", Decimal("0.00")
+            seeded_session, test_phone, "Alimentação", Decimal("0.00")
         )
 
         assert result["success"] is False
@@ -100,11 +100,11 @@ class TestBudgetService:
         """Test removing a budget."""
         # Create budget first
         await budget_service.create_budget(
-            seeded_session, test_phone, "Alimentacao", Decimal("500.00")
+            seeded_session, test_phone, "Alimentação", Decimal("500.00")
         )
 
         # Remove it
-        result = await budget_service.remove_budget(seeded_session, test_phone, "Alimentacao")
+        result = await budget_service.remove_budget(seeded_session, test_phone, "Alimentação")
 
         assert result["success"] is True
 
@@ -116,7 +116,7 @@ class TestBudgetService:
     @pytest.mark.anyio
     async def test_remove_nonexistent_budget(self, seeded_session, budget_service, test_phone):
         """Test removing a budget that doesn't exist."""
-        result = await budget_service.remove_budget(seeded_session, test_phone, "Alimentacao")
+        result = await budget_service.remove_budget(seeded_session, test_phone, "Alimentação")
 
         assert result["success"] is False
         assert "nao encontrado" in result["error"]
@@ -134,12 +134,12 @@ class TestBudgetService:
         """Test listing budgets with spending data."""
         # Create budget
         await budget_service.create_budget(
-            seeded_session, test_phone, "Alimentacao", Decimal("500.00")
+            seeded_session, test_phone, "Alimentação", Decimal("500.00")
         )
 
         # Get category and payment method for expense
         cat_result = await seeded_session.execute(
-            select(Category).where(Category.name == "Alimentacao")
+            select(Category).where(Category.name == "Alimentação")
         )
         category = cat_result.scalar_one()
 
@@ -169,7 +169,7 @@ class TestBudgetService:
         assert len(result["budgets"]) == 1
 
         budget = result["budgets"][0]
-        assert budget["category"] == "Alimentacao"
+        assert budget["category"] == "Alimentação"
         assert budget["limit"] == 500.00
         assert budget["spent"] == 100.00
         assert budget["remaining"] == 400.00
@@ -180,13 +180,13 @@ class TestBudgetService:
         """Test checking budget status for a category."""
         # Create budget
         await budget_service.create_budget(
-            seeded_session, test_phone, "Alimentacao", Decimal("500.00")
+            seeded_session, test_phone, "Alimentação", Decimal("500.00")
         )
 
-        result = await budget_service.check_budget_status(seeded_session, test_phone, "Alimentacao")
+        result = await budget_service.check_budget_status(seeded_session, test_phone, "Alimentação")
 
         assert result["success"] is True
-        assert result["category"] == "Alimentacao"
+        assert result["category"] == "Alimentação"
         assert result["limit"] == 500.00
         assert result["spent"] == 0.00
         assert result["remaining"] == 500.00
@@ -195,7 +195,7 @@ class TestBudgetService:
     @pytest.mark.anyio
     async def test_check_budget_status_no_budget(self, seeded_session, budget_service, test_phone):
         """Test checking budget status when no budget exists."""
-        result = await budget_service.check_budget_status(seeded_session, test_phone, "Alimentacao")
+        result = await budget_service.check_budget_status(seeded_session, test_phone, "Alimentação")
 
         assert result["success"] is False
         assert "nao definido" in result["error"]
@@ -207,12 +207,12 @@ class TestBudgetService:
         """Test that 50% alert is triggered."""
         # Create budget
         await budget_service.create_budget(
-            seeded_session, test_phone, "Alimentacao", Decimal("100.00")
+            seeded_session, test_phone, "Alimentação", Decimal("100.00")
         )
 
         # Get category and payment method
         cat_result = await seeded_session.execute(
-            select(Category).where(Category.name == "Alimentacao")
+            select(Category).where(Category.name == "Alimentação")
         )
         category = cat_result.scalar_one()
 
@@ -240,7 +240,7 @@ class TestBudgetService:
 
         assert len(alerts) == 1
         assert alerts[0]["threshold"] == 50
-        assert alerts[0]["category"] == "Alimentacao"
+        assert alerts[0]["category"] == "Alimentação"
         assert alerts[0]["percentage"] == 50.0
 
     @pytest.mark.anyio
@@ -250,12 +250,12 @@ class TestBudgetService:
         """Test that 100% alert is triggered."""
         # Create budget
         await budget_service.create_budget(
-            seeded_session, test_phone, "Alimentacao", Decimal("100.00")
+            seeded_session, test_phone, "Alimentação", Decimal("100.00")
         )
 
         # Get category and payment method
         cat_result = await seeded_session.execute(
-            select(Category).where(Category.name == "Alimentacao")
+            select(Category).where(Category.name == "Alimentação")
         )
         category = cat_result.scalar_one()
 
@@ -291,12 +291,12 @@ class TestBudgetService:
         """Test that alerts are not sent twice for the same threshold."""
         # Create budget
         await budget_service.create_budget(
-            seeded_session, test_phone, "Alimentacao", Decimal("100.00")
+            seeded_session, test_phone, "Alimentação", Decimal("100.00")
         )
 
         # Get category and payment method
         cat_result = await seeded_session.execute(
-            select(Category).where(Category.name == "Alimentacao")
+            select(Category).where(Category.name == "Alimentação")
         )
         category = cat_result.scalar_one()
 
@@ -347,7 +347,7 @@ class TestGeminiServiceBudgetFormatting:
         """Test formatting 50% budget alert."""
         alert = {
             "threshold": 50,
-            "category": "Alimentacao",
+            "category": "Alimentação",
             "spent": 250.00,
             "limit": 500.00,
             "percentage": 50.0,
@@ -358,7 +358,7 @@ class TestGeminiServiceBudgetFormatting:
 
         assert "Aviso de orcamento" in msg
         assert "50%" in msg
-        assert "Alimentacao" in msg
+        assert "Alimentação" in msg
         assert "500.00" in msg
         assert "250.00" in msg
 
@@ -366,7 +366,7 @@ class TestGeminiServiceBudgetFormatting:
         """Test formatting 80% budget alert."""
         alert = {
             "threshold": 80,
-            "category": "Alimentacao",
+            "category": "Alimentação",
             "spent": 400.00,
             "limit": 500.00,
             "percentage": 80.0,
@@ -377,13 +377,13 @@ class TestGeminiServiceBudgetFormatting:
 
         assert "Cuidado" in msg
         assert "80%" in msg
-        assert "Alimentacao" in msg
+        assert "Alimentação" in msg
 
     def test_format_budget_alert_exceeded(self, gemini_service):
         """Test formatting exceeded budget alert."""
         alert = {
             "threshold": 100,
-            "category": "Alimentacao",
+            "category": "Alimentação",
             "spent": 550.00,
             "limit": 500.00,
             "percentage": 110.0,

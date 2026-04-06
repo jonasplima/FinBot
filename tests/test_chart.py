@@ -17,7 +17,7 @@ def chart_service():
 def sample_category_data():
     """Sample data for pie chart (by category)."""
     return [
-        {"category": "Alimentacao", "amount": Decimal("500.00")},
+        {"category": "Alimentação", "amount": Decimal("500.00")},
         {"category": "Transporte", "amount": Decimal("300.00")},
         {"category": "Lazer", "amount": Decimal("200.00")},
         {"category": "Mercado", "amount": Decimal("150.00")},
@@ -81,7 +81,7 @@ class TestChartService:
 
     def test_generate_pie_chart_single_category(self, chart_service):
         """Test pie chart with single category."""
-        data = [{"category": "Alimentacao", "amount": Decimal("500.00")}]
+        data = [{"category": "Alimentação", "amount": Decimal("500.00")}]
         result = chart_service.generate_pie_chart(data)
 
         assert isinstance(result, bytes)
@@ -213,7 +213,7 @@ class TestChartService:
     def test_pie_chart_handles_float_amounts(self, chart_service):
         """Test pie chart handles float amounts (not just Decimal)."""
         data = [
-            {"category": "Alimentacao", "amount": 500.00},
+            {"category": "Alimentação", "amount": 500.00},
             {"category": "Transporte", "amount": 300.00},
         ]
         result = chart_service.generate_pie_chart(data)

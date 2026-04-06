@@ -189,7 +189,7 @@ class TestGoalService:
         cat_income = cat_income.scalar_one()
 
         cat_expense = await seeded_session.execute(
-            select(Category).where(Category.name == "Alimentacao")
+            select(Category).where(Category.name == "Alimentação")
         )
         cat_expense = cat_expense.scalar_one()
 
@@ -406,7 +406,7 @@ class TestGoalService:
 
         # Get categories and payment method
         cat_expense = await seeded_session.execute(
-            select(Category).where(Category.name == "Alimentacao")
+            select(Category).where(Category.name == "Alimentação")
         )
         cat_expense = cat_expense.scalar_one()
 

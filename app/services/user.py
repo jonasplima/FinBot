@@ -189,7 +189,9 @@ class UserService:
             limit_value = getattr(user, field)
             used_value = usage.get(field, {}).get("used", 0)
             remaining_value = max(limit_value - used_value, 0)
-            lines.append(f"- {label}: {used_value}/{limit_value} usados ({remaining_value} restantes)")
+            lines.append(
+                f"- {label}: {used_value}/{limit_value} usados ({remaining_value} restantes)"
+            )
 
         lines.append(
             "\nPara ajustar: 'ajustar limite de ia para 30 por dia' ou "

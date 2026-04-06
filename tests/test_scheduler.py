@@ -40,7 +40,7 @@ class TestSchedulerService:
         category = cat_result.scalar_one()
 
         pm_result = await seeded_session.execute(
-            select(PaymentMethod).where(PaymentMethod.name == "Cartao de Credito")
+            select(PaymentMethod).where(PaymentMethod.name == "Cartão de Crédito")
         )
         payment_method = pm_result.scalar_one()
 
@@ -86,7 +86,7 @@ class TestSchedulerService:
         category = cat_result.scalar_one()
 
         pm_result = await seeded_session.execute(
-            select(PaymentMethod).where(PaymentMethod.name == "Cartao de Credito")
+            select(PaymentMethod).where(PaymentMethod.name == "Cartão de Crédito")
         )
         payment_method = pm_result.scalar_one()
 
@@ -121,7 +121,7 @@ class TestSchedulerService:
         category = cat_result.scalar_one()
 
         pm_result = await seeded_session.execute(
-            select(PaymentMethod).where(PaymentMethod.name == "Cartao de Credito")
+            select(PaymentMethod).where(PaymentMethod.name == "Cartão de Crédito")
         )
         payment_method = pm_result.scalar_one()
 
@@ -175,7 +175,7 @@ class TestSchedulerService:
                 "description": "Netflix",
                 "amount": 55.90,
                 "category": "Assinatura",
-                "payment_method": "Cartao de Credito",
+                "payment_method": "Cartão de Crédito",
                 "category_id": 1,
                 "payment_method_id": 1,
             }
@@ -332,9 +332,9 @@ class TestRecurringConfirmationHandler:
                         "description": "Netflix",
                         "amount": 55.90,
                         "category": "Assinatura",
-                        "payment_method": "Cartao de Credito",
+                        "payment_method": "Cartão de Crédito",
                         "category_id": 5,  # Assinatura
-                        "payment_method_id": 2,  # Cartao de Credito
+                        "payment_method_id": 2,  # Cartão de Crédito
                     }
                 ],
                 "total": 55.90,
@@ -350,7 +350,13 @@ class TestRecurringConfirmationHandler:
         return pending
 
     async def test_confirm_recurring_creates_expenses(
-        self, seeded_session, test_phone, pending_recurring, mock_evolution, mock_gemini
+        self,
+        seeded_session,
+        test_phone,
+        pending_recurring,
+        mock_evolution,
+        mock_gemini,
+        accepted_user_in_db,
     ):
         """Test that confirming recurring creates expenses."""
         from app.handlers.webhook import WebhookHandler
@@ -364,6 +370,7 @@ class TestRecurringConfirmationHandler:
             test_phone,
             "sim",
             pending_recurring.data,
+            accepted_user_in_db,
         )
 
         # Check that expense was created
@@ -385,7 +392,13 @@ class TestRecurringConfirmationHandler:
         assert "Lancadas" in call_args[0][1]
 
     async def test_deny_recurring_ignores_expenses(
-        self, seeded_session, test_phone, pending_recurring, mock_evolution, mock_gemini
+        self,
+        seeded_session,
+        test_phone,
+        pending_recurring,
+        mock_evolution,
+        mock_gemini,
+        accepted_user_in_db,
     ):
         """Test that denying recurring ignores expenses."""
         from app.handlers.webhook import WebhookHandler
@@ -399,6 +412,7 @@ class TestRecurringConfirmationHandler:
             test_phone,
             "nao",
             pending_recurring.data,
+            accepted_user_in_db,
         )
 
         # Check that no expense was created

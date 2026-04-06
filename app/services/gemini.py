@@ -38,11 +38,11 @@ SYSTEM_PROMPT = """Voce e um assistente financeiro que ajuda usuarios a registra
 ## Categorias Disponiveis (Negativo = gasto, Positivo = entrada):
 
 ### Gastos (Negativo):
-- Alimentacao
+- Alimentação
 - Assinatura
 - Imprevistos
 - Despesa Fixa
-- Educacao
+- Educação
 - Emprestimo
 - Lazer
 - Mercado
@@ -50,7 +50,7 @@ SYSTEM_PROMPT = """Voce e um assistente financeiro que ajuda usuarios a registra
 - Outros
 - Parcelamento de Fatura
 - Presente
-- Saude e Beleza
+- Saúde e Beleza
 - Servicos
 - Transferencia
 - Transporte
@@ -63,18 +63,19 @@ SYSTEM_PROMPT = """Voce e um assistente financeiro que ajuda usuarios a registra
 - Salario - Adiantamento
 - Salario
 - Salario - 13o
-- Reembolso - Aluguel + Condominio
+- Reembolso
 - Bonus
 - PLR
-- VR (Flash)
-- VR (Flash - Auxilio)
+- Vale Refeição
+- Vale Alimentação
 - Outros (entrada)
 
 ## Meios de Pagamento:
-- Cartao de Credito
-- Cartao de Debito
+- Cartão de Crédito
+- Cartão de Débito
 - Dinheiro
-- VR
+- Vale Alimentação
+- Vale Refeição
 - Pix
 
 ## Sua tarefa:
@@ -141,7 +142,7 @@ Analise a mensagem do usuario e retorne um JSON com a intencao e dados extraidos
 4. Para recorrentes, extraia o dia do mes (ex: "todo dia 15" -> recurring_day: 15)
 5. Para consultas, extraia mes e ano se mencionados
 6. Se nao conseguir identificar algo, use null
-7. Inferir categoria quando nao especificada (ex: "almoco" -> Alimentacao)
+7. Inferir categoria quando nao especificada (ex: "almoco" -> Alimentação)
 8. Inferir metodo de pagamento pelo contexto (ex: "no pix" -> Pix)
 9. Para orcamentos: extraia categoria e limite (budget_limit) em reais
 10. Frases como "definir limite", "orcamento de X reais", "limite de X para Y" indicam set_budget
@@ -165,13 +166,13 @@ Analise a mensagem do usuario e retorne um JSON com a intencao e dados extraidos
 ## Exemplos:
 
 Entrada: "gastei 45 reais no almoco no pix"
-Saida: {"intent": "register_expense", "data": {"description": "almoco", "amount": 45.00, "category": "Alimentacao", "payment_method": "Pix", "installments": null, "is_shared": false, "shared_percentage": null, "recurring_day": null, "month": null, "year": null}, "confidence": 0.95}
+Saida: {"intent": "register_expense", "data": {"description": "almoco", "amount": 45.00, "category": "Alimentação", "payment_method": "Pix", "installments": null, "is_shared": false, "shared_percentage": null, "recurring_day": null, "month": null, "year": null}, "confidence": 0.95}
 
 Entrada: "comprei um tenis de 300 reais em 3x no cartao"
-Saida: {"intent": "register_expense", "data": {"description": "tenis", "amount": 300.00, "category": "Vestuario", "payment_method": "Cartao de Credito", "installments": 3, "is_shared": false, "shared_percentage": null, "recurring_day": null, "month": null, "year": null}, "confidence": 0.9}
+Saida: {"intent": "register_expense", "data": {"description": "tenis", "amount": 300.00, "category": "Vestuario", "payment_method": "Cartão de Crédito", "installments": 3, "is_shared": false, "shared_percentage": null, "recurring_day": null, "month": null, "year": null}, "confidence": 0.9}
 
 Entrada: "netflix 55 reais todo mes dia 15"
-Saida: {"intent": "register_recurring", "data": {"description": "netflix", "amount": 55.00, "category": "Assinatura", "payment_method": "Cartao de Credito", "installments": null, "is_shared": false, "shared_percentage": null, "recurring_day": 15, "month": null, "year": null}, "confidence": 0.95}
+Saida: {"intent": "register_recurring", "data": {"description": "netflix", "amount": 55.00, "category": "Assinatura", "payment_method": "Cartão de Crédito", "installments": null, "is_shared": false, "shared_percentage": null, "recurring_day": 15, "month": null, "year": null}, "confidence": 0.95}
 
 Entrada: "cancelar netflix"
 Saida: {"intent": "cancel_recurring", "data": {"description": "netflix", "amount": null, "category": null, "payment_method": null, "installments": null, "is_shared": false, "shared_percentage": null, "recurring_day": null, "month": null, "year": null}, "confidence": 0.9}
@@ -213,7 +214,7 @@ Entrada: "errei, remove"
 Saida: {"intent": "undo_last", "data": {}, "confidence": 0.9}
 
 Entrada: "definir limite alimentacao 500 reais"
-Saida: {"intent": "set_budget", "data": {"category": "Alimentacao", "budget_limit": 500.00}, "confidence": 0.95}
+Saida: {"intent": "set_budget", "data": {"category": "Alimentação", "budget_limit": 500.00}, "confidence": 0.95}
 
 Entrada: "quero um orcamento de 1000 para lazer"
 Saida: {"intent": "set_budget", "data": {"category": "Lazer", "budget_limit": 1000.00}, "confidence": 0.95}
@@ -225,7 +226,7 @@ Entrada: "quanto tenho de orcamento?"
 Saida: {"intent": "list_budgets", "data": {}, "confidence": 0.95}
 
 Entrada: "como esta meu orcamento de alimentacao"
-Saida: {"intent": "check_budget", "data": {"category": "Alimentacao"}, "confidence": 0.95}
+Saida: {"intent": "check_budget", "data": {"category": "Alimentação"}, "confidence": 0.95}
 
 Entrada: "quais sao meus orcamentos"
 Saida: {"intent": "list_budgets", "data": {}, "confidence": 0.95}
@@ -237,7 +238,7 @@ Entrada: "remover orcamento de lazer"
 Saida: {"intent": "remove_budget", "data": {"category": "Lazer"}, "confidence": 0.95}
 
 Entrada: "tirar limite de alimentacao"
-Saida: {"intent": "remove_budget", "data": {"category": "Alimentacao"}, "confidence": 0.95}
+Saida: {"intent": "remove_budget", "data": {"category": "Alimentação"}, "confidence": 0.95}
 
 Entrada: "mostra grafico de pizza"
 Saida: {"intent": "show_chart", "data": {"chart_type": "pie", "month": null, "year": null}, "confidence": 0.95}
@@ -306,7 +307,7 @@ Entrada: "gastei 50 dolares no uber"
 Saida: {"intent": "register_expense", "data": {"description": "uber", "amount": 50.00, "category": "Transporte", "payment_method": "Pix", "installments": null, "is_shared": false, "shared_percentage": null, "recurring_day": null, "month": null, "year": null, "currency": "USD"}, "confidence": 0.95}
 
 Entrada: "almoco de 30 euros"
-Saida: {"intent": "register_expense", "data": {"description": "almoco", "amount": 30.00, "category": "Alimentacao", "payment_method": "Pix", "installments": null, "is_shared": false, "shared_percentage": null, "recurring_day": null, "month": null, "year": null, "currency": "EUR"}, "confidence": 0.95}
+Saida: {"intent": "register_expense", "data": {"description": "almoco", "amount": 30.00, "category": "Alimentação", "payment_method": "Pix", "installments": null, "is_shared": false, "shared_percentage": null, "recurring_day": null, "month": null, "year": null, "currency": "EUR"}, "confidence": 0.95}
 
 Entrada: "quanto e 100 dolares em reais"
 Saida: {"intent": "convert_currency", "data": {"amount": 100.00, "currency": "USD", "target_currency": "BRL"}, "confidence": 0.95}
@@ -374,11 +375,11 @@ Classifique a intencao da resposta do usuario:
 }}
 
 ## Categorias validas para ajuste:
-Gastos: Alimentacao, Assinatura, Imprevistos, Despesa Fixa, Educacao, Emprestimo, Lazer, Mercado, Moradia, Outros, Parcelamento de Fatura, Presente, Saude e Beleza, Servicos, Transferencia, Transporte, Vestuario, Viagem, Reserva de Emergencia, Investimento
-Entradas: Salario - Adiantamento, Salario, Salario - 13o, Reembolso - Aluguel + Condominio, Bonus, PLR, VR (Flash), VR (Flash - Auxilio), Outros (entrada)
+Gastos: Alimentação, Assinatura, Imprevistos, Despesa Fixa, Educação, Emprestimo, Lazer, Mercado, Moradia, Outros, Parcelamento de Fatura, Presente, Saúde e Beleza, Servicos, Transferencia, Transporte, Vestuario, Viagem, Reserva de Emergencia, Investimento
+Entradas: Salario - Adiantamento, Salario, Salario - 13o, Reembolso, Bonus, PLR, Vale Refeição, Vale Alimentação, Outros (entrada)
 
 ## Metodos de pagamento validos:
-Cartao de Credito, Cartao de Debito, Dinheiro, VR, Pix
+Cartão de Crédito, Cartão de Débito, Dinheiro, Pix, Vale Alimentação, Vale Refeição
 
 Responda APENAS com o JSON, sem texto adicional.
 """
@@ -386,21 +387,22 @@ Responda APENAS com o JSON, sem texto adicional.
 IMAGE_PROMPT = """Analise esta imagem de nota fiscal/cupom e extraia as informacoes.
 
 ## Categorias Disponiveis (use EXATAMENTE um destes nomes):
-### Gastos: Alimentacao, Assinatura, Imprevistos, Despesa Fixa, Educacao, Emprestimo, Lazer, Mercado, Moradia, Outros, Parcelamento de Fatura, Presente, Saude e Beleza, Servicos, Transferencia, Transporte, Vestuario, Viagem, Reserva de Emergencia, Investimento
-### Entradas: Salario - Adiantamento, Salario, Salario - 13o, Reembolso - Aluguel + Condominio, Bonus, PLR, VR (Flash), VR (Flash - Auxilio), Outros (entrada)
+### Gastos: Alimentação, Assinatura, Imprevistos, Despesa Fixa, Educação, Emprestimo, Lazer, Mercado, Moradia, Outros, Parcelamento de Fatura, Presente, Saúde e Beleza, Servicos, Transferencia, Transporte, Vestuario, Viagem, Reserva de Emergencia, Investimento
+### Entradas: Salario - Adiantamento, Salario, Salario - 13o, Reembolso, Bonus, PLR, Vale Refeição, Vale Alimentação, Outros (entrada)
 
-## Meios de Pagamento (use EXATAMENTE um destes - SEM ACENTOS):
-- Cartao de Credito
-- Cartao de Debito
+## Meios de Pagamento (use EXATAMENTE um destes nomes):
+- Cartão de Crédito
+- Cartão de Débito
 - Dinheiro
-- VR
 - Pix
+- Vale Alimentação
+- Vale Refeição
 
 ## Regras para inferir categoria pelo nome do estabelecimento:
 - Bar, Pub, Fliperama, Cinema, Teatro, Boliche -> Lazer
-- Restaurante, Lanchonete, Padaria, Cafe -> Alimentacao
+- Restaurante, Lanchonete, Padaria, Cafe -> Alimentação
 - Supermercado, Mercado, Hortifruti -> Mercado
-- Farmacia, Drogaria, Clinica, Hospital -> Saude e Beleza
+- Farmacia, Drogaria, Clinica, Hospital -> Saúde e Beleza
 - Posto de Gasolina, Uber, 99, Estacionamento -> Transporte
 - Loja de Roupas, Calcados, Moda -> Vestuario
 - Hotel, Pousada, Airbnb -> Viagem
@@ -436,15 +438,16 @@ Responda APENAS com o JSON.
 PDF_PROMPT = """Analise o texto extraido de um comprovante ou nota fiscal em PDF e extraia as informacoes.
 
 ## Categorias Disponiveis (use EXATAMENTE um destes nomes):
-### Gastos: Alimentacao, Assinatura, Imprevistos, Despesa Fixa, Educacao, Emprestimo, Lazer, Mercado, Moradia, Outros, Parcelamento de Fatura, Presente, Saude e Beleza, Servicos, Transferencia, Transporte, Vestuario, Viagem, Reserva de Emergencia, Investimento
-### Entradas: Salario - Adiantamento, Salario, Salario - 13o, Reembolso - Aluguel + Condominio, Bonus, PLR, VR (Flash), VR (Flash - Auxilio), Outros (entrada)
+### Gastos: Alimentação, Assinatura, Imprevistos, Despesa Fixa, Educação, Emprestimo, Lazer, Mercado, Moradia, Outros, Parcelamento de Fatura, Presente, Saúde e Beleza, Servicos, Transferencia, Transporte, Vestuario, Viagem, Reserva de Emergencia, Investimento
+### Entradas: Salario - Adiantamento, Salario, Salario - 13o, Reembolso, Bonus, PLR, Vale Refeição, Vale Alimentação, Outros (entrada)
 
-## Meios de Pagamento (use EXATAMENTE um destes - SEM ACENTOS):
-- Cartao de Credito
-- Cartao de Debito
+## Meios de Pagamento (use EXATAMENTE um destes nomes):
+- Cartão de Crédito
+- Cartão de Débito
 - Dinheiro
-- VR
 - Pix
+- Vale Alimentação
+- Vale Refeição
 
 ## Sua tarefa:
 - Identifique estabelecimento, valor total, categoria e meio de pagamento quando possivel

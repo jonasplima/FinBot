@@ -60,7 +60,7 @@ class TestExpenseServiceCreateExpense:
         data = {
             "description": "Test",
             "amount": 50.00,
-            "category": "Alimentacao",
+            "category": "Alimentação",
             "payment_method": "MetodoInexistente",
         }
 
@@ -74,7 +74,7 @@ class TestExpenseServiceCreateExpense:
         data = {
             "description": "Test",
             "amount": 0,
-            "category": "Alimentacao",
+            "category": "Alimentação",
             "payment_method": "Pix",
         }
 
@@ -88,7 +88,7 @@ class TestExpenseServiceCreateExpense:
         data = {
             "description": "Test",
             "amount": -50.00,
-            "category": "Alimentacao",
+            "category": "Alimentação",
             "payment_method": "Pix",
         }
 

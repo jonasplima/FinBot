@@ -338,8 +338,7 @@ class WebhookHandler:
         if limit_type not in {"daily_text_limit", "daily_media_limit", "daily_ai_limit"}:
             await self.evolution.send_text(
                 phone,
-                "Nao consegui identificar qual limite voce quer alterar. "
-                "Use: texto, midia ou ia.",
+                "Nao consegui identificar qual limite voce quer alterar. Use: texto, midia ou ia.",
             )
             return
 
@@ -567,11 +566,12 @@ class WebhookHandler:
             msg += f"- Descricao: {description}\n"
             msg += f"- Categoria: {category}\n\n"
             msg += "Qual foi a forma de pagamento?\n"
-            msg += "1. Cartao de Credito\n"
-            msg += "2. Cartao de Debito\n"
+            msg += "1. Cartão de Crédito\n"
+            msg += "2. Cartão de Débito\n"
             msg += "3. Pix\n"
             msg += "4. Dinheiro\n"
-            msg += "5. VR"
+            msg += "5. Vale Refeição\n"
+            msg += "6. Vale Alimentação"
 
             # Save pending asking for payment method
             await self.save_pending_confirmation(
@@ -1429,20 +1429,26 @@ class WebhookHandler:
 
         # Map response to payment method
         payment_map = {
-            "1": "Cartao de Credito",
-            "credito": "Cartao de Credito",
-            "cartao de credito": "Cartao de Credito",
-            "cartão de crédito": "Cartao de Credito",
-            "2": "Cartao de Debito",
-            "debito": "Cartao de Debito",
-            "cartao de debito": "Cartao de Debito",
-            "cartão de débito": "Cartao de Debito",
+            "1": "Cartão de Crédito",
+            "credito": "Cartão de Crédito",
+            "cartao de credito": "Cartão de Crédito",
+            "cartão de crédito": "Cartão de Crédito",
+            "2": "Cartão de Débito",
+            "debito": "Cartão de Débito",
+            "cartao de debito": "Cartão de Débito",
+            "cartão de débito": "Cartão de Débito",
             "3": "Pix",
             "pix": "Pix",
             "4": "Dinheiro",
             "dinheiro": "Dinheiro",
-            "5": "VR",
-            "vr": "VR",
+            "5": "Vale Refeição",
+            "vr": "Vale Refeição",
+            "vale refeicao": "Vale Refeição",
+            "vale refeição": "Vale Refeição",
+            "6": "Vale Alimentação",
+            "va": "Vale Alimentação",
+            "vale alimentacao": "Vale Alimentação",
+            "vale alimentação": "Vale Alimentação",
         }
 
         payment_method = payment_map.get(response.lower().strip())
@@ -1467,11 +1473,12 @@ class WebhookHandler:
             await self.evolution.send_text(
                 phone,
                 "Opcao invalida. Por favor, escolha:\n"
-                "1. Cartao de Credito\n"
-                "2. Cartao de Debito\n"
+                "1. Cartão de Crédito\n"
+                "2. Cartão de Débito\n"
                 "3. Pix\n"
                 "4. Dinheiro\n"
-                "5. VR",
+                "5. Vale Refeição\n"
+                "6. Vale Alimentação",
             )
             # Re-save pending
             await self.save_pending_confirmation(session, phone, pending_data)
@@ -1922,7 +1929,9 @@ class WebhookHandler:
         action = evaluation.get("action", "unknown")
 
         if action == "confirm":
-            await self._handle_backup_restore_confirmation(session, phone, "sim", pending_data, user)
+            await self._handle_backup_restore_confirmation(
+                session, phone, "sim", pending_data, user
+            )
         elif action == "cancel":
             await self.evolution.send_text(phone, "Restauracao cancelada.")
         else:

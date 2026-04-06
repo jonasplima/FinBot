@@ -26,7 +26,9 @@ class TestBackupService:
         )
         pix = payment_method.scalar_one()
 
-        category = await seeded_session.execute(select(Category).where(Category.name == "Alimentacao"))
+        category = await seeded_session.execute(
+            select(Category).where(Category.name == "Alimentação")
+        )
         alimentacao = category.scalar_one()
 
         expense = Expense(
@@ -218,7 +220,9 @@ class TestBackupService:
 
         assert result["success"] is False
 
-        expenses = await seeded_session.execute(select(Expense).where(Expense.user_phone == test_phone))
+        expenses = await seeded_session.execute(
+            select(Expense).where(Expense.user_phone == test_phone)
+        )
         goals = await seeded_session.execute(select(Goal).where(Goal.user_phone == test_phone))
         assert expenses.scalars().all() == []
         assert goals.scalars().all() == []

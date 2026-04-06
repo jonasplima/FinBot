@@ -442,7 +442,8 @@ class BackupService:
                     previous_amount=Decimal(str(update_data["previous_amount"])),
                     new_amount=Decimal(str(update_data["new_amount"])),
                     update_type=str(update_data["update_type"]),
-                    created_at=self._parse_datetime(update_data.get("created_at")) or datetime.now(),
+                    created_at=self._parse_datetime(update_data.get("created_at"))
+                    or datetime.now(),
                 )
             )
             updates_created += 1

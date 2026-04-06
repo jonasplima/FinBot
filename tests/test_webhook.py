@@ -137,7 +137,7 @@ class TestWebhookHandlerBuildExpenseSummary:
         expense_data = {
             "amount": 50.00,
             "description": "Almoco",
-            "category": "Alimentacao",
+            "category": "Alimentação",
             "payment_method": "Pix",
         }
 
@@ -145,7 +145,7 @@ class TestWebhookHandlerBuildExpenseSummary:
 
         assert "R$ 50.00" in summary
         assert "Almoco" in summary
-        assert "Alimentacao" in summary
+        assert "Alimentação" in summary
         assert "Pix" in summary
 
     def test_build_expense_summary_with_installments(self, handler):
@@ -154,7 +154,7 @@ class TestWebhookHandlerBuildExpenseSummary:
             "amount": 300.00,
             "description": "Tenis",
             "category": "Vestuario",
-            "payment_method": "Cartao de Credito",
+            "payment_method": "Cartão de Crédito",
             "installments": 3,
             "is_shared": False,
             "shared_percentage": None,
@@ -186,7 +186,7 @@ class TestWebhookHandlerBuildExpenseSummary:
             "amount": 55.00,
             "description": "Netflix",
             "category": "Assinatura",
-            "payment_method": "Cartao de Credito",
+            "payment_method": "Cartão de Crédito",
             "recurring_day": 15,
             "is_shared": False,
             "shared_percentage": None,
@@ -231,7 +231,7 @@ class TestWebhookHandlerApplyAdjustments:
 
     def test_apply_adjustments_category(self, handler):
         """Test applying category adjustment."""
-        expense_data = {"amount": 50.00, "category": "Alimentacao"}
+        expense_data = {"amount": 50.00, "category": "Alimentação"}
         adjustments = {"category": "Lazer"}
 
         result = handler._apply_adjustments(expense_data, adjustments)
@@ -241,18 +241,18 @@ class TestWebhookHandlerApplyAdjustments:
     def test_apply_adjustments_payment_method(self, handler):
         """Test applying payment method adjustment."""
         expense_data = {"amount": 50.00, "payment_method": "Pix"}
-        adjustments = {"payment_method": "Cartao de Credito"}
+        adjustments = {"payment_method": "Cartão de Crédito"}
 
         result = handler._apply_adjustments(expense_data, adjustments)
 
-        assert result["payment_method"] == "Cartao de Credito"
+        assert result["payment_method"] == "Cartão de Crédito"
 
     def test_apply_adjustments_multiple(self, handler):
         """Test applying multiple adjustments."""
         expense_data = {
             "amount": 50.00,
             "description": "Test",
-            "category": "Alimentacao",
+            "category": "Alimentação",
             "payment_method": "Pix",
         }
         adjustments = {
@@ -316,7 +316,7 @@ class TestWebhookHandlerIntentHandling:
             "data": {
                 "description": "Almoco",
                 "amount": 50.00,
-                "category": "Alimentacao",
+                "category": "Alimentação",
                 "payment_method": "Pix",
             },
         }
@@ -341,7 +341,7 @@ class TestWebhookHandlerIntentHandling:
             "data": {
                 "description": "Almoco",
                 "amount": 50.00,
-                "category": "Alimentacao",
+                "category": "Alimentação",
                 "payment_method": None,
             },
         }

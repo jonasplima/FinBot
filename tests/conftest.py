@@ -262,7 +262,7 @@ async def db_session(async_engine):
 async def seeded_session(db_session):
     """Database session with seeded categories and payment methods."""
     categories = [
-        Category(name="Alimentacao", type="Negativo"),
+        Category(name="Alimentação", type="Negativo"),
         Category(name="Transporte", type="Negativo"),
         Category(name="Lazer", type="Negativo"),
         Category(name="Mercado", type="Negativo"),
@@ -275,10 +275,11 @@ async def seeded_session(db_session):
 
     payment_methods = [
         PaymentMethod(name="Pix"),
-        PaymentMethod(name="Cartao de Credito"),
-        PaymentMethod(name="Cartao de Debito"),
+        PaymentMethod(name="Cartão de Crédito"),
+        PaymentMethod(name="Cartão de Débito"),
         PaymentMethod(name="Dinheiro"),
-        PaymentMethod(name="VR"),
+        PaymentMethod(name="Vale Alimentação"),
+        PaymentMethod(name="Vale Refeição"),
     ]
 
     for cat in categories:
@@ -297,7 +298,7 @@ def sample_expense_data():
     return {
         "description": "Almoco no restaurante",
         "amount": 45.50,
-        "category": "Alimentacao",
+        "category": "Alimentação",
         "payment_method": "Pix",
         "installments": None,
         "is_shared": False,
@@ -314,7 +315,7 @@ def sample_installment_data():
         "description": "Tenis Nike",
         "amount": 300.00,
         "category": "Vestuario",
-        "payment_method": "Cartao de Credito",
+        "payment_method": "Cartão de Crédito",
         "installments": 3,
         "is_shared": False,
         "shared_percentage": None,
@@ -330,7 +331,7 @@ def sample_recurring_data():
         "description": "Netflix",
         "amount": 55.90,
         "category": "Assinatura",
-        "payment_method": "Cartao de Credito",
+        "payment_method": "Cartão de Crédito",
         "installments": None,
         "is_shared": False,
         "shared_percentage": None,
@@ -420,7 +421,7 @@ async def expense_in_db(seeded_session, test_phone):
     from sqlalchemy import select
 
     cat_result = await seeded_session.execute(
-        select(Category).where(Category.name == "Alimentacao")
+        select(Category).where(Category.name == "Alimentação")
     )
     category = cat_result.scalar_one()
 
@@ -457,7 +458,7 @@ async def pending_confirmation_in_db(seeded_session, test_phone):
             "data": {
                 "description": "Test",
                 "amount": 50.00,
-                "category": "Alimentacao",
+                "category": "Alimentação",
                 "payment_method": "Pix",
             },
         },

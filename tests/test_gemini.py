@@ -96,7 +96,7 @@ class TestGeminiServiceProcessMessage:
             "data": {
                 "description": "almoco",
                 "amount": 45.00,
-                "category": "Alimentacao",
+                "category": "Alimentação",
                 "payment_method": "Pix",
                 "installments": None,
                 "is_shared": False,
@@ -120,7 +120,7 @@ class TestGeminiServiceProcessMessage:
 
             assert result["intent"] == "register_expense"
             assert result["data"]["amount"] == 45.00
-            assert result["data"]["category"] == "Alimentacao"
+            assert result["data"]["category"] == "Alimentação"
 
     async def test_process_message_query_month(self, mock_model):
         """Test processing a query month message."""
@@ -295,7 +295,7 @@ class TestGeminiServiceProcessImage:
             "data": {
                 "description": "Restaurante XYZ",
                 "amount": 89.90,
-                "category": "Alimentacao",
+                "category": "Alimentação",
                 "payment_method": None,
             },
             "confidence": 0.9,
@@ -349,7 +349,7 @@ class TestGeminiServiceProcessPdfText:
             "data": {
                 "description": "Restaurante ABC",
                 "amount": 120.50,
-                "category": "Alimentacao",
+                "category": "Alimentação",
                 "payment_method": "Pix",
             },
             "confidence": 0.91,
