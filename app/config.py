@@ -59,6 +59,18 @@ class Settings(BaseSettings):
     default_daily_media_limit: int = 20
     default_daily_ai_limit: int = 50
 
+    # Defensive limits - PDFs and backups
+    max_pdf_size_bytes: int = 2_000_000
+    max_pdf_pages: int = 10
+    max_pdf_text_chars: int = 20_000
+    max_backup_size_bytes: int = 1_000_000
+    max_backup_expenses: int = 5_000
+    max_backup_budgets: int = 200
+    max_backup_goals: int = 200
+    max_backup_budget_alerts: int = 1_000
+    max_backup_goal_updates: int = 1_000
+    backup_temp_ttl_seconds: int = 600
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
@@ -80,6 +92,56 @@ class Settings(BaseSettings):
             "daily_media_limit": self.default_daily_media_limit,
             "daily_ai_limit": self.default_daily_ai_limit,
         }
+
+    @property
+    def effective_max_pdf_size_bytes(self) -> int:
+        """Clamp PDF size limit to a safe server ceiling."""
+        return min(max(self.max_pdf_size_bytes, 1), 5_000_000)
+
+    @property
+    def effective_max_pdf_pages(self) -> int:
+        """Clamp PDF page limit to a safe server ceiling."""
+        return min(max(self.max_pdf_pages, 1), 20)
+
+    @property
+    def effective_max_pdf_text_chars(self) -> int:
+        """Clamp PDF extracted text limit to a safe server ceiling."""
+        return min(max(self.max_pdf_text_chars, 100), 50_000)
+
+    @property
+    def effective_max_backup_size_bytes(self) -> int:
+        """Clamp backup JSON size limit to a safe server ceiling."""
+        return min(max(self.max_backup_size_bytes, 1_024), 5_000_000)
+
+    @property
+    def effective_max_backup_expenses(self) -> int:
+        """Clamp backup expense count limit to a safe server ceiling."""
+        return min(max(self.max_backup_expenses, 1), 10_000)
+
+    @property
+    def effective_max_backup_budgets(self) -> int:
+        """Clamp backup budget count limit to a safe server ceiling."""
+        return min(max(self.max_backup_budgets, 1), 500)
+
+    @property
+    def effective_max_backup_goals(self) -> int:
+        """Clamp backup goal count limit to a safe server ceiling."""
+        return min(max(self.max_backup_goals, 1), 500)
+
+    @property
+    def effective_max_backup_budget_alerts(self) -> int:
+        """Clamp backup budget alert count limit to a safe server ceiling."""
+        return min(max(self.max_backup_budget_alerts, 1), 5_000)
+
+    @property
+    def effective_max_backup_goal_updates(self) -> int:
+        """Clamp backup goal update count limit to a safe server ceiling."""
+        return min(max(self.max_backup_goal_updates, 1), 5_000)
+
+    @property
+    def effective_backup_temp_ttl_seconds(self) -> int:
+        """Clamp temporary backup TTL to a safe server ceiling."""
+        return min(max(self.backup_temp_ttl_seconds, 60), 3_600)
 
 
 @lru_cache

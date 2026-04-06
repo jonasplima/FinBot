@@ -641,7 +641,10 @@ class TestWebhookHandlerIntentHandling:
         }
         handler.handle_register_expense = AsyncMock()
 
-        with patch.object(handler, "_extract_text_from_pdf", return_value="COMPROVANTE PIX UBER"):
+        with (
+            patch.object(handler, "_validate_pdf_document", return_value=None),
+            patch.object(handler, "_extract_text_from_pdf", return_value="COMPROVANTE PIX UBER"),
+        ):
             await handler.handle_pdf_message(
                 seeded_session,
                 {
@@ -664,7 +667,10 @@ class TestWebhookHandlerIntentHandling:
         """Test PDF processing when text extraction fails."""
         handler.evolution.download_media.return_value = b"%PDF fake"
 
-        with patch.object(handler, "_extract_text_from_pdf", return_value=""):
+        with (
+            patch.object(handler, "_validate_pdf_document", return_value=None),
+            patch.object(handler, "_extract_text_from_pdf", return_value=""),
+        ):
             await handler.handle_pdf_message(
                 seeded_session,
                 {
@@ -678,6 +684,27 @@ class TestWebhookHandlerIntentHandling:
         handler.evolution.send_text.assert_awaited_once()
         call_args = handler.evolution.send_text.call_args
         assert "extrair texto do pdf" in call_args.args[1].lower()
+
+    async def test_handle_pdf_message_rejects_oversized_pdf(
+        self, handler, seeded_session, test_phone, accepted_user_in_db
+    ):
+        """Test PDF processing rejects files above the safe size limit."""
+        handler.evolution.download_media.return_value = b"x" * 32
+
+        with patch("app.handlers.webhook.settings.max_pdf_size_bytes", 16):
+            await handler.handle_pdf_message(
+                seeded_session,
+                {
+                    "phone": test_phone,
+                    "text": "",
+                    "message_key": {"id": "123"},
+                },
+                accepted_user_in_db,
+            )
+
+        handler.gemini.process_pdf_text.assert_not_called()
+        handler.evolution.send_text.assert_awaited_once()
+        assert "excede o limite" in handler.evolution.send_text.call_args.args[1].lower()
 
     async def test_handle_export_backup_sends_json_document(
         self, handler, seeded_session, test_phone
@@ -728,6 +755,13 @@ class TestWebhookHandlerIntentHandling:
                 "goal_updates": 0,
             }
         )
+        handler.backup_service.store_temporary_backup = AsyncMock(
+            return_value={
+                "success": True,
+                "backup_ref": "finbot:backup:test",
+                "backup_hash": "abc123",
+            }
+        )
 
         await handler.handle_backup_document(
             seeded_session,
@@ -741,12 +775,18 @@ class TestWebhookHandlerIntentHandling:
         pending = await handler.get_pending_confirmation(seeded_session, test_phone)
         assert pending is not None
         assert pending.data["type"] == "backup_restore"
+        assert pending.data["backup_ref"] == "finbot:backup:test"
+        assert "backup_data" not in pending.data
         handler.evolution.send_text.assert_awaited_once()
 
     async def test_handle_backup_restore_confirmation_success(
         self, handler, seeded_session, test_phone, accepted_user_in_db
     ):
         """Test confirmed backup restore."""
+        handler.backup_service.load_temporary_backup = AsyncMock(
+            return_value={"metadata": {"schema_version": 1}, "expenses": [], "budgets": [], "goals": []}
+        )
+        handler.backup_service.delete_temporary_backup = AsyncMock()
         handler.backup_service.restore_user_backup = AsyncMock(
             return_value={
                 "success": True,
@@ -766,7 +806,7 @@ class TestWebhookHandlerIntentHandling:
             "sim",
             {
                 "type": "backup_restore",
-                "backup_data": {"metadata": {"schema_version": 1}},
+                "backup_ref": "finbot:backup:test",
                 "summary": {
                     "source_phone": "5511888888888",
                     "expenses": 2,
@@ -780,9 +820,36 @@ class TestWebhookHandlerIntentHandling:
         )
 
         handler.backup_service.restore_user_backup.assert_awaited_once()
+        handler.backup_service.delete_temporary_backup.assert_awaited_once_with(
+            "finbot:backup:test"
+        )
         handler.evolution.send_text.assert_awaited_once()
         call_args = handler.evolution.send_text.call_args
         assert "backup restaurado com sucesso" in call_args.args[1].lower()
+
+    async def test_handle_backup_restore_confirmation_rejects_expired_reference(
+        self, handler, seeded_session, test_phone, accepted_user_in_db
+    ):
+        """Test restore confirmation fails safely when temporary backup is gone."""
+        handler.backup_service.load_temporary_backup = AsyncMock(return_value=None)
+        handler.backup_service.delete_temporary_backup = AsyncMock()
+        handler.backup_service.restore_user_backup = AsyncMock()
+
+        await handler._handle_backup_restore_confirmation(
+            seeded_session,
+            test_phone,
+            "sim",
+            {
+                "type": "backup_restore",
+                "backup_ref": "finbot:backup:missing",
+                "summary": {},
+            },
+            accepted_user_in_db,
+        )
+
+        handler.backup_service.restore_user_backup.assert_not_awaited()
+        handler.evolution.send_text.assert_awaited_once()
+        assert "expirou" in handler.evolution.send_text.call_args.args[1].lower()
 
     async def test_handle_export_sends_xlsx_by_default(self, handler, seeded_session, test_phone):
         """Test that export uses XLSX by default."""

@@ -1,16 +1,21 @@
 """Backup and restore service for user data."""
 
 import base64
+import hashlib
 import json
 import logging
+from collections.abc import Mapping
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
+from uuid import uuid4
 
+from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.config import get_settings
 from app.database.models import (
     Budget,
     BudgetAlert,
@@ -23,12 +28,62 @@ from app.database.models import (
 from app.utils.validators import normalize_phone
 
 logger = logging.getLogger(__name__)
+settings = get_settings()
 
 BACKUP_SCHEMA_VERSION = 1
+EXPENSE_ALLOWED_KEYS = {
+    "description",
+    "amount",
+    "category",
+    "payment_method",
+    "type",
+    "installment_current",
+    "installment_total",
+    "is_shared",
+    "shared_percentage",
+    "original_currency",
+    "original_amount",
+    "exchange_rate",
+    "is_recurring",
+    "recurring_day",
+    "recurring_active",
+    "date",
+    "created_at",
+}
+EXPENSE_ALLOWED_TYPES = {"Negativo", "Positivo"}
+BUDGET_ALLOWED_KEYS = {
+    "category",
+    "monthly_limit",
+    "is_active",
+    "created_at",
+    "updated_at",
+    "alerts",
+}
+BUDGET_ALERT_ALLOWED_KEYS = {"threshold_percent", "month", "year", "sent_at"}
+GOAL_ALLOWED_KEYS = {
+    "description",
+    "target_amount",
+    "current_amount",
+    "deadline",
+    "start_date",
+    "is_active",
+    "is_achieved",
+    "created_at",
+    "updated_at",
+    "updates",
+}
+GOAL_UPDATE_ALLOWED_KEYS = {"previous_amount", "new_amount", "update_type", "created_at"}
+GOAL_UPDATE_ALLOWED_TYPES = {"automatic", "manual", "deposit"}
 
 
 class BackupService:
     """Service for exporting and restoring user backups."""
+
+    _fallback_temp_storage: dict[str, tuple[str, datetime]] = {}
+
+    def __init__(self) -> None:
+        self.redis_url = settings.redis_url
+        self._redis: Redis | None = None
 
     async def export_user_backup(
         self,
@@ -54,6 +109,14 @@ class BackupService:
         }
 
         json_bytes = json.dumps(payload, ensure_ascii=True, indent=2).encode("utf-8")
+        if len(json_bytes) > settings.effective_max_backup_size_bytes:
+            return {
+                "success": False,
+                "error": (
+                    "Seu backup excede o limite seguro de tamanho para exportacao. "
+                    "Reduza o volume de dados antes de tentar novamente."
+                ),
+            }
         file_base64 = base64.b64encode(json_bytes).decode("utf-8")
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -67,6 +130,16 @@ class BackupService:
 
     def parse_backup_document(self, document_bytes: bytes) -> dict:
         """Parse a JSON backup document sent by the user."""
+        if len(document_bytes) > settings.effective_max_backup_size_bytes:
+            max_mb = settings.effective_max_backup_size_bytes / 1_000_000
+            return {
+                "success": False,
+                "error": (
+                    "O arquivo JSON excede o limite seguro do servidor "
+                    f"({max_mb:.1f} MB)."
+                ),
+            }
+
         try:
             text = document_bytes.decode("utf-8-sig")
         except UnicodeDecodeError:
@@ -85,6 +158,9 @@ class BackupService:
 
     def validate_backup_data(self, backup_data: dict[str, Any]) -> dict:
         """Validate backup structure before restore."""
+        if not isinstance(backup_data, dict):
+            return {"success": False, "error": "Backup invalido: estrutura principal ausente."}
+
         metadata = backup_data.get("metadata")
         if not isinstance(metadata, dict):
             return {"success": False, "error": "Backup sem metadata valida."}
@@ -99,6 +175,39 @@ class BackupService:
         for key in ("expenses", "budgets", "goals"):
             if key not in backup_data or not isinstance(backup_data[key], list):
                 return {"success": False, "error": f"Campo '{key}' ausente ou invalido."}
+
+        allowed_root_keys = {"metadata", "expenses", "budgets", "goals"}
+        if unknown := set(backup_data) - allowed_root_keys:
+            return {
+                "success": False,
+                "error": f"Backup contem campos nao suportados: {', '.join(sorted(unknown))}.",
+            }
+
+        if len(backup_data["expenses"]) > settings.effective_max_backup_expenses:
+            return {
+                "success": False,
+                "error": "Backup excede o limite de despesas suportadas.",
+            }
+        if len(backup_data["budgets"]) > settings.effective_max_backup_budgets:
+            return {
+                "success": False,
+                "error": "Backup excede o limite de orcamentos suportados.",
+            }
+        if len(backup_data["goals"]) > settings.effective_max_backup_goals:
+            return {
+                "success": False,
+                "error": "Backup excede o limite de metas suportadas.",
+            }
+
+        try:
+            for expense in backup_data["expenses"]:
+                self._validate_expense_item(expense)
+            for budget in backup_data["budgets"]:
+                self._validate_budget_item(budget)
+            for goal in backup_data["goals"]:
+                self._validate_goal_item(goal)
+        except ValueError as exc:
+            return {"success": False, "error": str(exc)}
 
         return {"success": True}
 
@@ -116,6 +225,89 @@ class BackupService:
                 len(budget.get("alerts", [])) for budget in backup_data.get("budgets", [])
             ),
         }
+
+    async def store_temporary_backup(self, backup_data: dict[str, Any]) -> dict[str, Any]:
+        """Store backup payload temporarily outside the database blob column."""
+        validation = self.validate_backup_data(backup_data)
+        if not validation["success"]:
+            return validation
+
+        serialized = json.dumps(backup_data, ensure_ascii=True, separators=(",", ":"))
+        backup_ref = f"finbot:backup:{uuid4().hex}"
+        expires_at = datetime.now().timestamp() + settings.effective_backup_temp_ttl_seconds
+
+        redis_client = await self._get_redis()
+        if redis_client is not None:
+            try:
+                await redis_client.setex(
+                    backup_ref,
+                    settings.effective_backup_temp_ttl_seconds,
+                    serialized,
+                )
+            except Exception as exc:
+                logger.warning(f"Redis unavailable for temporary backup store, using fallback: {exc}")
+                self._fallback_temp_storage[backup_ref] = (
+                    serialized,
+                    datetime.fromtimestamp(expires_at),
+                )
+        else:
+            self._fallback_temp_storage[backup_ref] = (
+                serialized,
+                datetime.fromtimestamp(expires_at),
+            )
+
+        return {
+            "success": True,
+            "backup_ref": backup_ref,
+            "backup_hash": hashlib.sha256(serialized.encode("utf-8")).hexdigest(),
+        }
+
+    async def load_temporary_backup(self, backup_ref: str) -> dict[str, Any] | None:
+        """Load a previously stored temporary backup payload."""
+        if not backup_ref:
+            return None
+
+        serialized: str | None = None
+        redis_client = await self._get_redis()
+        if redis_client is not None:
+            try:
+                serialized = await redis_client.get(backup_ref)
+            except Exception as exc:
+                logger.warning(f"Redis unavailable for temporary backup load, using fallback: {exc}")
+
+        if serialized is None:
+            entry = self._fallback_temp_storage.get(backup_ref)
+            if entry is None:
+                return None
+            serialized, expires_at = entry
+            if expires_at <= datetime.now():
+                self._fallback_temp_storage.pop(backup_ref, None)
+                return None
+
+        try:
+            data = json.loads(serialized)
+        except json.JSONDecodeError:
+            return None
+
+        validation = self.validate_backup_data(data)
+        if not validation["success"]:
+            return None
+        return data
+
+    async def delete_temporary_backup(self, backup_ref: str) -> None:
+        """Delete a temporary backup payload after use or cancellation."""
+        if not backup_ref:
+            return
+
+        self._fallback_temp_storage.pop(backup_ref, None)
+        redis_client = await self._get_redis()
+        if redis_client is None:
+            return
+
+        try:
+            await redis_client.delete(backup_ref)
+        except Exception as exc:
+            logger.warning(f"Redis unavailable for temporary backup delete: {exc}")
 
     async def restore_user_backup(
         self,
@@ -473,3 +665,180 @@ class BackupService:
         if not value:
             return None
         return datetime.fromisoformat(str(value))
+
+    async def _get_redis(self) -> Redis | None:
+        """Lazily initialize Redis client for temporary backup storage."""
+        if self._redis is not None:
+            return self._redis
+
+        try:
+            self._redis = Redis.from_url(self.redis_url, decode_responses=True)
+            return self._redis
+        except Exception as exc:
+            logger.warning(f"Could not initialize Redis client for backups: {exc}")
+            return None
+
+    def _validate_expense_item(self, expense: Mapping[str, Any]) -> None:
+        self._ensure_mapping(expense, "Despesa")
+        self._reject_unknown_fields(expense, EXPENSE_ALLOWED_KEYS, "Despesa")
+        self._require_fields(
+            expense,
+            ("description", "amount", "category", "payment_method", "type", "date"),
+            "Despesa",
+        )
+
+        if str(expense["type"]) not in EXPENSE_ALLOWED_TYPES:
+            raise ValueError("Despesa com tipo invalido no backup.")
+
+        self._ensure_decimal(expense["amount"], "Despesa.amount")
+        self._ensure_date(expense["date"], "Despesa.date")
+        self._ensure_optional_datetime(expense.get("created_at"), "Despesa.created_at")
+        self._ensure_optional_positive_int(
+            expense.get("installment_current"),
+            "Despesa.installment_current",
+        )
+        self._ensure_optional_positive_int(expense.get("installment_total"), "Despesa.installment_total")
+        self._ensure_optional_decimal(expense.get("shared_percentage"), "Despesa.shared_percentage")
+        self._ensure_optional_decimal(expense.get("original_amount"), "Despesa.original_amount")
+        self._ensure_optional_decimal(expense.get("exchange_rate"), "Despesa.exchange_rate")
+        self._ensure_optional_positive_int(expense.get("recurring_day"), "Despesa.recurring_day", 31)
+        self._ensure_optional_bool(expense.get("is_shared"), "Despesa.is_shared")
+        self._ensure_optional_bool(expense.get("is_recurring"), "Despesa.is_recurring")
+        self._ensure_optional_bool(expense.get("recurring_active"), "Despesa.recurring_active")
+
+    def _validate_budget_item(self, budget: Mapping[str, Any]) -> None:
+        self._ensure_mapping(budget, "Orcamento")
+        self._reject_unknown_fields(budget, BUDGET_ALLOWED_KEYS, "Orcamento")
+        self._require_fields(budget, ("monthly_limit",), "Orcamento")
+        self._ensure_decimal(budget["monthly_limit"], "Orcamento.monthly_limit")
+        self._ensure_optional_bool(budget.get("is_active"), "Orcamento.is_active")
+        self._ensure_optional_datetime(budget.get("created_at"), "Orcamento.created_at")
+        self._ensure_optional_datetime(budget.get("updated_at"), "Orcamento.updated_at")
+
+        alerts = budget.get("alerts", [])
+        if not isinstance(alerts, list):
+            raise ValueError("Orcamento.alerts invalido no backup.")
+        if len(alerts) > settings.effective_max_backup_budget_alerts:
+            raise ValueError("Backup excede o limite de alertas de orcamento suportados.")
+        for alert in alerts:
+            self._validate_budget_alert_item(alert)
+
+    def _validate_budget_alert_item(self, alert: Mapping[str, Any]) -> None:
+        self._ensure_mapping(alert, "Alerta de orcamento")
+        self._reject_unknown_fields(alert, BUDGET_ALERT_ALLOWED_KEYS, "Alerta de orcamento")
+        self._require_fields(alert, ("threshold_percent", "month", "year"), "Alerta de orcamento")
+        threshold = self._ensure_int(alert["threshold_percent"], "Alerta.threshold_percent")
+        if threshold not in {50, 80, 100}:
+            raise ValueError("Alerta de orcamento com threshold invalido no backup.")
+        self._ensure_positive_int(alert["month"], "Alerta.month", 12)
+        self._ensure_positive_int(alert["year"], "Alerta.year", 9999)
+        self._ensure_optional_datetime(alert.get("sent_at"), "Alerta.sent_at")
+
+    def _validate_goal_item(self, goal: Mapping[str, Any]) -> None:
+        self._ensure_mapping(goal, "Meta")
+        self._reject_unknown_fields(goal, GOAL_ALLOWED_KEYS, "Meta")
+        self._require_fields(goal, ("description", "target_amount", "current_amount", "deadline", "start_date"), "Meta")
+        self._ensure_decimal(goal["target_amount"], "Meta.target_amount")
+        self._ensure_decimal(goal["current_amount"], "Meta.current_amount")
+        self._ensure_date(goal["deadline"], "Meta.deadline")
+        self._ensure_date(goal["start_date"], "Meta.start_date")
+        self._ensure_optional_bool(goal.get("is_active"), "Meta.is_active")
+        self._ensure_optional_bool(goal.get("is_achieved"), "Meta.is_achieved")
+        self._ensure_optional_datetime(goal.get("created_at"), "Meta.created_at")
+        self._ensure_optional_datetime(goal.get("updated_at"), "Meta.updated_at")
+
+        updates = goal.get("updates", [])
+        if not isinstance(updates, list):
+            raise ValueError("Meta.updates invalido no backup.")
+        if len(updates) > settings.effective_max_backup_goal_updates:
+            raise ValueError("Backup excede o limite de atualizacoes de metas suportadas.")
+        for update in updates:
+            self._validate_goal_update_item(update)
+
+    def _validate_goal_update_item(self, update: Mapping[str, Any]) -> None:
+        self._ensure_mapping(update, "Atualizacao de meta")
+        self._reject_unknown_fields(update, GOAL_UPDATE_ALLOWED_KEYS, "Atualizacao de meta")
+        self._require_fields(update, ("previous_amount", "new_amount", "update_type"), "Atualizacao de meta")
+        self._ensure_decimal(update["previous_amount"], "GoalUpdate.previous_amount")
+        self._ensure_decimal(update["new_amount"], "GoalUpdate.new_amount")
+        if str(update["update_type"]) not in GOAL_UPDATE_ALLOWED_TYPES:
+            raise ValueError("Atualizacao de meta com tipo invalido no backup.")
+        self._ensure_optional_datetime(update.get("created_at"), "GoalUpdate.created_at")
+
+    def _ensure_mapping(self, value: Any, label: str) -> None:
+        if not isinstance(value, Mapping):
+            raise ValueError(f"{label} invalido no backup.")
+
+    def _reject_unknown_fields(
+        self,
+        item: Mapping[str, Any],
+        allowed_keys: set[str],
+        label: str,
+    ) -> None:
+        unknown = set(item) - allowed_keys
+        if unknown:
+            raise ValueError(f"{label} contem campos nao suportados: {', '.join(sorted(unknown))}.")
+
+    def _require_fields(
+        self,
+        item: Mapping[str, Any],
+        fields: tuple[str, ...],
+        label: str,
+    ) -> None:
+        for field in fields:
+            if item.get(field) in (None, ""):
+                raise ValueError(f"{label} com campo obrigatorio ausente: {field}")
+
+    def _ensure_decimal(self, value: Any, label: str) -> Decimal:
+        try:
+            return Decimal(str(value))
+        except Exception as exc:
+            raise ValueError(f"{label} invalido no backup.") from exc
+
+    def _ensure_optional_decimal(self, value: Any, label: str) -> Decimal | None:
+        if value in (None, ""):
+            return None
+        return self._ensure_decimal(value, label)
+
+    def _ensure_int(self, value: Any, label: str) -> int:
+        try:
+            return int(value)
+        except Exception as exc:
+            raise ValueError(f"{label} invalido no backup.") from exc
+
+    def _ensure_positive_int(self, value: Any, label: str, max_value: int) -> int:
+        parsed = self._ensure_int(value, label)
+        if parsed < 1 or parsed > max_value:
+            raise ValueError(f"{label} fora do limite permitido no backup.")
+        return parsed
+
+    def _ensure_optional_positive_int(
+        self,
+        value: Any,
+        label: str,
+        max_value: int = 999,
+    ) -> int | None:
+        if value in (None, ""):
+            return None
+        return self._ensure_positive_int(value, label, max_value)
+
+    def _ensure_date(self, value: Any, label: str) -> date:
+        try:
+            return date.fromisoformat(str(value))
+        except Exception as exc:
+            raise ValueError(f"{label} invalido no backup.") from exc
+
+    def _ensure_optional_datetime(self, value: Any, label: str) -> datetime | None:
+        if value in (None, ""):
+            return None
+        try:
+            return datetime.fromisoformat(str(value))
+        except Exception as exc:
+            raise ValueError(f"{label} invalido no backup.") from exc
+
+    def _ensure_optional_bool(self, value: Any, label: str) -> bool | None:
+        if value is None:
+            return None
+        if not isinstance(value, bool):
+            raise ValueError(f"{label} invalido no backup.")
+        return value

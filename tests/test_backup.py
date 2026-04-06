@@ -4,11 +4,13 @@ import base64
 import json
 from datetime import date, datetime
 from decimal import Decimal
+from unittest.mock import patch
 
 import pytest
 from sqlalchemy import select
 
 from app.services.backup import BACKUP_SCHEMA_VERSION, BackupService
+from app.services.backup import settings as backup_settings
 from tests.conftest import Budget, BudgetAlert, Category, Expense, Goal, GoalUpdate, PaymentMethod
 
 
@@ -88,6 +90,93 @@ class TestBackupService:
 
         assert result["success"] is False
         assert "json valido" in result["error"].lower()
+
+    def test_parse_backup_document_rejects_large_payload(self, service):
+        """Test parsing rejects oversized backup payloads before JSON decode."""
+        with patch.object(backup_settings, "max_backup_size_bytes", 1024):
+            result = service.parse_backup_document(b"x" * 1025)
+
+        assert result["success"] is False
+        assert "excede o limite" in result["error"].lower()
+
+    def test_validate_backup_document_rejects_unknown_fields(self, service):
+        """Test validation rejects unexpected root-level fields."""
+        result = service.validate_backup_data(
+            {
+                "metadata": {
+                    "schema_version": BACKUP_SCHEMA_VERSION,
+                    "exported_at": "2026-04-05T10:00:00",
+                    "source_phone": "5511888888888",
+                },
+                "expenses": [],
+                "budgets": [],
+                "goals": [],
+                "evil": True,
+            }
+        )
+
+        assert result["success"] is False
+        assert "nao suportados" in result["error"].lower()
+
+    def test_validate_backup_document_rejects_invalid_goal_update_type(self, service):
+        """Test validation rejects invalid goal update enums."""
+        result = service.validate_backup_data(
+            {
+                "metadata": {
+                    "schema_version": BACKUP_SCHEMA_VERSION,
+                    "exported_at": "2026-04-05T10:00:00",
+                    "source_phone": "5511888888888",
+                },
+                "expenses": [],
+                "budgets": [],
+                "goals": [
+                    {
+                        "description": "Reserva",
+                        "target_amount": 1000.0,
+                        "current_amount": 100.0,
+                        "deadline": "2026-12-31",
+                        "start_date": "2026-01-01",
+                        "is_active": True,
+                        "is_achieved": False,
+                        "created_at": "2026-01-01T10:00:00",
+                        "updated_at": None,
+                        "updates": [
+                            {
+                                "previous_amount": 0.0,
+                                "new_amount": 100.0,
+                                "update_type": "hack",
+                                "created_at": "2026-02-01T10:00:00",
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
+
+        assert result["success"] is False
+        assert "tipo invalido" in result["error"].lower()
+
+    async def test_temporary_backup_storage_roundtrip(self, service):
+        """Test temporary backup storage roundtrip outside pending confirmations."""
+        backup_data = {
+            "metadata": {
+                "schema_version": BACKUP_SCHEMA_VERSION,
+                "exported_at": "2026-04-05T10:00:00",
+                "source_phone": "5511888888888",
+            },
+            "expenses": [],
+            "budgets": [],
+            "goals": [],
+        }
+
+        stored = await service.store_temporary_backup(backup_data)
+
+        assert stored["success"] is True
+        loaded = await service.load_temporary_backup(stored["backup_ref"])
+        assert loaded == backup_data
+
+        await service.delete_temporary_backup(stored["backup_ref"])
+        assert await service.load_temporary_backup(stored["backup_ref"]) is None
 
     async def test_restore_user_backup_success(self, service, seeded_session, test_phone):
         """Test restoring backup data successfully."""

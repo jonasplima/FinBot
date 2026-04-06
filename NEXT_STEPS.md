@@ -124,28 +124,31 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
 ### 0.5 Limites Defensivos para PDFs e Backups
 - **Complexidade:** Média 🟡
 - **Valor:** Alto
-- **Status:** Pendente
+- **Status:** Implementado
 - **Problema identificado:**
   - PDFs e JSONs são carregados inteiros em memória
   - Não há limite de tamanho, páginas, caracteres extraídos ou profundidade do backup
   - O backup completo é salvo em `pending_confirmations.data`, aumentando uso de banco e risco operacional
   - A validação do backup ainda é estrutural, mas pouco restritiva em enums, ranges e campos permitidos
-- **Plano de correção:**
-  - Definir limites de tamanho para documentos, páginas PDF e caracteres processados
-  - Rejeitar arquivos acima do limite com mensagem amigável
-  - Endurecer o schema do backup com validação explícita por campo
-  - Substituir o armazenamento integral do backup pendente por referência temporária, hash ou payload reduzido
-  - Cobrir casos de arquivo grande, arquivo truncado, schema inválido e campos fora do catálogo
+- **Implementação:**
+  - ✅ Inclusão de limites configuráveis com teto seguro para tamanho de PDF, quantidade de páginas, caracteres extraídos e tamanho/cardinalidade de backups
+  - ✅ Rejeição antecipada de PDFs grandes ou inválidos antes do processamento pelo Gemini
+  - ✅ Endurecimento do schema de backup com validação explícita de campos permitidos, enums, datas e limites por coleção
+  - ✅ Substituição do blob completo em `pending_confirmations` por referência temporária com TTL e hash
+  - ✅ Armazenamento temporário do backup via Redis com fallback em memória
+  - ✅ Testes cobrindo arquivo acima do limite, schema inválido, restore por referência e expiração do backup temporário
 - **Critérios de aceite:**
   - Arquivos excessivos são recusados sem derrubar a aplicação
   - Backups inválidos falham antes da restauração com mensagens claras
   - O banco não armazena blobs grandes desnecessariamente em confirmações pendentes
 - **Arquivos impactados:**
+  - `app/config.py`
   - `app/handlers/webhook.py`
   - `app/services/backup.py`
-  - `app/database/models.py`
   - `tests/test_backup.py`
   - `tests/test_webhook.py`
+  - `docker-compose.yml`
+  - `.env.example`
 
 ### 0.6 Idempotência, Retry e Confiabilidade do Webhook
 - **Complexidade:** Média/Alta 🔴

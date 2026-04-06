@@ -428,6 +428,11 @@ class WebhookHandler:
                 )
                 return
 
+            pdf_validation_error = self._validate_pdf_document(pdf_data)
+            if pdf_validation_error:
+                await self.evolution.send_text(phone, pdf_validation_error)
+                return
+
             pdf_text = self._extract_text_from_pdf(pdf_data)
             if not pdf_text:
                 await self.evolution.send_text(
@@ -484,13 +489,21 @@ class WebhookHandler:
 
             backup_data = parsed["backup_data"]
             summary = self.backup_service.summarize_backup(backup_data)
+            stored = await self.backup_service.store_temporary_backup(backup_data)
+            if not stored["success"]:
+                await self.evolution.send_text(
+                    phone,
+                    stored.get("error", "Nao consegui preparar o backup para restauracao."),
+                )
+                return
 
             await self.save_pending_confirmation(
                 session,
                 phone,
                 {
                     "type": "backup_restore",
-                    "backup_data": backup_data,
+                    "backup_ref": stored["backup_ref"],
+                    "backup_hash": stored["backup_hash"],
                     "summary": summary,
                 },
             )
@@ -512,14 +525,39 @@ class WebhookHandler:
         try:
             reader = PdfReader(io.BytesIO(pdf_data))
             text_parts = []
-            for page in reader.pages:
+            total_chars = 0
+            for page in reader.pages[: settings.effective_max_pdf_pages]:
                 page_text = page.extract_text() or ""
                 if page_text.strip():
-                    text_parts.append(page_text.strip())
+                    remaining_chars = settings.effective_max_pdf_text_chars - total_chars
+                    if remaining_chars <= 0:
+                        break
+                    trimmed = page_text.strip()[:remaining_chars]
+                    text_parts.append(trimmed)
+                    total_chars += len(trimmed)
             return "\n\n".join(text_parts).strip()
         except Exception as e:
             logger.error(f"Error extracting text from PDF: {e}")
             return ""
+
+    def _validate_pdf_document(self, pdf_data: bytes) -> str | None:
+        """Validate PDF size and page count before extraction."""
+        if len(pdf_data) > settings.effective_max_pdf_size_bytes:
+            max_mb = settings.effective_max_pdf_size_bytes / 1_000_000
+            return f"Esse PDF excede o limite seguro do servidor ({max_mb:.1f} MB)."
+
+        try:
+            reader = PdfReader(io.BytesIO(pdf_data))
+        except Exception:
+            return "Nao consegui ler esse PDF. Tente enviar outro arquivo ou uma imagem."
+
+        if len(reader.pages) > settings.effective_max_pdf_pages:
+            return (
+                "Esse PDF tem paginas demais para processamento automatico. "
+                "Envie um arquivo menor ou apenas as paginas relevantes."
+            )
+
+        return None
 
     async def handle_register_expense(
         self,
@@ -1868,7 +1906,7 @@ class WebhookHandler:
     ) -> None:
         """Handle user response to backup restore confirmation."""
         summary = pending_data.get("summary", {})
-        backup_data = pending_data.get("backup_data", {})
+        backup_ref = pending_data.get("backup_ref", "")
         response_lower = response.lower().strip().rstrip("!.,?")
 
         positive_responses = (
@@ -1898,7 +1936,16 @@ class WebhookHandler:
         await session.commit()
 
         if response_lower in positive_responses:
+            backup_data = await self.backup_service.load_temporary_backup(backup_ref)
+            if backup_data is None:
+                await self.evolution.send_text(
+                    phone,
+                    "O backup expirou ou nao esta mais disponivel. Envie o arquivo novamente.",
+                )
+                return
+
             result = await self.backup_service.restore_user_backup(session, phone, backup_data)
+            await self.backup_service.delete_temporary_backup(backup_ref)
             if result["success"]:
                 restored = result["restored"]
                 await self.evolution.send_text(
@@ -1918,6 +1965,7 @@ class WebhookHandler:
             return
 
         if response_lower in negative_responses:
+            await self.backup_service.delete_temporary_backup(backup_ref)
             await self.evolution.send_text(phone, "Restauracao cancelada.")
             return
 
@@ -1947,7 +1995,7 @@ class WebhookHandler:
                 phone,
                 {
                     "type": "backup_restore",
-                    "backup_data": backup_data,
+                    "backup_ref": backup_ref,
                     "summary": summary,
                 },
             )
