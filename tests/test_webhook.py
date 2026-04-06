@@ -289,10 +289,13 @@ class TestWebhookHandlerIntentHandling:
             mock_evolution = MagicMock()
             mock_evolution.send_text = AsyncMock()
             mock_evolution.send_document = AsyncMock()
+            mock_evolution.download_media = AsyncMock()
             MockEvolution.return_value = mock_evolution
 
             mock_gemini = MagicMock()
             mock_gemini.process_message = AsyncMock()
+            mock_gemini.process_image = AsyncMock()
+            mock_gemini.process_pdf_text = AsyncMock()
             MockGemini.return_value = mock_gemini
 
             handler = WebhookHandler()
@@ -346,6 +349,76 @@ class TestWebhookHandlerIntentHandling:
         handler.evolution.send_text.assert_called_once()
         call_args = handler.evolution.send_text.call_args
         assert "forma de pagamento" in call_args[0][1].lower()
+
+    async def test_process_message_routes_pdf_to_specific_handler(
+        self, handler, seeded_session, test_phone
+    ):
+        """Test that PDF documents are routed to the PDF handler."""
+        handler.handle_pdf_message = AsyncMock()
+
+        msg_data = {
+            "phone": test_phone,
+            "text": "",
+            "has_image": False,
+            "has_document": True,
+            "document_mimetype": "application/pdf",
+            "message_key": {"id": "123"},
+        }
+
+        await handler.process_message(seeded_session, msg_data)
+
+        handler.handle_pdf_message.assert_awaited_once_with(seeded_session, msg_data)
+
+    async def test_handle_pdf_message_success(self, handler, seeded_session, test_phone):
+        """Test successful PDF receipt processing."""
+        handler.evolution.download_media.return_value = b"%PDF fake"
+        handler.gemini.process_pdf_text.return_value = {
+            "success": True,
+            "intent": "register_expense",
+            "data": {
+                "description": "Uber",
+                "amount": 42.50,
+                "category": "Transporte",
+                "payment_method": "Pix",
+            },
+        }
+        handler.handle_register_expense = AsyncMock()
+
+        with patch.object(handler, "_extract_text_from_pdf", return_value="COMPROVANTE PIX UBER"):
+            await handler.handle_pdf_message(
+                seeded_session,
+                {
+                    "phone": test_phone,
+                    "text": "comprovante uber",
+                    "message_key": {"id": "123"},
+                },
+            )
+
+        handler.gemini.process_pdf_text.assert_awaited_once_with(
+            "COMPROVANTE PIX UBER",
+            "comprovante uber",
+        )
+        handler.handle_register_expense.assert_awaited_once()
+
+    async def test_handle_pdf_message_without_extractable_text(
+        self, handler, seeded_session, test_phone
+    ):
+        """Test PDF processing when text extraction fails."""
+        handler.evolution.download_media.return_value = b"%PDF fake"
+
+        with patch.object(handler, "_extract_text_from_pdf", return_value=""):
+            await handler.handle_pdf_message(
+                seeded_session,
+                {
+                    "phone": test_phone,
+                    "text": "",
+                    "message_key": {"id": "123"},
+                },
+            )
+
+        handler.evolution.send_text.assert_awaited_once()
+        call_args = handler.evolution.send_text.call_args
+        assert "extrair texto do pdf" in call_args.args[1].lower()
 
     async def test_handle_export_sends_xlsx_by_default(self, handler, seeded_session, test_phone):
         """Test that export uses XLSX by default."""

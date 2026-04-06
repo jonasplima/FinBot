@@ -35,3 +35,6 @@ matplotlib==3.9.0
 
 # PDF Export
 reportlab==4.2.2
+
+# PDF Reading
+pypdf==5.4.0

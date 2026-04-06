@@ -1,8 +1,10 @@
 """Webhook handler for Evolution API messages."""
 
+import io
 import logging
 from datetime import datetime, timedelta
 
+from pypdf import PdfReader
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -82,9 +84,12 @@ class WebhookHandler:
             await self.handle_confirmation_response(session, phone, text, pending)
             return
 
-        # Check if message is an image
+        # Check if message is media
         if msg_data["has_image"]:
             await self.handle_image_message(session, msg_data)
+            return
+        if msg_data.get("has_document") and msg_data.get("document_mimetype") == "application/pdf":
+            await self.handle_pdf_message(session, msg_data)
             return
 
         # Process text message with Gemini
@@ -216,6 +221,65 @@ class WebhookHandler:
                 phone,
                 "Erro ao processar a imagem. Tente novamente.",
             )
+
+    async def handle_pdf_message(
+        self,
+        session: AsyncSession,
+        msg_data: dict,
+    ) -> None:
+        """Handle PDF receipt/invoice messages."""
+        phone = msg_data["phone"]
+
+        try:
+            pdf_data = await self.evolution.download_media(msg_data["message_key"])
+
+            if not pdf_data:
+                await self.evolution.send_text(
+                    phone,
+                    "Nao consegui baixar o PDF. Tente enviar novamente.",
+                )
+                return
+
+            pdf_text = self._extract_text_from_pdf(pdf_data)
+            if not pdf_text:
+                await self.evolution.send_text(
+                    phone,
+                    "Nao consegui extrair texto do PDF. "
+                    "Se for um documento escaneado, envie como imagem ou digite manualmente.",
+                )
+                return
+
+            result = await self.gemini.process_pdf_text(pdf_text, msg_data.get("text", ""))
+
+            if result.get("success"):
+                await self.handle_register_expense(session, phone, result)
+            else:
+                await self.evolution.send_text(
+                    phone,
+                    "Nao consegui interpretar o comprovante em PDF. "
+                    "Tente enviar uma imagem nitida ou digite manualmente.",
+                )
+
+        except Exception as e:
+            logger.error(f"Error processing PDF: {e}")
+            await self.evolution.send_text(
+                phone,
+                "Erro ao processar o PDF. Tente novamente.",
+            )
+
+    def _extract_text_from_pdf(self, pdf_data: bytes) -> str:
+        """Extract plain text from a PDF document."""
+        try:
+            reader = PdfReader(io.BytesIO(pdf_data))
+            text_parts = []
+            for page in reader.pages:
+                page_text = page.extract_text() or ""
+                if page_text.strip():
+                    text_parts.append(page_text.strip())
+            return "\n\n".join(text_parts).strip()
+        except Exception as e:
+            logger.error(f"Error extracting text from PDF: {e}")
+            return ""
 
     async def handle_register_expense(
         self,

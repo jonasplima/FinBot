@@ -341,6 +341,7 @@ def mock_gemini_service():
         mock_instance = MagicMock()
         mock_instance.process_message = AsyncMock()
         mock_instance.process_image = AsyncMock()
+        mock_instance.process_pdf_text = AsyncMock()
         mock_instance.evaluate_confirmation_response = AsyncMock()
         MockGemini.return_value = mock_instance
         yield mock_instance

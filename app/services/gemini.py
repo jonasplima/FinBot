@@ -407,6 +407,49 @@ Se nao conseguir ler a imagem, retorne:
 Responda APENAS com o JSON.
 """
 
+PDF_PROMPT = """Analise o texto extraido de um comprovante ou nota fiscal em PDF e extraia as informacoes.
+
+## Categorias Disponiveis (use EXATAMENTE um destes nomes):
+### Gastos: Alimentacao, Assinatura, Imprevistos, Despesa Fixa, Educacao, Emprestimo, Lazer, Mercado, Moradia, Outros, Parcelamento de Fatura, Presente, Saude e Beleza, Servicos, Transferencia, Transporte, Vestuario, Viagem, Reserva de Emergencia, Investimento
+### Entradas: Salario - Adiantamento, Salario, Salario - 13o, Reembolso - Aluguel + Condominio, Bonus, PLR, VR (Flash), VR (Flash - Auxilio), Outros (entrada)
+
+## Meios de Pagamento (use EXATAMENTE um destes - SEM ACENTOS):
+- Cartao de Credito
+- Cartao de Debito
+- Dinheiro
+- VR
+- Pix
+
+## Sua tarefa:
+- Identifique estabelecimento, valor total, categoria e meio de pagamento quando possivel
+- Priorize o valor total pago no comprovante, nao subtotais intermediarios
+- Se houver ambiguidade, faca a melhor inferencia a partir do texto
+
+Retorne um JSON no formato:
+{
+  "success": true,
+  "intent": "register_expense",
+  "data": {
+    "description": "nome do estabelecimento",
+    "amount": valor_numerico,
+    "category": "categoria da lista acima",
+    "payment_method": null,
+    "installments": null,
+    "is_shared": false,
+    "shared_percentage": null,
+    "recurring_day": null,
+    "month": null,
+    "year": null
+  },
+  "confidence": 0.0 a 1.0
+}
+
+Se o texto nao for suficiente para identificar um gasto, retorne:
+{"success": false, "error": "motivo"}
+
+Responda APENAS com o JSON.
+"""
+
 
 class GeminiService:
     """Service for interacting with Google Gemini AI with automatic model fallback."""
@@ -593,6 +636,38 @@ class GeminiService:
             return {"success": False, "error": "Falha ao interpretar resposta"}
         except Exception as e:
             logger.error(f"Gemini vision error: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def process_pdf_text(
+        self,
+        pdf_text: str,
+        additional_text: str = "",
+    ) -> dict:
+        """Process extracted PDF text and infer expense data."""
+        try:
+            text_excerpt = pdf_text[:12000]
+            prompt = PDF_PROMPT + f"\n\nTexto extraido do PDF:\n{text_excerpt}"
+            if additional_text:
+                prompt += f"\n\nTexto adicional do usuario: {additional_text}"
+
+            response_text = await self._generate_with_fallback(
+                contents=[prompt],
+                generation_config=genai.GenerationConfig(
+                    response_mime_type="application/json",
+                    temperature=0.1,
+                ),
+            )
+
+            result = json.loads(response_text)
+            logger.debug(f"Gemini PDF response: {result}")
+
+            return result
+
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse Gemini PDF response: {e}")
+            return {"success": False, "error": "Falha ao interpretar comprovante em PDF"}
+        except Exception as e:
+            logger.error(f"Gemini PDF error: {e}")
             return {"success": False, "error": str(e)}
 
     async def evaluate_confirmation_response(

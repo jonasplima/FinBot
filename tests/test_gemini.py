@@ -298,6 +298,60 @@ class TestGeminiServiceProcessImage:
             assert result["success"] is False
 
 
+class TestGeminiServiceProcessPdfText:
+    """Tests for GeminiService.process_pdf_text method."""
+
+    async def test_process_pdf_text_success(self):
+        """Test successful PDF text processing."""
+        expected_response = {
+            "success": True,
+            "intent": "register_expense",
+            "data": {
+                "description": "Restaurante ABC",
+                "amount": 120.50,
+                "category": "Alimentacao",
+                "payment_method": "Pix",
+            },
+            "confidence": 0.91,
+        }
+
+        mock_response = MagicMock()
+        mock_response.text = json.dumps(expected_response)
+
+        mock_model = MagicMock()
+        mock_model.generate_content.return_value = mock_response
+
+        with patch("app.services.gemini.genai") as mock_genai:
+            mock_genai.GenerativeModel.return_value = mock_model
+
+            service = GeminiService()
+            result = await service.process_pdf_text("COMPROVANTE PIX\nVALOR R$ 120,50")
+
+            assert result["success"] is True
+            assert result["data"]["amount"] == 120.50
+
+    async def test_process_pdf_text_failure(self):
+        """Test PDF text processing failure."""
+        expected_response = {
+            "success": False,
+            "error": "Texto insuficiente",
+        }
+
+        mock_response = MagicMock()
+        mock_response.text = json.dumps(expected_response)
+
+        mock_model = MagicMock()
+        mock_model.generate_content.return_value = mock_response
+
+        with patch("app.services.gemini.genai") as mock_genai:
+            mock_genai.GenerativeModel.return_value = mock_model
+
+            service = GeminiService()
+            result = await service.process_pdf_text("arquivo qualquer")
+
+            assert result["success"] is False
+
+
 class TestGeminiServiceModelStatus:
     """Tests for GeminiService.get_model_status method."""
 

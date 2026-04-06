@@ -156,6 +156,32 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
   - `tests/test_export.py` - testes da exportação PDF
   - `tests/test_webhook.py` - testes do fluxo de envio
 
+### 3.3 Leitura de Comprovantes em PDF ✅
+- **Complexidade:** Média 🟡
+- **Valor:** Alto (expande captura de gastos para um formato comum no WhatsApp)
+- **Status:** Implementado
+- **Implementação:**
+  - ✅ Detecção de `documentMessage` no webhook da Evolution API
+  - ✅ Identificação de `mimetype` e roteamento específico para `application/pdf`
+  - ✅ Reaproveitamento de `download_media()` para baixar o documento recebido
+  - ✅ Extração de texto de PDFs com `pypdf`
+  - ✅ Novo método no Gemini para interpretar texto extraído de comprovantes em PDF
+  - ✅ Reaproveitamento do fluxo existente de confirmação em `handle_register_expense`
+  - ✅ Mensagens amigáveis para PDF sem texto extraível ou não interpretado
+  - ✅ 7 testes adicionais cobrindo Gemini, webhook e extração de metadados da Evolution API
+- **Critérios de Aceite:**
+  - Usuário envia PDF com comprovante e o sistema extrai dados básicos do gasto
+  - O fluxo segue para confirmação antes de persistir no banco
+  - PDF sem texto útil retorna orientação amigável
+  - Imagens continuam funcionando como hoje
+- **Arquivos:**
+  - `app/services/evolution.py` - detecção de documentos e metadados do anexo
+  - `app/handlers/webhook.py` - fluxo de processamento de PDF recebido e extração de texto
+  - `app/services/gemini.py` - método de interpretação para texto extraído de PDF
+  - `tests/test_evolution.py` - testes da extração de documentos no webhook
+  - `tests/test_webhook.py` - testes de roteamento e processamento de PDF
+  - `tests/test_gemini.py` - testes do fluxo de interpretação
+
 ---
 
 ## Fase 4: Funcionalidades Avançadas (Prioridade Média)
@@ -258,6 +284,7 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
 | ~~Scheduler Recorrentes~~ | ✅ | 🟢 | Nenhuma | ⭐⭐⭐⭐ |
 | ~~Gráficos~~ | ✅ | 🟡 | Nenhuma | ⭐⭐⭐⭐ |
 | ~~PDF Export~~ | ✅ | 🟢 | XLSX (existe) | ⭐⭐⭐ |
+| ~~Leitura PDF~~ | ✅ | 🟡 | Webhook de mídia (existe) | ⭐⭐⭐ |
 | ~~Metas~~ | ✅ | 🟡 | ~~Alertas~~ ✅ | ⭐⭐⭐ |
 | ~~Conversão Moeda~~ | ✅ | 🟢 | Nenhuma | ⭐⭐⭐ |
 | Multi-Usuários | 🔴 | 🔴 | ~~Testes, CI~~ ✅ | ⭐⭐ |
@@ -271,4 +298,5 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
 2. **Sprint 2:** ~~Alertas/Limites~~ ✅ + ~~Scheduler Recorrentes~~ ✅
 3. **Sprint 3:** ~~Gráficos~~ ✅ + ~~Metas~~ ✅
 4. **Sprint 4:** ~~PDF~~ ✅ + ~~Conversão Moeda~~ ✅
-5. **Sprint 5:** Multi-Usuários ⬅️ **PRÓXIMO** + Backup
+5. **Sprint 5:** ~~Leitura de PDF~~ ✅ + Multi-Usuários ⬅️ **PRÓXIMO**
+6. **Sprint 6:** Backup

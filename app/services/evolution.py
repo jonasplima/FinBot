@@ -407,18 +407,26 @@ class EvolutionService:
                 or ""
             )
 
-            # Check for image
+            # Check for image/document media
             image_message = message.get("imageMessage")
             has_image = image_message is not None
+            document_message = message.get("documentMessage")
+            has_document = document_message is not None
+            document_mimetype = document_message.get("mimetype", "") if has_document else ""
 
-            # Get image caption if exists
+            # Get image/document caption if exists
             if has_image and not text_content:
                 text_content = image_message.get("caption", "")
+            if has_document and not text_content:
+                text_content = document_message.get("caption", "")
 
             return {
                 "phone": phone,
                 "text": text_content,
                 "has_image": has_image,
+                "has_document": has_document,
+                "document_mimetype": document_mimetype,
+                "document_filename": document_message.get("fileName", "") if has_document else "",
                 "message_key": key,
                 "raw_message": message,
             }
