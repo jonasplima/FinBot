@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.database.connection import async_session
 from app.database.models import PendingConfirmation
+from app.services.backup import BackupService
 from app.services.budget import BudgetService
 from app.services.chart import ChartService
 from app.services.currency import CurrencyService
@@ -35,6 +36,7 @@ class WebhookHandler:
         self.chart_service = ChartService()
         self.goal_service = GoalService()
         self.currency_service = CurrencyService()
+        self.backup_service = BackupService()
 
     async def handle(self, webhook_data: dict) -> None:
         """Process incoming webhook event."""
@@ -90,6 +92,9 @@ class WebhookHandler:
             return
         if msg_data.get("has_document") and msg_data.get("document_mimetype") == "application/pdf":
             await self.handle_pdf_message(session, msg_data)
+            return
+        if msg_data.get("has_document") and self._is_json_document(msg_data):
+            await self.handle_backup_document(session, msg_data)
             return
 
         # Process text message with Gemini
@@ -149,6 +154,13 @@ class WebhookHandler:
                 await self.handle_add_to_goal(session, phone, result)
             elif intent == "convert_currency":
                 await self.handle_convert_currency(session, phone, result)
+            elif intent == "export_backup":
+                await self.handle_export_backup(session, phone)
+            elif intent == "import_backup":
+                await self.evolution.send_text(
+                    phone,
+                    "Envie o arquivo JSON do backup para eu validar e pedir sua confirmacao.",
+                )
             else:
                 # Unknown intent - ask for clarification
                 await self.evolution.send_text(
@@ -164,7 +176,8 @@ class WebhookHandler:
                     "- Ver orcamentos: 'meus limites de gasto'\n"
                     "- Ver grafico: 'mostra grafico de pizza'\n"
                     "- Criar meta: 'quero economizar 1000 reais ate dezembro'\n"
-                    "- Ver metas: 'minhas metas'",
+                    "- Ver metas: 'minhas metas'\n"
+                    "- Backup: 'exporta meu backup'",
                 )
 
         except Exception as e:
@@ -265,6 +278,54 @@ class WebhookHandler:
             await self.evolution.send_text(
                 phone,
                 "Erro ao processar o PDF. Tente novamente.",
+            )
+
+    async def handle_backup_document(
+        self,
+        session: AsyncSession,
+        msg_data: dict,
+    ) -> None:
+        """Handle JSON backup documents sent by the user."""
+        phone = msg_data["phone"]
+
+        try:
+            document_bytes = await self.evolution.download_media(msg_data["message_key"])
+
+            if not document_bytes:
+                await self.evolution.send_text(
+                    phone,
+                    "Nao consegui baixar o arquivo JSON. Tente enviar novamente.",
+                )
+                return
+
+            parsed = self.backup_service.parse_backup_document(document_bytes)
+            if not parsed["success"]:
+                await self.evolution.send_text(phone, parsed["error"])
+                return
+
+            backup_data = parsed["backup_data"]
+            summary = self.backup_service.summarize_backup(backup_data)
+
+            await self.save_pending_confirmation(
+                session,
+                phone,
+                {
+                    "type": "backup_restore",
+                    "backup_data": backup_data,
+                    "summary": summary,
+                },
+            )
+
+            await self.evolution.send_text(
+                phone,
+                self._build_backup_restore_message(summary),
+            )
+
+        except Exception as e:
+            logger.error(f"Error processing backup document: {e}")
+            await self.evolution.send_text(
+                phone,
+                "Erro ao processar o backup JSON. Tente novamente.",
             )
 
     def _extract_text_from_pdf(self, pdf_data: bytes) -> str:
@@ -501,6 +562,28 @@ class WebhookHandler:
             )
         else:
             await self.evolution.send_text(phone, result["message"])
+
+    async def handle_export_backup(
+        self,
+        session: AsyncSession,
+        phone: str,
+    ) -> None:
+        """Handle backup export request."""
+        result = await self.backup_service.export_user_backup(session, phone)
+
+        if result["success"]:
+            await self.evolution.send_document(
+                phone,
+                result["file_base64"],
+                result["filename"],
+                caption="Seu backup completo do FinBot",
+                mimetype=result["mimetype"],
+            )
+        else:
+            await self.evolution.send_text(
+                phone,
+                result.get("error", "Nao consegui gerar seu backup agora."),
+            )
 
     async def handle_list_recurring(
         self,
@@ -1027,6 +1110,10 @@ class WebhookHandler:
         # Handle goal confirmation
         if pending_type == "goal_confirmation":
             await self._handle_goal_confirmation(session, phone, response, pending_data)
+            return
+
+        if pending_type == "backup_restore":
+            await self._handle_backup_restore_confirmation(session, phone, response, pending_data)
             return
 
         # Build expense summary for LLM context
@@ -1564,3 +1651,120 @@ class WebhookHandler:
                         "goal_data": goal_data,
                     },
                 )
+
+    async def _handle_backup_restore_confirmation(
+        self,
+        session: AsyncSession,
+        phone: str,
+        response: str,
+        pending_data: dict,
+    ) -> None:
+        """Handle user response to backup restore confirmation."""
+        summary = pending_data.get("summary", {})
+        backup_data = pending_data.get("backup_data", {})
+        response_lower = response.lower().strip().rstrip("!.,?")
+
+        positive_responses = (
+            "sim",
+            "s",
+            "ok",
+            "confirmo",
+            "confirma",
+            "pode",
+            "restaurar",
+            "importar",
+        )
+        negative_responses = (
+            "nao",
+            "não",
+            "n",
+            "cancela",
+            "cancelar",
+            "desisto",
+        )
+
+        await session.execute(
+            delete(PendingConfirmation).where(
+                PendingConfirmation.user_phone == normalize_phone(phone)
+            )
+        )
+        await session.commit()
+
+        if response_lower in positive_responses:
+            result = await self.backup_service.restore_user_backup(session, phone, backup_data)
+            if result["success"]:
+                restored = result["restored"]
+                await self.evolution.send_text(
+                    phone,
+                    "Backup restaurado com sucesso!\n"
+                    f"- Despesas: {restored['expenses']}\n"
+                    f"- Orcamentos: {restored['budgets']}\n"
+                    f"- Alertas: {restored['budget_alerts']}\n"
+                    f"- Metas: {restored['goals']}\n"
+                    f"- Atualizacoes de metas: {restored['goal_updates']}",
+                )
+            else:
+                await self.evolution.send_text(
+                    phone,
+                    f"Erro ao restaurar backup: {result.get('error', 'Erro desconhecido')}",
+                )
+            return
+
+        if response_lower in negative_responses:
+            await self.evolution.send_text(phone, "Restauracao cancelada.")
+            return
+
+        evaluation = await self.gemini.evaluate_confirmation_response(
+            self._build_backup_restore_summary(summary),
+            response,
+        )
+        action = evaluation.get("action", "unknown")
+
+        if action == "confirm":
+            await self._handle_backup_restore_confirmation(session, phone, "sim", pending_data)
+        elif action == "cancel":
+            await self.evolution.send_text(phone, "Restauracao cancelada.")
+        else:
+            await self.evolution.send_text(
+                phone,
+                "Nao entendi. Responda *sim* para restaurar o backup ou *nao* para cancelar.",
+            )
+            await self.save_pending_confirmation(
+                session,
+                phone,
+                {
+                    "type": "backup_restore",
+                    "backup_data": backup_data,
+                    "summary": summary,
+                },
+            )
+
+    def _is_json_document(self, msg_data: dict) -> bool:
+        """Check whether the incoming document looks like a JSON backup file."""
+        mimetype = (msg_data.get("document_mimetype") or "").lower()
+        filename = (msg_data.get("document_filename") or "").lower()
+        return mimetype in {"application/json", "text/json"} or filename.endswith(".json")
+
+    def _build_backup_restore_summary(self, summary: dict) -> str:
+        """Build backup summary text for confirmation evaluation."""
+        return (
+            f"Backup do telefone {summary.get('source_phone', 'desconhecido')}\n"
+            f"Despesas: {summary.get('expenses', 0)}\n"
+            f"Orcamentos: {summary.get('budgets', 0)}\n"
+            f"Alertas: {summary.get('budget_alerts', 0)}\n"
+            f"Metas: {summary.get('goals', 0)}\n"
+            f"Atualizacoes de metas: {summary.get('goal_updates', 0)}"
+        )
+
+    def _build_backup_restore_message(self, summary: dict) -> str:
+        """Build user-facing message before restoring a backup."""
+        return (
+            "Encontrei um backup valido.\n"
+            f"Origem: {summary.get('source_phone', 'desconhecido')}\n"
+            f"Despesas: {summary.get('expenses', 0)}\n"
+            f"Orcamentos: {summary.get('budgets', 0)}\n"
+            f"Alertas: {summary.get('budget_alerts', 0)}\n"
+            f"Metas: {summary.get('goals', 0)}\n"
+            f"Atualizacoes de metas: {summary.get('goal_updates', 0)}\n\n"
+            "Responda *sim* para restaurar esse backup em modo append ou *nao* para cancelar."
+        )

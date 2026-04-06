@@ -99,11 +99,13 @@ Analise a mensagem do usuario e retorne um JSON com a intencao e dados extraidos
 - remove_goal: remover/cancelar uma meta
 - add_to_goal: adicionar valor a uma meta (deposito manual)
 - convert_currency: converter valor entre moedas (sem registrar gasto)
+- export_backup: exportar backup completo dos dados do usuario
+- import_backup: orientar/importar um backup enviado como JSON
 - unknown: nao entendi a mensagem
 
 ## Formato de resposta (JSON):
 {
-  "intent": "register_expense|register_recurring|cancel_recurring|query_month|export|list_recurring|undo_last|set_budget|check_budget|list_budgets|remove_budget|show_chart|create_goal|check_goal|list_goals|remove_goal|add_to_goal|convert_currency|unknown",
+  "intent": "register_expense|register_recurring|cancel_recurring|query_month|export|list_recurring|undo_last|set_budget|check_budget|list_budgets|remove_budget|show_chart|create_goal|check_goal|list_goals|remove_goal|add_to_goal|convert_currency|export_backup|import_backup|unknown",
   "data": {
     "description": "descricao do gasto",
     "amount": 0.00,
@@ -147,6 +149,8 @@ Analise a mensagem do usuario e retorne um JSON com a intencao e dados extraidos
 16. Moedas estrangeiras: detecte dolares (USD), euros (EUR), libras (GBP), won coreano (KRW), florim hungaro (HUF), etc.
 17. Se o usuario registrar gasto em moeda estrangeira ("gastei 50 dolares"), use register_expense com currency preenchido
 18. Para conversao sem gasto ("quanto e 100 dolares", "converter 50 euros pra reais"), use convert_currency
+19. Frases como "exporta meu backup", "fazer backup dos meus dados" indicam export_backup
+20. Frases como "importar backup", "restaurar backup", "recuperar backup" indicam import_backup
 
 ## Exemplos:
 
@@ -305,6 +309,12 @@ Saida: {"intent": "convert_currency", "data": {"amount": 1000.00, "currency": "K
 
 Entrada: "cotacao do dolar"
 Saida: {"intent": "convert_currency", "data": {"amount": 1.00, "currency": "USD", "target_currency": "BRL"}, "confidence": 0.90}
+
+Entrada: "exporta meu backup"
+Saida: {"intent": "export_backup", "data": {}, "confidence": 0.95}
+
+Entrada: "quero restaurar backup"
+Saida: {"intent": "import_backup", "data": {}, "confidence": 0.95}
 
 Responda APENAS com o JSON, sem texto adicional.
 """

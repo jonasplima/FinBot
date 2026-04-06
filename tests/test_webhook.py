@@ -296,6 +296,7 @@ class TestWebhookHandlerIntentHandling:
             mock_gemini.process_message = AsyncMock()
             mock_gemini.process_image = AsyncMock()
             mock_gemini.process_pdf_text = AsyncMock()
+            mock_gemini.evaluate_confirmation_response = AsyncMock()
             MockGemini.return_value = mock_gemini
 
             handler = WebhookHandler()
@@ -369,6 +370,26 @@ class TestWebhookHandlerIntentHandling:
 
         handler.handle_pdf_message.assert_awaited_once_with(seeded_session, msg_data)
 
+    async def test_process_message_routes_json_document_to_backup_handler(
+        self, handler, seeded_session, test_phone
+    ):
+        """Test that JSON documents are routed to the backup handler."""
+        handler.handle_backup_document = AsyncMock()
+
+        msg_data = {
+            "phone": test_phone,
+            "text": "",
+            "has_image": False,
+            "has_document": True,
+            "document_mimetype": "application/json",
+            "document_filename": "backup.json",
+            "message_key": {"id": "backup-123"},
+        }
+
+        await handler.process_message(seeded_session, msg_data)
+
+        handler.handle_backup_document.assert_awaited_once_with(seeded_session, msg_data)
+
     async def test_handle_pdf_message_success(self, handler, seeded_session, test_phone):
         """Test successful PDF receipt processing."""
         handler.evolution.download_media.return_value = b"%PDF fake"
@@ -419,6 +440,110 @@ class TestWebhookHandlerIntentHandling:
         handler.evolution.send_text.assert_awaited_once()
         call_args = handler.evolution.send_text.call_args
         assert "extrair texto do pdf" in call_args.args[1].lower()
+
+    async def test_handle_export_backup_sends_json_document(
+        self, handler, seeded_session, test_phone
+    ):
+        """Test exporting backup as JSON document."""
+        handler.backup_service.export_user_backup = AsyncMock(
+            return_value={
+                "success": True,
+                "file_base64": "json-base64",
+                "filename": "finbot_backup.json",
+                "mimetype": "application/json",
+            }
+        )
+
+        await handler.handle_export_backup(seeded_session, test_phone)
+
+        handler.evolution.send_document.assert_awaited_once_with(
+            test_phone,
+            "json-base64",
+            "finbot_backup.json",
+            caption="Seu backup completo do FinBot",
+            mimetype="application/json",
+        )
+
+    async def test_handle_backup_document_saves_confirmation(
+        self, handler, seeded_session, test_phone
+    ):
+        """Test JSON backup document processing before restore."""
+        handler.evolution.download_media.return_value = b'{"metadata":{"schema_version":1,"source_phone":"5511888888888"},"expenses":[],"budgets":[],"goals":[]}'
+        handler.backup_service.parse_backup_document = MagicMock(
+            return_value={
+                "success": True,
+                "backup_data": {
+                    "metadata": {"schema_version": 1, "source_phone": "5511888888888"},
+                    "expenses": [],
+                    "budgets": [],
+                    "goals": [],
+                },
+            }
+        )
+        handler.backup_service.summarize_backup = MagicMock(
+            return_value={
+                "source_phone": "5511888888888",
+                "expenses": 0,
+                "budgets": 0,
+                "budget_alerts": 0,
+                "goals": 0,
+                "goal_updates": 0,
+            }
+        )
+
+        await handler.handle_backup_document(
+            seeded_session,
+            {
+                "phone": test_phone,
+                "text": "",
+                "message_key": {"id": "backup-123"},
+            },
+        )
+
+        pending = await handler.get_pending_confirmation(seeded_session, test_phone)
+        assert pending is not None
+        assert pending.data["type"] == "backup_restore"
+        handler.evolution.send_text.assert_awaited_once()
+
+    async def test_handle_backup_restore_confirmation_success(
+        self, handler, seeded_session, test_phone
+    ):
+        """Test confirmed backup restore."""
+        handler.backup_service.restore_user_backup = AsyncMock(
+            return_value={
+                "success": True,
+                "restored": {
+                    "expenses": 2,
+                    "budgets": 1,
+                    "budget_alerts": 1,
+                    "goals": 1,
+                    "goal_updates": 2,
+                },
+            }
+        )
+
+        await handler._handle_backup_restore_confirmation(
+            seeded_session,
+            test_phone,
+            "sim",
+            {
+                "type": "backup_restore",
+                "backup_data": {"metadata": {"schema_version": 1}},
+                "summary": {
+                    "source_phone": "5511888888888",
+                    "expenses": 2,
+                    "budgets": 1,
+                    "budget_alerts": 1,
+                    "goals": 1,
+                    "goal_updates": 2,
+                },
+            },
+        )
+
+        handler.backup_service.restore_user_backup.assert_awaited_once()
+        handler.evolution.send_text.assert_awaited_once()
+        call_args = handler.evolution.send_text.call_args
+        assert "backup restaurado com sucesso" in call_args.args[1].lower()
 
     async def test_handle_export_sends_xlsx_by_default(self, handler, seeded_session, test_phone):
         """Test that export uses XLSX by default."""

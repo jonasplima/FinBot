@@ -165,6 +165,26 @@ class TestGeminiServiceProcessMessage:
 
             assert result["intent"] == "undo_last"
 
+    async def test_process_message_export_backup(self, mock_model):
+        """Test processing a backup export message."""
+        expected_response = {
+            "intent": "export_backup",
+            "data": {},
+            "confidence": 0.95,
+        }
+
+        mock_response = MagicMock()
+        mock_response.text = json.dumps(expected_response)
+        mock_model.generate_content.return_value = mock_response
+
+        with patch("app.services.gemini.genai") as mock_genai:
+            mock_genai.GenerativeModel.return_value = mock_model
+
+            service = GeminiService()
+            result = await service.process_message("exporta meu backup")
+
+            assert result["intent"] == "export_backup"
+
     async def test_process_message_invalid_json(self, mock_model):
         """Test handling invalid JSON response."""
         mock_response = MagicMock()

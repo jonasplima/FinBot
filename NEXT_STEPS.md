@@ -266,11 +266,37 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
 ### 5.2 Backup e Restauração
 - **Complexidade:** Média 🟡
 - **Valor:** Médio
-- **Orientações:**
-  - Exportar todos os dados do usuário em JSON
-  - Comando: "exporta meu backup"
-  - Permitir importação (com validação rigorosa)
-  - Útil para migração de número de telefone
+- **Status:** Implementado
+- **Implementação:**
+  - ✅ `BackupService` dedicado para exportação e restauração de dados do usuário
+  - ✅ Schema JSON versionado com `metadata`, `schema_version`, `exported_at` e `source_phone`
+  - ✅ Exportação de `expenses`, `budgets`, `budget_alerts`, `goals` e `goal_updates`
+  - ✅ Serialização segura de `Decimal`, `date` e `datetime`
+  - ✅ Envio do backup como arquivo `.json` via WhatsApp
+  - ✅ Importação de backup JSON recebido como documento
+  - ✅ Validação rigorosa antes da restauração
+  - ✅ Restauração em modo `append` com transação única e rollback total em caso de erro
+  - ✅ Recriação de referências por nomes de categoria e meio de pagamento
+  - ✅ Confirmação antes de iniciar a restauração
+  - ✅ Deduplicação básica para evitar reimportação acidental dos mesmos registros
+  - ✅ 11 testes adicionais cobrindo exportação, parsing, restauração, rollback e fluxo de webhook
+- **Decisões da V1:**
+  - `append` como estratégia padrão de restauração
+  - `categories` e `payment_methods` continuam sendo catálogos do sistema, não parte do backup
+  - `pending_confirmations` ficam fora da restauração inicial por serem dados transitórios
+- **Critérios de Aceite:**
+  - Usuário consegue exportar seus dados em JSON via WhatsApp
+  - Usuário consegue importar um backup JSON válido com confirmação prévia
+  - Restore inválido falha com mensagem clara e sem gravar dados parciais
+  - Relações entre metas, atualizações, orçamentos e alertas permanecem consistentes após restauração
+- **Arquivos:**
+  - `app/services/backup.py` - serviço de exportação e restauração
+  - `app/services/gemini.py` - intents de exportar/importar backup
+  - `app/handlers/webhook.py` - fluxo de envio e recebimento de backup JSON
+  - `app/services/evolution.py` - reaproveitamento do tratamento de documentos recebidos
+  - `tests/test_backup.py` - testes do serviço de backup
+  - `tests/test_webhook.py` - testes do fluxo de import/export via WhatsApp
+  - `tests/test_gemini.py` - testes das novas intents
 
 ---
 
@@ -288,7 +314,7 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
 | ~~Metas~~ | ✅ | 🟡 | ~~Alertas~~ ✅ | ⭐⭐⭐ |
 | ~~Conversão Moeda~~ | ✅ | 🟢 | Nenhuma | ⭐⭐⭐ |
 | Multi-Usuários | 🔴 | 🔴 | ~~Testes, CI~~ ✅ | ⭐⭐ |
-| Backup | 🟡 | 🟡 | Multi-usuários | ⭐⭐ |
+| ~~Backup~~ | ✅ | 🟡 | Multi-usuários | ⭐⭐ |
 
 ---
 
@@ -299,4 +325,4 @@ Antes de planejar novos recursos, é importante reconhecer o que já existe:
 3. **Sprint 3:** ~~Gráficos~~ ✅ + ~~Metas~~ ✅
 4. **Sprint 4:** ~~PDF~~ ✅ + ~~Conversão Moeda~~ ✅
 5. **Sprint 5:** ~~Leitura de PDF~~ ✅ + Multi-Usuários ⬅️ **PRÓXIMO**
-6. **Sprint 6:** Backup
+6. **Sprint 6:** ~~Backup~~ ✅
