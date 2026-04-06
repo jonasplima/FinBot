@@ -6,6 +6,7 @@ from .credentials import CredentialService
 from .evolution import EvolutionService
 from .expense import ExpenseService
 from .export import ExportService
+from .onboarding import OnboardingService
 from .rate_limit import RateLimitService
 from .recurring import RecurringService
 from .security import SecurityService
@@ -21,6 +22,7 @@ __all__ = [
     "RecurringService",
     "SecurityService",
     "ExportService",
+    "OnboardingService",
     "UserService",
     "RateLimitService",
 ]

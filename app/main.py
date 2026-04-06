@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 from redis.asyncio import Redis
 from sqlalchemy import text
@@ -16,7 +16,9 @@ from app.database.connection import async_session, init_db
 from app.database.seed import seed_all
 from app.services.admin_rate_limit import AdminRateLimitService
 from app.services.auth import AuthService
+from app.services.onboarding import OnboardingService
 from app.services.operational_status import OperationalStatusService
+from app.services.user import UserService
 from app.services.webhook_idempotency import WebhookIdempotencyService
 
 # Configure logging
@@ -30,6 +32,8 @@ settings = get_settings()
 MESSAGE_EVENTS = {"messages.upsert", "messages_upssert", "message"}
 operational_status = OperationalStatusService()
 auth_service = AuthService()
+onboarding_service = OnboardingService()
+user_service = UserService()
 
 
 class RegisterRequest(BaseModel):
@@ -46,6 +50,20 @@ class LoginRequest(BaseModel):
 
     email: str
     password: str
+
+
+class OnboardingStepRequest(BaseModel):
+    """Payload to update the current onboarding step."""
+
+    current_step: str
+
+
+class OnboardingProfileRequest(BaseModel):
+    """Payload to update basic profile information during onboarding."""
+
+    name: str
+    display_name: str | None = None
+    timezone: str
 
 
 def _bearer_matches(secret_value: str, authorization: str | None) -> bool:
@@ -343,6 +361,709 @@ async def auth_me(request: Request):
         "status": "ok",
         "user": auth_service.serialize_user(user),
     }
+
+
+@app.get("/web/login", response_class=HTMLResponse)
+async def web_login_page():
+    """Render the initial web access page for login or registration."""
+    return HTMLResponse(
+        content="""
+        <!DOCTYPE html>
+        <html lang="pt-BR">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>FinBot • Acesso Web</title>
+            <link rel="preconnect" href="https://fonts.googleapis.com">
+            <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+            <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+            <style>
+                :root {
+                    --bg: #07111f;
+                    --panel: rgba(12, 24, 42, 0.85);
+                    --panel-border: rgba(255, 255, 255, 0.08);
+                    --primary: #14b8a6;
+                    --primary-strong: #0f766e;
+                    --text: #f8fafc;
+                    --muted: #94a3b8;
+                    --danger: #fb7185;
+                }
+                * { box-sizing: border-box; }
+                body {
+                    margin: 0;
+                    min-height: 100vh;
+                    font-family: 'Outfit', sans-serif;
+                    background:
+                        radial-gradient(circle at top left, rgba(20, 184, 166, 0.18), transparent 35%),
+                        radial-gradient(circle at bottom right, rgba(59, 130, 246, 0.16), transparent 30%),
+                        linear-gradient(180deg, #020617 0%, #07111f 100%);
+                    color: var(--text);
+                    display: grid;
+                    place-items: center;
+                    padding: 24px;
+                }
+                .shell {
+                    width: min(1080px, 100%);
+                    display: grid;
+                    grid-template-columns: 1.1fr 0.9fr;
+                    gap: 24px;
+                }
+                .hero, .panel {
+                    background: var(--panel);
+                    border: 1px solid var(--panel-border);
+                    border-radius: 28px;
+                    backdrop-filter: blur(16px);
+                    padding: 32px;
+                    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.35);
+                }
+                .hero h1 {
+                    font-size: clamp(2rem, 3vw, 3.2rem);
+                    line-height: 1;
+                    margin: 0 0 16px 0;
+                    letter-spacing: -0.04em;
+                }
+                .hero p {
+                    color: var(--muted);
+                    font-size: 1.02rem;
+                    line-height: 1.7;
+                }
+                .feature-list {
+                    display: grid;
+                    gap: 12px;
+                    margin-top: 24px;
+                }
+                .feature {
+                    display: flex;
+                    gap: 12px;
+                    align-items: flex-start;
+                    padding: 14px 16px;
+                    background: rgba(255, 255, 255, 0.03);
+                    border: 1px solid rgba(255, 255, 255, 0.05);
+                    border-radius: 16px;
+                }
+                .feature strong { display: block; margin-bottom: 4px; }
+                .feature span { color: var(--muted); font-size: 0.95rem; }
+                .tabs {
+                    display: grid;
+                    grid-template-columns: 1fr 1fr;
+                    gap: 8px;
+                    margin-bottom: 20px;
+                    background: rgba(255, 255, 255, 0.03);
+                    border-radius: 16px;
+                    padding: 6px;
+                }
+                .tab {
+                    border: 0;
+                    border-radius: 12px;
+                    background: transparent;
+                    color: var(--muted);
+                    font: inherit;
+                    font-weight: 600;
+                    padding: 12px 14px;
+                    cursor: pointer;
+                }
+                .tab.active {
+                    background: rgba(20, 184, 166, 0.16);
+                    color: var(--text);
+                }
+                form { display: grid; gap: 12px; }
+                .hidden { display: none; }
+                label {
+                    font-size: 0.92rem;
+                    color: var(--muted);
+                    display: grid;
+                    gap: 8px;
+                }
+                input {
+                    width: 100%;
+                    border: 1px solid rgba(255, 255, 255, 0.08);
+                    background: rgba(255, 255, 255, 0.04);
+                    color: var(--text);
+                    border-radius: 14px;
+                    padding: 14px 16px;
+                    font: inherit;
+                }
+                button[type="submit"] {
+                    margin-top: 10px;
+                    border: 0;
+                    border-radius: 16px;
+                    padding: 14px 16px;
+                    font: inherit;
+                    font-weight: 700;
+                    color: white;
+                    background: linear-gradient(135deg, var(--primary), var(--primary-strong));
+                    cursor: pointer;
+                }
+                .hint { color: var(--muted); font-size: 0.9rem; line-height: 1.6; }
+                .status { min-height: 24px; font-size: 0.92rem; margin-top: 8px; }
+                .status.error { color: var(--danger); }
+                .status.ok { color: #34d399; }
+                @media (max-width: 920px) {
+                    .shell { grid-template-columns: 1fr; }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="shell">
+                <section class="hero">
+                    <p style="letter-spacing: 0.12em; text-transform: uppercase; font-size: 0.8rem;">FinBot Web</p>
+                    <h1>Configure sua conta e conecte seu WhatsApp no navegador.</h1>
+                    <p>
+                        Esta interface prepara seu acesso ao painel futuro, protege suas credenciais e guia o onboarding
+                        sem exigir ferramentas externas para QR Code, headers ou chamadas manuais.
+                    </p>
+                    <div class="feature-list">
+                        <div class="feature">
+                            <div>01</div>
+                            <div><strong>Acesso protegido</strong><span>Crie sua conta web com email e senha.</span></div>
+                        </div>
+                        <div class="feature">
+                            <div>02</div>
+                            <div><strong>Credenciais próprias</strong><span>Use suas chaves de IA e câmbio com fallback da instância.</span></div>
+                        </div>
+                        <div class="feature">
+                            <div>03</div>
+                            <div><strong>Onboarding assistido</strong><span>Conecte o WhatsApp e acompanhe o progresso em uma jornada única.</span></div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="panel">
+                    <div class="tabs">
+                        <button class="tab active" id="tab-register" type="button">Criar acesso</button>
+                        <button class="tab" id="tab-login" type="button">Entrar</button>
+                    </div>
+
+                    <form id="register-form">
+                        <label>Nome
+                            <input name="name" placeholder="Como devemos te chamar?" required>
+                        </label>
+                        <label>Email
+                            <input name="email" type="email" placeholder="voce@exemplo.com" required>
+                        </label>
+                        <label>Senha
+                            <input name="password" type="password" placeholder="Minimo de 8 caracteres" required>
+                        </label>
+                        <label>Telefone WhatsApp
+                            <input name="phone" placeholder="5511999999999" required>
+                        </label>
+                        <button type="submit">Criar acesso e continuar</button>
+                        <div class="hint">Seu acesso web sera usado tambem no painel futuro de finanças.</div>
+                    </form>
+
+                    <form id="login-form" class="hidden">
+                        <label>Email
+                            <input name="email" type="email" placeholder="voce@exemplo.com" required>
+                        </label>
+                        <label>Senha
+                            <input name="password" type="password" placeholder="Sua senha" required>
+                        </label>
+                        <button type="submit">Entrar</button>
+                        <div class="hint">Ao entrar, voce continua do ponto em que parou no onboarding.</div>
+                    </form>
+
+                    <div class="status" id="status"></div>
+                </section>
+            </div>
+
+            <script>
+                const registerTab = document.getElementById('tab-register');
+                const loginTab = document.getElementById('tab-login');
+                const registerForm = document.getElementById('register-form');
+                const loginForm = document.getElementById('login-form');
+                const statusEl = document.getElementById('status');
+
+                function setMode(mode) {
+                    const isRegister = mode === 'register';
+                    registerTab.classList.toggle('active', isRegister);
+                    loginTab.classList.toggle('active', !isRegister);
+                    registerForm.classList.toggle('hidden', !isRegister);
+                    loginForm.classList.toggle('hidden', isRegister);
+                    statusEl.textContent = '';
+                    statusEl.className = 'status';
+                }
+
+                registerTab.addEventListener('click', () => setMode('register'));
+                loginTab.addEventListener('click', () => setMode('login'));
+
+                async function submitJson(url, payload) {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(payload),
+                        credentials: 'same-origin',
+                    });
+                    const data = await response.json();
+                    if (!response.ok) {
+                        throw new Error(data.detail || data.message || 'Erro inesperado.');
+                    }
+                    return data;
+                }
+
+                registerForm.addEventListener('submit', async (event) => {
+                    event.preventDefault();
+                    const formData = new FormData(registerForm);
+                    try {
+                        statusEl.textContent = 'Criando seu acesso...';
+                        statusEl.className = 'status';
+                        await submitJson('/auth/register', Object.fromEntries(formData.entries()));
+                        window.location.href = '/web/onboarding';
+                    } catch (error) {
+                        statusEl.textContent = error.message;
+                        statusEl.className = 'status error';
+                    }
+                });
+
+                loginForm.addEventListener('submit', async (event) => {
+                    event.preventDefault();
+                    const formData = new FormData(loginForm);
+                    try {
+                        statusEl.textContent = 'Validando acesso...';
+                        statusEl.className = 'status';
+                        await submitJson('/auth/login', Object.fromEntries(formData.entries()));
+                        window.location.href = '/web/onboarding';
+                    } catch (error) {
+                        statusEl.textContent = error.message;
+                        statusEl.className = 'status error';
+                    }
+                });
+            </script>
+        </body>
+        </html>
+        """
+    )
+
+
+@app.get("/web/onboarding", response_class=HTMLResponse)
+async def web_onboarding_page(request: Request):
+    """Render the protected onboarding shell for authenticated users."""
+    try:
+        await _get_current_web_user(request)
+    except HTTPException:
+        return RedirectResponse(url="/web/login", status_code=303)
+
+    return HTMLResponse(
+        content="""
+        <!DOCTYPE html>
+        <html lang="pt-BR">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>FinBot • Onboarding</title>
+            <link rel="preconnect" href="https://fonts.googleapis.com">
+            <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+            <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+            <style>
+                :root {
+                    --bg: #f6f8fc;
+                    --card: #ffffff;
+                    --line: #dce3ef;
+                    --text: #0f172a;
+                    --muted: #64748b;
+                    --accent: #0f766e;
+                    --accent-soft: #ccfbf1;
+                    --danger-soft: #ffe4e6;
+                }
+                * { box-sizing: border-box; }
+                body {
+                    margin: 0;
+                    font-family: 'Outfit', sans-serif;
+                    background:
+                        radial-gradient(circle at top left, rgba(20, 184, 166, 0.08), transparent 20%),
+                        linear-gradient(180deg, #f8fafc 0%, #eef4fb 100%);
+                    color: var(--text);
+                }
+                .layout {
+                    display: grid;
+                    grid-template-columns: 320px 1fr;
+                    min-height: 100vh;
+                }
+                aside {
+                    padding: 32px 24px;
+                    border-right: 1px solid var(--line);
+                    background: rgba(255, 255, 255, 0.72);
+                    backdrop-filter: blur(16px);
+                }
+                main {
+                    padding: 32px;
+                    display: grid;
+                    gap: 20px;
+                }
+                .brand { margin-bottom: 28px; }
+                .brand h1 { margin: 0 0 8px 0; font-size: 1.9rem; }
+                .brand p { color: var(--muted); line-height: 1.6; }
+                .step-list { display: grid; gap: 10px; }
+                .step {
+                    border: 1px solid var(--line);
+                    border-radius: 16px;
+                    background: white;
+                    padding: 14px 16px;
+                }
+                .step.active {
+                    border-color: var(--accent);
+                    background: linear-gradient(180deg, #ffffff 0%, var(--accent-soft) 100%);
+                }
+                .step small { color: var(--muted); display: block; margin-top: 4px; }
+                .card {
+                    background: var(--card);
+                    border: 1px solid var(--line);
+                    border-radius: 24px;
+                    padding: 28px;
+                    box-shadow: 0 18px 60px rgba(15, 23, 42, 0.06);
+                }
+                .card h2 { margin-top: 0; font-size: 1.7rem; }
+                .card p { color: var(--muted); line-height: 1.7; }
+                .grid {
+                    display: grid;
+                    grid-template-columns: repeat(2, minmax(0, 1fr));
+                    gap: 16px;
+                }
+                .stat {
+                    border: 1px solid var(--line);
+                    border-radius: 18px;
+                    padding: 18px;
+                    background: #fbfdff;
+                }
+                .stat strong { display: block; font-size: 1.15rem; margin-bottom: 6px; }
+                .controls { display: flex; flex-wrap: wrap; gap: 12px; }
+                button {
+                    border: 0;
+                    border-radius: 14px;
+                    padding: 12px 16px;
+                    font: inherit;
+                    font-weight: 700;
+                    cursor: pointer;
+                }
+                .primary { background: var(--accent); color: white; }
+                .ghost { background: #e2e8f0; color: #0f172a; }
+                form { display: grid; gap: 12px; margin-top: 18px; }
+                label { display: grid; gap: 8px; color: var(--muted); font-size: 0.92rem; }
+                input {
+                    border: 1px solid var(--line);
+                    border-radius: 14px;
+                    padding: 14px 16px;
+                    font: inherit;
+                    background: white;
+                }
+                .status {
+                    min-height: 24px;
+                    color: var(--muted);
+                    font-size: 0.92rem;
+                }
+                .status.error { color: #be123c; }
+                .notice {
+                    padding: 16px;
+                    border-radius: 16px;
+                    background: var(--danger-soft);
+                    color: #9f1239;
+                    border: 1px solid #fecdd3;
+                }
+                @media (max-width: 960px) {
+                    .layout { grid-template-columns: 1fr; }
+                    aside { border-right: 0; border-bottom: 1px solid var(--line); }
+                    .grid { grid-template-columns: 1fr; }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="layout">
+                <aside>
+                    <div class="brand">
+                        <h1>FinBot Setup</h1>
+                        <p>Seu painel inicial para finalizar o onboarding, proteger credenciais e preparar a conexão do WhatsApp.</p>
+                    </div>
+                    <div class="step-list" id="step-list"></div>
+                </aside>
+                <main>
+                    <section class="card">
+                        <h2 id="welcome-title">Carregando seu onboarding...</h2>
+                        <p id="welcome-copy">Estamos preparando o resumo do seu progresso atual.</p>
+                        <div class="grid" id="stats"></div>
+                    </section>
+
+                    <section class="card">
+                        <h2>Próximas ações</h2>
+                        <p>Esta tela já salva e reflete o progresso do onboarding. Os passos técnicos mais sensíveis agora podem ser feitos dentro de uma sessão autenticada.</p>
+                        <div class="controls">
+                            <button class="primary" id="step-next" type="button">Avançar etapa</button>
+                            <button class="ghost" id="complete-onboarding" type="button">Concluir onboarding</button>
+                            <button class="ghost" id="logout" type="button">Sair</button>
+                        </div>
+                        <div class="status" id="flow-status"></div>
+                    </section>
+
+                    <section class="card">
+                        <h2>Termos e perfil</h2>
+                        <div class="notice">
+                            Antes da conexão do WhatsApp, o produto deve deixar claro que a instância é self-hosted e que pode existir acesso técnico/operacional do administrador aos dados trafegados pela stack.
+                        </div>
+                        <div class="controls" style="margin-top: 18px;">
+                            <button class="primary" id="accept-terms" type="button">Aceitar termos</button>
+                            <button class="ghost" id="reject-terms" type="button">Recusar termos</button>
+                        </div>
+                        <form id="profile-form">
+                            <label>Nome
+                                <input name="name" required>
+                            </label>
+                            <label>Nome de exibicao
+                                <input name="display_name">
+                            </label>
+                            <label>Timezone
+                                <input name="timezone" value="America/Sao_Paulo" required>
+                            </label>
+                            <button class="primary" type="submit">Salvar perfil</button>
+                        </form>
+                    </section>
+                </main>
+            </div>
+
+            <script>
+                const state = { steps: [], currentStep: 'welcome', user: null };
+                const stepLabels = {
+                    welcome: 'Boas-vindas',
+                    terms: 'Termos',
+                    ai_keys: 'Chaves de IA',
+                    currency_keys: 'Chaves de câmbio',
+                    whatsapp_prepare: 'Preparar WhatsApp',
+                    whatsapp_qrcode: 'Ler QR Code',
+                    profile: 'Perfil',
+                    notifications: 'Notificações',
+                    categories: 'Categorias',
+                    review: 'Revisão',
+                    completed: 'Concluído'
+                };
+
+                async function fetchJson(url, options = {}) {
+                    const response = await fetch(url, { credentials: 'same-origin', ...options });
+                    const data = await response.json();
+                    if (!response.ok) {
+                        throw new Error(data.detail || data.message || 'Erro inesperado.');
+                    }
+                    return data;
+                }
+
+                function renderSteps() {
+                    const container = document.getElementById('step-list');
+                    container.innerHTML = '';
+                    for (const step of state.steps) {
+                        const item = document.createElement('div');
+                        item.className = 'step' + (step === state.currentStep ? ' active' : '');
+                        item.innerHTML = `<strong>${stepLabels[step] || step}</strong><small>${step === state.currentStep ? 'Etapa atual' : 'Disponível no fluxo'}</small>`;
+                        container.appendChild(item);
+                    }
+                }
+
+                function renderStats(payload) {
+                    state.user = payload.user;
+                    state.steps = payload.onboarding.steps;
+                    state.currentStep = payload.onboarding.current_step;
+                    document.getElementById('welcome-title').textContent = `Bem-vindo, ${payload.user.name || payload.user.email || 'usuario'}!`;
+                    document.getElementById('welcome-copy').textContent =
+                        `Etapa atual: ${stepLabels[payload.onboarding.current_step] || payload.onboarding.current_step}. O fluxo ja esta protegido pela sua sessão web.`;
+                    document.getElementById('stats').innerHTML = `
+                        <div class="stat"><strong>${payload.user.accepted_terms ? 'Aceitos' : 'Pendentes'}</strong><span>Termos de uso</span></div>
+                        <div class="stat"><strong>${payload.user.onboarding_completed ? 'Concluído' : 'Em andamento'}</strong><span>Status do onboarding</span></div>
+                        <div class="stat"><strong>${payload.user.phone}</strong><span>Telefone vinculado</span></div>
+                        <div class="stat"><strong>${payload.user.timezone || 'America/Sao_Paulo'}</strong><span>Timezone atual</span></div>
+                    `;
+                    document.querySelector('#profile-form [name="name"]').value = payload.user.name || '';
+                    document.querySelector('#profile-form [name="display_name"]').value = payload.user.display_name || '';
+                    document.querySelector('#profile-form [name="timezone"]').value = payload.user.timezone || 'America/Sao_Paulo';
+                    renderSteps();
+                }
+
+                async function loadState() {
+                    const payload = await fetchJson('/onboarding/state');
+                    renderStats(payload);
+                }
+
+                async function updateStep(nextStep) {
+                    const payload = await fetchJson('/onboarding/step', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ current_step: nextStep })
+                    });
+                    renderStats(payload);
+                }
+
+                document.getElementById('step-next').addEventListener('click', async () => {
+                    const currentIndex = state.steps.indexOf(state.currentStep);
+                    const nextStep = state.steps[Math.min(currentIndex + 1, state.steps.length - 1)];
+                    try {
+                        await updateStep(nextStep);
+                        document.getElementById('flow-status').textContent = 'Etapa atualizada com sucesso.';
+                        document.getElementById('flow-status').className = 'status';
+                    } catch (error) {
+                        document.getElementById('flow-status').textContent = error.message;
+                        document.getElementById('flow-status').className = 'status error';
+                    }
+                });
+
+                document.getElementById('complete-onboarding').addEventListener('click', async () => {
+                    try {
+                        const payload = await fetchJson('/onboarding/complete', { method: 'POST' });
+                        renderStats(payload);
+                        document.getElementById('flow-status').textContent = 'Onboarding concluído.';
+                        document.getElementById('flow-status').className = 'status';
+                    } catch (error) {
+                        document.getElementById('flow-status').textContent = error.message;
+                        document.getElementById('flow-status').className = 'status error';
+                    }
+                });
+
+                document.getElementById('accept-terms').addEventListener('click', async () => {
+                    try {
+                        const payload = await fetchJson('/onboarding/terms/accept', { method: 'POST' });
+                        renderStats(payload);
+                    } catch (error) {
+                        document.getElementById('flow-status').textContent = error.message;
+                        document.getElementById('flow-status').className = 'status error';
+                    }
+                });
+
+                document.getElementById('reject-terms').addEventListener('click', async () => {
+                    try {
+                        const payload = await fetchJson('/onboarding/terms/reject', { method: 'POST' });
+                        renderStats(payload);
+                    } catch (error) {
+                        document.getElementById('flow-status').textContent = error.message;
+                        document.getElementById('flow-status').className = 'status error';
+                    }
+                });
+
+                document.getElementById('profile-form').addEventListener('submit', async (event) => {
+                    event.preventDefault();
+                    const payload = Object.fromEntries(new FormData(event.currentTarget).entries());
+                    try {
+                        const response = await fetchJson('/onboarding/profile', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        renderStats(response);
+                        document.getElementById('flow-status').textContent = 'Perfil atualizado.';
+                        document.getElementById('flow-status').className = 'status';
+                    } catch (error) {
+                        document.getElementById('flow-status').textContent = error.message;
+                        document.getElementById('flow-status').className = 'status error';
+                    }
+                });
+
+                document.getElementById('logout').addEventListener('click', async () => {
+                    await fetchJson('/auth/logout', { method: 'POST' });
+                    window.location.href = '/web/login';
+                });
+
+                loadState().catch((error) => {
+                    document.getElementById('flow-status').textContent = error.message;
+                    document.getElementById('flow-status').className = 'status error';
+                });
+            </script>
+        </body>
+        </html>
+        """
+    )
+
+
+@app.get("/onboarding/state")
+async def onboarding_state(request: Request):
+    """Return onboarding state for the authenticated web user."""
+    await _get_current_web_user(request)
+    async with async_session() as session:
+        refreshed_user = await auth_service.get_user_by_session_token(
+            session, _get_session_cookie_token(request) or ""
+        )
+        if refreshed_user is None:
+            raise HTTPException(status_code=401, detail="Sessao web invalida ou expirada.")
+        state = await onboarding_service.get_or_create_state(session, refreshed_user)
+        return onboarding_service.build_state_payload(refreshed_user, state)
+
+
+@app.post("/onboarding/step")
+async def onboarding_step(request: Request, payload: OnboardingStepRequest):
+    """Persist the current onboarding step for the authenticated user."""
+    await _get_current_web_user(request)
+    async with async_session() as session:
+        refreshed_user = await auth_service.get_user_by_session_token(
+            session, _get_session_cookie_token(request) or ""
+        )
+        if refreshed_user is None:
+            raise HTTPException(status_code=401, detail="Sessao web invalida ou expirada.")
+        try:
+            state = await onboarding_service.update_step(
+                session, refreshed_user, payload.current_step
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return onboarding_service.build_state_payload(refreshed_user, state)
+
+
+@app.post("/onboarding/terms/accept")
+async def onboarding_accept_terms(request: Request):
+    """Accept the current terms version for the authenticated web user."""
+    await _get_current_web_user(request)
+    async with async_session() as session:
+        refreshed_user = await auth_service.get_user_by_session_token(
+            session, _get_session_cookie_token(request) or ""
+        )
+        if refreshed_user is None:
+            raise HTTPException(status_code=401, detail="Sessao web invalida ou expirada.")
+        updated_user = await user_service.accept_terms(session, refreshed_user)
+        state = await onboarding_service.update_step(session, updated_user, "ai_keys")
+        return onboarding_service.build_state_payload(updated_user, state)
+
+
+@app.post("/onboarding/terms/reject")
+async def onboarding_reject_terms(request: Request):
+    """Reject the current terms version for the authenticated web user."""
+    await _get_current_web_user(request)
+    async with async_session() as session:
+        refreshed_user = await auth_service.get_user_by_session_token(
+            session, _get_session_cookie_token(request) or ""
+        )
+        if refreshed_user is None:
+            raise HTTPException(status_code=401, detail="Sessao web invalida ou expirada.")
+        updated_user = await user_service.reject_terms(session, refreshed_user)
+        state = await onboarding_service.update_step(session, updated_user, "terms")
+        return onboarding_service.build_state_payload(updated_user, state)
+
+
+@app.post("/onboarding/profile")
+async def onboarding_profile(request: Request, payload: OnboardingProfileRequest):
+    """Update the authenticated user's profile during onboarding."""
+    await _get_current_web_user(request)
+    async with async_session() as session:
+        refreshed_user = await auth_service.get_user_by_session_token(
+            session, _get_session_cookie_token(request) or ""
+        )
+        if refreshed_user is None:
+            raise HTTPException(status_code=401, detail="Sessao web invalida ou expirada.")
+        try:
+            updated_user = await user_service.update_web_profile(
+                session,
+                refreshed_user,
+                name=payload.name,
+                display_name=payload.display_name,
+                timezone=payload.timezone,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        state = await onboarding_service.get_or_create_state(session, updated_user)
+        return onboarding_service.build_state_payload(updated_user, state)
+
+
+@app.post("/onboarding/complete")
+async def onboarding_complete(request: Request):
+    """Mark onboarding as completed for the authenticated web user."""
+    await _get_current_web_user(request)
+    async with async_session() as session:
+        refreshed_user = await auth_service.get_user_by_session_token(
+            session, _get_session_cookie_token(request) or ""
+        )
+        if refreshed_user is None:
+            raise HTTPException(status_code=401, detail="Sessao web invalida ou expirada.")
+        state = await onboarding_service.mark_completed(session, refreshed_user)
+        return onboarding_service.build_state_payload(refreshed_user, state)
 
 
 @app.get("/admin/qrcode", response_class=HTMLResponse)

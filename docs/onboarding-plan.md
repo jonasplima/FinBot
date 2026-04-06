@@ -539,6 +539,8 @@ Status: concluída
 
 ### Fase 4. Sessão web e painel inicial
 
+Status: concluída
+
 1. Criar páginas do onboarding
 2. Salvar progresso por etapa
 3. Implementar validação visual das chaves

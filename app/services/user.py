@@ -115,6 +115,38 @@ class UserService:
         await session.refresh(user)
         return user
 
+    async def update_web_profile(
+        self,
+        session: AsyncSession,
+        user: User,
+        *,
+        name: str | None = None,
+        display_name: str | None = None,
+        timezone: str | None = None,
+    ) -> User:
+        """Update basic profile fields from the web onboarding flow."""
+        if name is not None:
+            normalized_name = name.strip()
+            if not normalized_name:
+                raise ValueError("Nome e obrigatorio.")
+            user.name = normalized_name
+
+        if display_name is not None:
+            normalized_display_name = display_name.strip()
+            user.display_name = normalized_display_name or None
+
+        if timezone is not None:
+            normalized_timezone = timezone.strip()
+            if not normalized_timezone:
+                raise ValueError("Timezone e obrigatorio.")
+            user.timezone = normalized_timezone
+
+        user.updated_at = datetime.now()
+        user.last_seen_at = datetime.now()
+        await session.commit()
+        await session.refresh(user)
+        return user
+
     async def reject_terms(self, session: AsyncSession, user: User) -> User:
         """Record a terms rejection and keep account inactive."""
         user.accepted_terms = False
