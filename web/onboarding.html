@@ -1,0 +1,1611 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FinBot - Configuracao Inicial</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --emerald-400: #34d399;
+            --emerald-500: #10b981;
+            --emerald-600: #059669;
+            --navy-900: #0f172a;
+            --navy-800: #1e293b;
+            --navy-700: #334155;
+            --navy-600: #475569;
+            --slate-300: #cbd5e1;
+            --slate-400: #94a3b8;
+            --slate-500: #64748b;
+            --white: #ffffff;
+            --glass-bg: rgba(30, 41, 59, 0.7);
+            --glass-border: rgba(52, 211, 153, 0.2);
+            --shadow-emerald: 0 0 40px rgba(52, 211, 153, 0.15);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: var(--navy-900);
+            min-height: 100vh;
+            color: var(--white);
+            overflow-x: hidden;
+        }
+
+        /* Animated Background */
+        .bg-mesh {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            overflow: hidden;
+        }
+
+        .mesh-gradient {
+            position: absolute;
+            width: 600px;
+            height: 600px;
+            border-radius: 50%;
+            filter: blur(80px);
+            opacity: 0.4;
+            animation: meshFloat 20s ease-in-out infinite;
+        }
+
+        .mesh-1 {
+            background: linear-gradient(135deg, var(--emerald-600), var(--emerald-400));
+            top: -200px;
+            right: -100px;
+            animation-delay: 0s;
+        }
+
+        .mesh-2 {
+            background: linear-gradient(135deg, #0ea5e9, #06b6d4);
+            bottom: -200px;
+            left: -100px;
+            animation-delay: -7s;
+            opacity: 0.2;
+        }
+
+        .mesh-3 {
+            background: linear-gradient(135deg, var(--emerald-500), #22d3d1);
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 400px;
+            height: 400px;
+            animation-delay: -14s;
+            opacity: 0.15;
+        }
+
+        @keyframes meshFloat {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            25% { transform: translate(30px, -30px) scale(1.05); }
+            50% { transform: translate(-20px, 20px) scale(0.95); }
+            75% { transform: translate(-30px, -20px) scale(1.02); }
+        }
+
+        .noise-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            opacity: 0.03;
+            pointer-events: none;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+        }
+
+        /* Main Container */
+        .container {
+            position: relative;
+            z-index: 2;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header */
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 40px;
+        }
+
+        .logo-container {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo {
+            width: 48px;
+            height: 48px;
+        }
+
+        .brand-name {
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--emerald-400), var(--emerald-600));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        /* Progress Bar */
+        .progress-container {
+            margin-bottom: 40px;
+        }
+
+        .progress-steps {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 12px;
+            position: relative;
+        }
+
+        .progress-line {
+            position: absolute;
+            top: 16px;
+            left: 24px;
+            right: 24px;
+            height: 2px;
+            background: var(--navy-700);
+            z-index: 0;
+        }
+
+        .progress-line-fill {
+            position: absolute;
+            top: 16px;
+            left: 24px;
+            height: 2px;
+            background: linear-gradient(90deg, var(--emerald-400), var(--emerald-600));
+            z-index: 1;
+            transition: width 0.5s ease;
+            width: 0%;
+        }
+
+        .step-indicator {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            position: relative;
+            z-index: 2;
+        }
+
+        .step-circle {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: var(--navy-800);
+            border: 2px solid var(--navy-600);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.875rem;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .step-indicator.active .step-circle {
+            background: linear-gradient(135deg, var(--emerald-400), var(--emerald-600));
+            border-color: var(--emerald-400);
+            box-shadow: 0 0 20px rgba(52, 211, 153, 0.4);
+        }
+
+        .step-indicator.completed .step-circle {
+            background: var(--emerald-600);
+            border-color: var(--emerald-500);
+        }
+
+        .step-label {
+            font-size: 0.75rem;
+            color: var(--slate-500);
+            text-align: center;
+            max-width: 80px;
+            transition: color 0.3s ease;
+        }
+
+        .step-indicator.active .step-label,
+        .step-indicator.completed .step-label {
+            color: var(--emerald-400);
+        }
+
+        /* Card */
+        .card {
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            padding: 40px;
+            box-shadow: var(--shadow-emerald);
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .step-content {
+            display: none;
+            flex-direction: column;
+            height: 100%;
+            animation: fadeIn 0.4s ease;
+        }
+
+        .step-content.active {
+            display: flex;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .step-title {
+            font-size: 1.75rem;
+            font-weight: 700;
+            margin-bottom: 8px;
+            background: linear-gradient(135deg, var(--white), var(--slate-300));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .step-description {
+            color: var(--slate-400);
+            margin-bottom: 32px;
+            line-height: 1.6;
+        }
+
+        /* Form Styles */
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: var(--slate-300);
+            margin-bottom: 8px;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 14px 16px;
+            background: var(--navy-800);
+            border: 1px solid var(--navy-600);
+            border-radius: 12px;
+            color: var(--white);
+            font-family: 'Outfit', sans-serif;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: var(--emerald-400);
+            box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.15);
+        }
+
+        .form-input::placeholder {
+            color: var(--slate-500);
+        }
+
+        /* Checkbox Group */
+        .checkbox-group {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 16px;
+            background: var(--navy-800);
+            border-radius: 12px;
+            border: 1px solid var(--navy-600);
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .checkbox-group:hover {
+            border-color: var(--emerald-400);
+        }
+
+        .checkbox-group input {
+            display: none;
+        }
+
+        .checkbox-custom {
+            width: 24px;
+            height: 24px;
+            min-width: 24px;
+            border: 2px solid var(--navy-600);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+        }
+
+        .checkbox-group input:checked + .checkbox-custom {
+            background: linear-gradient(135deg, var(--emerald-400), var(--emerald-600));
+            border-color: var(--emerald-400);
+        }
+
+        .checkbox-custom svg {
+            opacity: 0;
+            transform: scale(0);
+            transition: all 0.2s ease;
+        }
+
+        .checkbox-group input:checked + .checkbox-custom svg {
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        .checkbox-label {
+            flex: 1;
+        }
+
+        .checkbox-title {
+            font-weight: 500;
+            margin-bottom: 4px;
+        }
+
+        .checkbox-description {
+            font-size: 0.875rem;
+            color: var(--slate-400);
+        }
+
+        /* API Key Section */
+        .api-section {
+            margin-bottom: 24px;
+            padding: 20px;
+            background: var(--navy-800);
+            border-radius: 16px;
+            border: 1px solid var(--navy-700);
+        }
+
+        .api-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .api-icon {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, var(--emerald-400), var(--emerald-600));
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .api-title {
+            font-weight: 600;
+            font-size: 1rem;
+        }
+
+        .api-badge {
+            margin-left: auto;
+            font-size: 0.75rem;
+            padding: 4px 10px;
+            border-radius: 20px;
+            background: var(--navy-700);
+            color: var(--slate-400);
+        }
+
+        .api-badge.required {
+            background: rgba(239, 68, 68, 0.2);
+            color: #f87171;
+        }
+
+        .api-badge.optional {
+            background: rgba(52, 211, 153, 0.2);
+            color: var(--emerald-400);
+        }
+
+        /* Category Grid */
+        .category-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+            padding-right: 8px;
+        }
+
+        .category-grid::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .category-grid::-webkit-scrollbar-track {
+            background: var(--navy-800);
+            border-radius: 3px;
+        }
+
+        .category-grid::-webkit-scrollbar-thumb {
+            background: var(--navy-600);
+            border-radius: 3px;
+        }
+
+        .category-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px;
+            background: var(--navy-800);
+            border: 1px solid var(--navy-700);
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 0.875rem;
+        }
+
+        .category-item:hover {
+            border-color: var(--emerald-400);
+            transform: translateY(-2px);
+        }
+
+        .category-item.selected {
+            background: rgba(52, 211, 153, 0.15);
+            border-color: var(--emerald-400);
+        }
+
+        .category-icon {
+            font-size: 1.25rem;
+        }
+
+        .category-type-header {
+            grid-column: 1 / -1;
+            font-weight: 600;
+            color: var(--slate-300);
+            padding: 8px 0;
+            border-bottom: 1px solid var(--navy-700);
+            margin-top: 8px;
+        }
+
+        .category-type-header:first-child {
+            margin-top: 0;
+        }
+
+        /* WhatsApp Section */
+        .whatsapp-box {
+            background: linear-gradient(135deg, rgba(37, 211, 102, 0.1), rgba(37, 211, 102, 0.05));
+            border: 1px solid rgba(37, 211, 102, 0.3);
+            border-radius: 16px;
+            padding: 24px;
+            text-align: center;
+        }
+
+        .whatsapp-icon {
+            width: 64px;
+            height: 64px;
+            background: #25D366;
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 16px;
+        }
+
+        .whatsapp-number {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #25D366;
+            margin-bottom: 8px;
+        }
+
+        .whatsapp-instruction {
+            color: var(--slate-400);
+            font-size: 0.875rem;
+            margin-bottom: 16px;
+        }
+
+        .qr-container {
+            background: var(--white);
+            border-radius: 16px;
+            padding: 20px;
+            display: inline-block;
+            margin: 16px auto;
+        }
+
+        .qr-container img {
+            max-width: 200px;
+            height: auto;
+        }
+
+        .qr-placeholder {
+            width: 200px;
+            height: 200px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--slate-500);
+            font-size: 0.875rem;
+        }
+
+        .copy-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            background: var(--navy-800);
+            border: 1px solid var(--navy-600);
+            border-radius: 8px;
+            color: var(--white);
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.875rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .copy-btn:hover {
+            border-color: var(--emerald-400);
+        }
+
+        /* Review Section */
+        .review-section {
+            margin-bottom: 20px;
+        }
+
+        .review-header {
+            font-weight: 600;
+            color: var(--slate-300);
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .review-content {
+            background: var(--navy-800);
+            border-radius: 12px;
+            padding: 16px;
+        }
+
+        .review-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--navy-700);
+        }
+
+        .review-item:last-child {
+            border-bottom: none;
+        }
+
+        .review-label {
+            color: var(--slate-400);
+        }
+
+        .review-value {
+            font-weight: 500;
+        }
+
+        .review-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 8px;
+        }
+
+        .review-tag {
+            font-size: 0.75rem;
+            padding: 4px 10px;
+            background: rgba(52, 211, 153, 0.15);
+            border-radius: 20px;
+            color: var(--emerald-400);
+        }
+
+        /* Completion Screen */
+        .completion-container {
+            text-align: center;
+            padding: 40px 0;
+        }
+
+        .completion-icon {
+            width: 100px;
+            height: 100px;
+            background: linear-gradient(135deg, var(--emerald-400), var(--emerald-600));
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 24px;
+            animation: scaleIn 0.5s ease;
+        }
+
+        @keyframes scaleIn {
+            from { transform: scale(0); }
+            to { transform: scale(1); }
+        }
+
+        .completion-title {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 12px;
+        }
+
+        .completion-message {
+            color: var(--slate-400);
+            margin-bottom: 32px;
+            max-width: 400px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        /* Buttons */
+        .btn-row {
+            display: flex;
+            gap: 16px;
+            margin-top: auto;
+            padding-top: 24px;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 14px 24px;
+            border-radius: 12px;
+            font-family: 'Outfit', sans-serif;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn-secondary {
+            background: var(--navy-800);
+            border: 1px solid var(--navy-600);
+            color: var(--white);
+        }
+
+        .btn-secondary:hover {
+            border-color: var(--slate-500);
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--emerald-400), var(--emerald-600));
+            border: none;
+            color: var(--navy-900);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(52, 211, 153, 0.3);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        /* Status Message */
+        .status-message {
+            padding: 12px 16px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            display: none;
+            align-items: center;
+            gap: 10px;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .status-message.error {
+            display: flex;
+            background: rgba(239, 68, 68, 0.15);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #f87171;
+        }
+
+        .status-message.success {
+            display: flex;
+            background: rgba(52, 211, 153, 0.15);
+            border: 1px solid rgba(52, 211, 153, 0.3);
+            color: var(--emerald-400);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .container {
+                padding: 20px 16px;
+            }
+
+            .card {
+                padding: 24px;
+            }
+
+            .progress-steps {
+                overflow-x: auto;
+                padding-bottom: 8px;
+            }
+
+            .step-label {
+                display: none;
+            }
+
+            .step-title {
+                font-size: 1.5rem;
+            }
+
+            .category-grid {
+                grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            }
+
+            .btn-row {
+                flex-direction: column-reverse;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-mesh">
+        <div class="mesh-gradient mesh-1"></div>
+        <div class="mesh-gradient mesh-2"></div>
+        <div class="mesh-gradient mesh-3"></div>
+    </div>
+    <div class="noise-overlay"></div>
+
+    <div class="container">
+        <header class="header">
+            <div class="logo-container">
+                <svg class="logo" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+                    <defs>
+                        <linearGradient id="primary" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="#34d399"/>
+                            <stop offset="100%" stop-color="#059669"/>
+                        </linearGradient>
+                    </defs>
+                    <rect width="200" height="200" rx="48" fill="#0f172a"/>
+                    <g transform="translate(50, 50)">
+                        <rect x="10" y="20" width="80" height="60" rx="16" fill="url(#primary)"/>
+                        <rect x="0" y="40" width="10" height="20" rx="4" fill="#34d399"/>
+                        <rect x="90" y="40" width="10" height="20" rx="4" fill="#34d399"/>
+                        <path d="M50 20 L50 8" stroke="#34d399" stroke-width="4" stroke-linecap="round"/>
+                        <circle cx="50" cy="4" r="4" fill="#34d399"/>
+                        <rect x="20" y="32" width="60" height="36" rx="8" fill="#020617"/>
+                        <circle cx="36" cy="50" r="5" fill="#34d399" opacity="0.9">
+                            <animate attributeName="opacity" values="0.9;0.2;0.9" dur="4s" repeatCount="indefinite"/>
+                        </circle>
+                        <circle cx="64" cy="50" r="5" fill="#34d399" opacity="0.9">
+                            <animate attributeName="opacity" values="0.9;0.2;0.9" dur="4s" repeatCount="indefinite"/>
+                        </circle>
+                    </g>
+                </svg>
+                <span class="brand-name">FinBot</span>
+            </div>
+        </header>
+
+        <div class="progress-container">
+            <div class="progress-steps">
+                <div class="progress-line"></div>
+                <div class="progress-line-fill" id="progressFill"></div>
+                <div class="step-indicator active" data-step="1">
+                    <div class="step-circle">1</div>
+                    <span class="step-label">Termos</span>
+                </div>
+                <div class="step-indicator" data-step="2">
+                    <div class="step-circle">2</div>
+                    <span class="step-label">APIs</span>
+                </div>
+                <div class="step-indicator" data-step="3">
+                    <div class="step-circle">3</div>
+                    <span class="step-label">WhatsApp</span>
+                </div>
+                <div class="step-indicator" data-step="4">
+                    <div class="step-circle">4</div>
+                    <span class="step-label">Perfil</span>
+                </div>
+                <div class="step-indicator" data-step="5">
+                    <div class="step-circle">5</div>
+                    <span class="step-label">Categorias</span>
+                </div>
+                <div class="step-indicator" data-step="6">
+                    <div class="step-circle">6</div>
+                    <span class="step-label">Revisao</span>
+                </div>
+                <div class="step-indicator" data-step="7">
+                    <div class="step-circle">&#10003;</div>
+                    <span class="step-label">Concluido</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div id="statusMessage" class="status-message"></div>
+
+            <!-- Step 1: Terms -->
+            <div class="step-content active" data-step="1">
+                <h2 class="step-title">Bem-vindo ao FinBot</h2>
+                <p class="step-description">Antes de comecar, precisamos que voce aceite nossos termos de uso para garantir uma experiencia segura e transparente.</p>
+
+                <div style="flex: 1; overflow-y: auto;">
+                    <label class="checkbox-group" style="margin-bottom: 16px;">
+                        <input type="checkbox" id="termsAccept">
+                        <div class="checkbox-custom">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3">
+                                <polyline points="20 6 9 17 4 12"></polyline>
+                            </svg>
+                        </div>
+                        <div class="checkbox-label">
+                            <div class="checkbox-title">Aceito os Termos de Uso</div>
+                            <div class="checkbox-description">Li e concordo com os termos de uso e politica de privacidade do FinBot.</div>
+                        </div>
+                    </label>
+
+                    <label class="checkbox-group">
+                        <input type="checkbox" id="dataConsent">
+                        <div class="checkbox-custom">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3">
+                                <polyline points="20 6 9 17 4 12"></polyline>
+                            </svg>
+                        </div>
+                        <div class="checkbox-label">
+                            <div class="checkbox-title">Consentimento de Dados</div>
+                            <div class="checkbox-description">Autorizo o processamento dos meus dados financeiros para funcionamento do bot.</div>
+                        </div>
+                    </label>
+                </div>
+
+                <div class="btn-row">
+                    <button class="btn btn-primary" onclick="nextStep()" id="termsNextBtn" disabled>
+                        Continuar
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M5 12h14M12 5l7 7-7 7"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Step 2: API Keys -->
+            <div class="step-content" data-step="2">
+                <h2 class="step-title">Configurar APIs</h2>
+                <p class="step-description">Configure as chaves de API necessarias. Pelo menos uma API de LLM (Gemini ou Groq) e recomendada.</p>
+
+                <div style="flex: 1; overflow-y: auto;">
+                    <div class="api-section">
+                        <div class="api-header">
+                            <div class="api-icon">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
+                                    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                                </svg>
+                            </div>
+                            <span class="api-title">Google Gemini</span>
+                            <span class="api-badge required">Recomendado</span>
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <input type="password" class="form-input" id="geminiKey" placeholder="Sua chave API do Gemini">
+                        </div>
+                    </div>
+
+                    <div class="api-section">
+                        <div class="api-header">
+                            <div class="api-icon" style="background: linear-gradient(135deg, #f97316, #ea580c);">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
+                                    <path d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                                </svg>
+                            </div>
+                            <span class="api-title">Groq</span>
+                            <span class="api-badge optional">Alternativa</span>
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <input type="password" class="form-input" id="groqKey" placeholder="Sua chave API do Groq">
+                        </div>
+                    </div>
+
+                    <div class="api-section">
+                        <div class="api-header">
+                            <div class="api-icon" style="background: linear-gradient(135deg, #0ea5e9, #0284c7);">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
+                                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+                                </svg>
+                            </div>
+                            <span class="api-title">Wise API</span>
+                            <span class="api-badge optional">Cambio</span>
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <input type="password" class="form-input" id="wiseKey" placeholder="Sua chave API do Wise (opcional)">
+                        </div>
+                    </div>
+
+                    <div class="api-section">
+                        <div class="api-header">
+                            <div class="api-icon" style="background: linear-gradient(135deg, #8b5cf6, #7c3aed);">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
+                                    <path d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"/>
+                                </svg>
+                            </div>
+                            <span class="api-title">ExchangeRate API</span>
+                            <span class="api-badge optional">Cambio Alternativo</span>
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <input type="password" class="form-input" id="exchangeRateKey" placeholder="Sua chave API do ExchangeRate (opcional)">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="btn-row">
+                    <button class="btn btn-secondary" onclick="prevStep()">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M19 12H5M12 19l-7-7 7-7"/>
+                        </svg>
+                        Voltar
+                    </button>
+                    <button class="btn btn-primary" onclick="nextStep()">
+                        Continuar
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M5 12h14M12 5l7 7-7 7"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Step 3: WhatsApp -->
+            <div class="step-content" data-step="3">
+                <h2 class="step-title">Conectar WhatsApp</h2>
+                <p class="step-description">Para utilizar o FinBot, voce precisa conectar seu WhatsApp escaneando o QR Code abaixo.</p>
+
+                <div style="flex: 1; display: flex; flex-direction: column; justify-content: center;">
+                    <div class="whatsapp-box">
+                        <div class="whatsapp-icon">
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="white">
+                                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+                            </svg>
+                        </div>
+                        <p class="whatsapp-instruction">Escaneie o QR Code com seu WhatsApp para conectar</p>
+                        <div class="qr-container" id="qrContainer">
+                            <div class="qr-placeholder" id="qrPlaceholder">
+                                Clique em "Gerar QR Code" para iniciar
+                            </div>
+                        </div>
+                        <div style="margin-top: 16px;">
+                            <button class="copy-btn" onclick="generateQRCode()" id="qrBtn">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="3" y="3" width="7" height="7"/>
+                                    <rect x="14" y="3" width="7" height="7"/>
+                                    <rect x="14" y="14" width="7" height="7"/>
+                                    <rect x="3" y="14" width="7" height="7"/>
+                                </svg>
+                                Gerar QR Code
+                            </button>
+                        </div>
+                        <p id="whatsappStatus" style="margin-top: 12px; font-size: 0.875rem; color: var(--slate-400);"></p>
+                    </div>
+                </div>
+
+                <div class="btn-row">
+                    <button class="btn btn-secondary" onclick="prevStep()">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M19 12H5M12 19l-7-7 7-7"/>
+                        </svg>
+                        Voltar
+                    </button>
+                    <button class="btn btn-primary" onclick="nextStep()" id="whatsappNextBtn">
+                        Continuar
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M5 12h14M12 5l7 7-7 7"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Step 4: Profile -->
+            <div class="step-content" data-step="4">
+                <h2 class="step-title">Seu Perfil</h2>
+                <p class="step-description">Personalize sua experiencia com informacoes basicas sobre voce.</p>
+
+                <div style="flex: 1; overflow-y: auto;">
+                    <div class="form-group">
+                        <label class="form-label">Nome de exibicao</label>
+                        <input type="text" class="form-input" id="displayName" placeholder="Como voce quer ser chamado?">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Moeda principal</label>
+                        <select class="form-input" id="currency">
+                            <option value="BRL">Real Brasileiro (BRL)</option>
+                            <option value="USD">Dolar Americano (USD)</option>
+                            <option value="EUR">Euro (EUR)</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Timezone</label>
+                        <select class="form-input" id="timezone">
+                            <option value="America/Sao_Paulo">America/Sao_Paulo (Brasilia)</option>
+                            <option value="America/New_York">America/New_York</option>
+                            <option value="Europe/London">Europe/London</option>
+                            <option value="Europe/Paris">Europe/Paris</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Meta mensal de gastos (opcional)</label>
+                        <input type="number" class="form-input" id="monthlyBudget" placeholder="Ex: 5000">
+                    </div>
+                </div>
+
+                <div class="btn-row">
+                    <button class="btn btn-secondary" onclick="prevStep()">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M19 12H5M12 19l-7-7 7-7"/>
+                        </svg>
+                        Voltar
+                    </button>
+                    <button class="btn btn-primary" onclick="nextStep()">
+                        Continuar
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M5 12h14M12 5l7 7-7 7"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Step 5: Categories -->
+            <div class="step-content" data-step="5">
+                <h2 class="step-title">Categorias</h2>
+                <p class="step-description">Selecione as categorias que voce deseja utilizar para organizar suas financas.</p>
+
+                <div style="flex: 1; overflow-y: auto;">
+                    <div class="category-grid" id="categoryGrid">
+                        <!-- Expense Categories -->
+                        <div class="category-type-header">Despesas</div>
+                        <div class="category-item selected" data-category="Alimentacao" data-type="expense"><span class="category-icon">&#127869;</span><span>Alimentacao</span></div>
+                        <div class="category-item selected" data-category="Transporte" data-type="expense"><span class="category-icon">&#128663;</span><span>Transporte</span></div>
+                        <div class="category-item selected" data-category="Moradia" data-type="expense"><span class="category-icon">&#127968;</span><span>Moradia</span></div>
+                        <div class="category-item selected" data-category="Saude" data-type="expense"><span class="category-icon">&#128138;</span><span>Saude</span></div>
+                        <div class="category-item selected" data-category="Educacao" data-type="expense"><span class="category-icon">&#128218;</span><span>Educacao</span></div>
+                        <div class="category-item selected" data-category="Lazer" data-type="expense"><span class="category-icon">&#127918;</span><span>Lazer</span></div>
+                        <div class="category-item selected" data-category="Compras" data-type="expense"><span class="category-icon">&#128717;</span><span>Compras</span></div>
+                        <div class="category-item selected" data-category="Contas" data-type="expense"><span class="category-icon">&#128196;</span><span>Contas</span></div>
+                        <div class="category-item selected" data-category="Assinaturas" data-type="expense"><span class="category-icon">&#128250;</span><span>Assinaturas</span></div>
+                        <div class="category-item selected" data-category="Pets" data-type="expense"><span class="category-icon">&#128062;</span><span>Pets</span></div>
+                        <div class="category-item selected" data-category="Vestuario" data-type="expense"><span class="category-icon">&#128085;</span><span>Vestuario</span></div>
+                        <div class="category-item selected" data-category="Beleza" data-type="expense"><span class="category-icon">&#128133;</span><span>Beleza</span></div>
+                        <div class="category-item selected" data-category="Impostos" data-type="expense"><span class="category-icon">&#127963;</span><span>Impostos</span></div>
+                        <div class="category-item selected" data-category="Seguros" data-type="expense"><span class="category-icon">&#128737;</span><span>Seguros</span></div>
+                        <div class="category-item selected" data-category="Presentes" data-type="expense"><span class="category-icon">&#127873;</span><span>Presentes</span></div>
+                        <div class="category-item selected" data-category="Viagens" data-type="expense"><span class="category-icon">&#9992;</span><span>Viagens</span></div>
+                        <div class="category-item selected" data-category="Manutencao" data-type="expense"><span class="category-icon">&#128295;</span><span>Manutencao</span></div>
+                        <div class="category-item selected" data-category="Doacoes" data-type="expense"><span class="category-icon">&#10084;</span><span>Doacoes</span></div>
+                        <div class="category-item selected" data-category="Emergencia" data-type="expense"><span class="category-icon">&#128680;</span><span>Emergencia</span></div>
+                        <div class="category-item selected" data-category="Taxas Bancarias" data-type="expense"><span class="category-icon">&#127974;</span><span>Taxas Bancarias</span></div>
+                        <div class="category-item selected" data-category="Outros Gastos" data-type="expense"><span class="category-icon">&#128230;</span><span>Outros Gastos</span></div>
+
+                        <!-- Income Categories -->
+                        <div class="category-type-header">Receitas</div>
+                        <div class="category-item selected" data-category="Salario" data-type="income"><span class="category-icon">&#128181;</span><span>Salario</span></div>
+                        <div class="category-item selected" data-category="Freelance" data-type="income"><span class="category-icon">&#128187;</span><span>Freelance</span></div>
+                        <div class="category-item selected" data-category="Investimentos" data-type="income"><span class="category-icon">&#128200;</span><span>Investimentos</span></div>
+                        <div class="category-item selected" data-category="Vendas" data-type="income"><span class="category-icon">&#127991;</span><span>Vendas</span></div>
+                        <div class="category-item selected" data-category="Aluguel" data-type="income"><span class="category-icon">&#127960;</span><span>Aluguel</span></div>
+                        <div class="category-item selected" data-category="Reembolso" data-type="income"><span class="category-icon">&#128260;</span><span>Reembolso</span></div>
+                        <div class="category-item selected" data-category="Bonus" data-type="income"><span class="category-icon">&#127919;</span><span>Bonus</span></div>
+                        <div class="category-item selected" data-category="Presente Recebido" data-type="income"><span class="category-icon">&#127872;</span><span>Presente Recebido</span></div>
+                        <div class="category-item selected" data-category="Outras Receitas" data-type="income"><span class="category-icon">&#10024;</span><span>Outras Receitas</span></div>
+                    </div>
+                </div>
+
+                <div class="btn-row">
+                    <button class="btn btn-secondary" onclick="prevStep()">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M19 12H5M12 19l-7-7 7-7"/>
+                        </svg>
+                        Voltar
+                    </button>
+                    <button class="btn btn-primary" onclick="nextStep()">
+                        Continuar
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M5 12h14M12 5l7 7-7 7"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Step 6: Review -->
+            <div class="step-content" data-step="6">
+                <h2 class="step-title">Revisar Configuracoes</h2>
+                <p class="step-description">Verifique se todas as informacoes estao corretas antes de finalizar.</p>
+
+                <div style="flex: 1; overflow-y: auto;">
+                    <div class="review-section">
+                        <div class="review-header">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--emerald-400)" stroke-width="2">
+                                <path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
+                                <circle cx="8.5" cy="7" r="4"/>
+                            </svg>
+                            Perfil
+                        </div>
+                        <div class="review-content">
+                            <div class="review-item">
+                                <span class="review-label">Nome</span>
+                                <span class="review-value" id="reviewName">-</span>
+                            </div>
+                            <div class="review-item">
+                                <span class="review-label">Moeda</span>
+                                <span class="review-value" id="reviewCurrency">BRL</span>
+                            </div>
+                            <div class="review-item">
+                                <span class="review-label">Timezone</span>
+                                <span class="review-value" id="reviewTimezone">America/Sao_Paulo</span>
+                            </div>
+                            <div class="review-item">
+                                <span class="review-label">Meta mensal</span>
+                                <span class="review-value" id="reviewBudget">Nao definida</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="review-section">
+                        <div class="review-header">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--emerald-400)" stroke-width="2">
+                                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                                <path d="M7 11V7a5 5 0 0110 0v4"/>
+                            </svg>
+                            APIs Configuradas
+                        </div>
+                        <div class="review-content">
+                            <div class="review-tags" id="reviewApis">
+                                <span class="review-tag">Nenhuma configurada</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="review-section">
+                        <div class="review-header">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--emerald-400)" stroke-width="2">
+                                <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/>
+                                <polyline points="22 4 12 14.01 9 11.01"/>
+                            </svg>
+                            Categorias Selecionadas
+                        </div>
+                        <div class="review-content">
+                            <div class="review-tags" id="reviewCategories">
+                                <!-- Will be populated by JS -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="btn-row">
+                    <button class="btn btn-secondary" onclick="prevStep()">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M19 12H5M12 19l-7-7 7-7"/>
+                        </svg>
+                        Voltar
+                    </button>
+                    <button class="btn btn-primary" onclick="completeOnboarding()">
+                        Finalizar Configuracao
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="20 6 9 17 4 12"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Step 7: Completed -->
+            <div class="step-content" data-step="7">
+                <div class="completion-container">
+                    <div class="completion-icon">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--navy-900)" stroke-width="2.5">
+                            <polyline points="20 6 9 17 4 12"/>
+                        </svg>
+                    </div>
+                    <h2 class="completion-title">Tudo Pronto!</h2>
+                    <p class="completion-message">Sua conta foi configurada com sucesso. Agora voce pode comecar a usar o FinBot para gerenciar suas financas.</p>
+                    <button class="btn btn-primary" onclick="goToDashboard()" style="max-width: 300px; margin: 0 auto;">
+                        Ir para o Dashboard
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M5 12h14M12 5l7 7-7 7"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentStep = 1;
+        const totalSteps = 7;
+        let userData = {
+            termsAccepted: false,
+            dataConsent: false,
+            apiKeys: {},
+            profile: {},
+            categories: []
+        };
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            loadOnboardingProgress();
+            setupEventListeners();
+        });
+
+        function setupEventListeners() {
+            // Terms checkboxes
+            const termsCheck = document.getElementById('termsAccept');
+            const dataCheck = document.getElementById('dataConsent');
+            const termsNextBtn = document.getElementById('termsNextBtn');
+
+            function updateTermsButton() {
+                termsNextBtn.disabled = !(termsCheck.checked && dataCheck.checked);
+                userData.termsAccepted = termsCheck.checked;
+                userData.dataConsent = dataCheck.checked;
+            }
+
+            termsCheck.addEventListener('change', updateTermsButton);
+            dataCheck.addEventListener('change', updateTermsButton);
+
+            // Category selection
+            document.querySelectorAll('.category-item').forEach(item => {
+                item.addEventListener('click', function() {
+                    this.classList.toggle('selected');
+                    updateSelectedCategories();
+                });
+            });
+        }
+
+        function updateSelectedCategories() {
+            userData.categories = [];
+            document.querySelectorAll('.category-item.selected').forEach(item => {
+                userData.categories.push({
+                    name: item.dataset.category,
+                    type: item.dataset.type
+                });
+            });
+        }
+
+        async function loadOnboardingProgress() {
+            try {
+                const response = await fetch('/onboarding/state', {
+                    credentials: 'same-origin'
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.onboarding && data.onboarding.current_step) {
+                        const stepMap = {
+                            'terms': 1,
+                            'api_keys': 2,
+                            'whatsapp_prepare': 3,
+                            'whatsapp_qrcode': 3,
+                            'profile': 4,
+                            'categories': 5,
+                            'review': 6,
+                            'completed': 7
+                        };
+                        currentStep = stepMap[data.onboarding.current_step] || 1;
+                        goToStep(currentStep);
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading onboarding status:', error);
+            }
+        }
+
+        function goToStep(step) {
+            // Hide all steps
+            document.querySelectorAll('.step-content').forEach(el => {
+                el.classList.remove('active');
+            });
+
+            // Show current step
+            document.querySelector(`.step-content[data-step="${step}"]`).classList.add('active');
+
+            // Update progress indicators
+            document.querySelectorAll('.step-indicator').forEach(el => {
+                const stepNum = parseInt(el.dataset.step);
+                el.classList.remove('active', 'completed');
+                if (stepNum < step) {
+                    el.classList.add('completed');
+                } else if (stepNum === step) {
+                    el.classList.add('active');
+                }
+            });
+
+            // Update progress bar fill
+            const progress = ((step - 1) / (totalSteps - 1)) * 100;
+            document.getElementById('progressFill').style.width = `${progress}%`;
+
+            currentStep = step;
+
+            // If going to review step, populate review data
+            if (step === 6) {
+                populateReview();
+            }
+        }
+
+        async function nextStep() {
+            if (currentStep === 1) {
+                if (!document.getElementById('termsAccept').checked || !document.getElementById('dataConsent').checked) {
+                    showStatus('Por favor, aceite os termos para continuar.', 'error');
+                    return;
+                }
+                await saveTerms();
+            } else if (currentStep === 2) {
+                await saveApiKeys();
+            } else if (currentStep === 3) {
+                await saveStepProgress('profile');
+            } else if (currentStep === 4) {
+                await saveProfile();
+            } else if (currentStep === 5) {
+                updateSelectedCategories();
+                await saveCategories();
+            }
+
+            if (currentStep < totalSteps) {
+                goToStep(currentStep + 1);
+            }
+        }
+
+        function prevStep() {
+            if (currentStep > 1) {
+                goToStep(currentStep - 1);
+            }
+        }
+
+        async function saveTerms() {
+            try {
+                await fetch('/onboarding/terms/accept', {
+                    method: 'POST',
+                    credentials: 'same-origin'
+                });
+            } catch (error) {
+                console.error('Error saving terms:', error);
+            }
+        }
+
+        async function saveStepProgress(stepName) {
+            try {
+                await fetch('/onboarding/step', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({ current_step: stepName })
+                });
+            } catch (error) {
+                console.error('Error saving step:', error);
+            }
+        }
+
+        async function saveApiKeys() {
+            const geminiKey = document.getElementById('geminiKey').value.trim();
+            const groqKey = document.getElementById('groqKey').value.trim();
+            const wiseKey = document.getElementById('wiseKey').value.trim();
+            const exchangeRateKey = document.getElementById('exchangeRateKey').value.trim();
+
+            const providers = [
+                { provider: 'gemini', api_key: geminiKey },
+                { provider: 'groq', api_key: groqKey },
+                { provider: 'wise', api_key: wiseKey },
+                { provider: 'exchange_rate', api_key: exchangeRateKey }
+            ];
+
+            for (const cred of providers) {
+                if (cred.api_key) {
+                    try {
+                        await fetch('/onboarding/credentials', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            credentials: 'same-origin',
+                            body: JSON.stringify(cred)
+                        });
+                        userData.apiKeys[cred.provider] = true;
+                    } catch (error) {
+                        console.error(`Error saving ${cred.provider} key:`, error);
+                    }
+                }
+            }
+
+            await saveStepProgress('whatsapp_prepare');
+        }
+
+        async function generateQRCode() {
+            const btn = document.getElementById('qrBtn');
+            const container = document.getElementById('qrContainer');
+            const status = document.getElementById('whatsappStatus');
+
+            btn.disabled = true;
+            btn.innerHTML = 'Gerando...';
+            status.textContent = 'Preparando sessao...';
+
+            try {
+                // First prepare the session
+                await fetch('/onboarding/whatsapp/prepare', {
+                    method: 'POST',
+                    credentials: 'same-origin'
+                });
+
+                // Then get QR code
+                const response = await fetch('/onboarding/whatsapp/qrcode', {
+                    method: 'POST',
+                    credentials: 'same-origin'
+                });
+
+                const data = await response.json();
+
+                if (data.qrcode) {
+                    container.innerHTML = `<img src="${data.qrcode}" alt="QR Code">`;
+                    status.textContent = 'Escaneie o QR Code com seu WhatsApp';
+                    startPollingStatus();
+                } else if (data.pairingCode) {
+                    container.innerHTML = `<div style="font-size: 1.5rem; font-weight: bold;">${data.pairingCode}</div>`;
+                    status.textContent = 'Use este codigo de pareamento';
+                } else {
+                    status.textContent = data.message || 'Erro ao gerar QR Code';
+                }
+            } catch (error) {
+                status.textContent = 'Erro ao conectar. Tente novamente.';
+                console.error('Error generating QR:', error);
+            }
+
+            btn.disabled = false;
+            btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg> Atualizar QR Code`;
+        }
+
+        let pollInterval = null;
+
+        function startPollingStatus() {
+            if (pollInterval) clearInterval(pollInterval);
+
+            pollInterval = setInterval(async () => {
+                try {
+                    const response = await fetch('/onboarding/whatsapp/status', {
+                        credentials: 'same-origin'
+                    });
+                    const data = await response.json();
+
+                    if (data.session && data.session.connection_status === 'connected') {
+                        clearInterval(pollInterval);
+                        document.getElementById('whatsappStatus').textContent = 'WhatsApp conectado com sucesso!';
+                        document.getElementById('qrContainer').innerHTML = '<div style="color: var(--emerald-400); font-weight: 600;">&#10003; Conectado</div>';
+                    }
+                } catch (error) {
+                    console.error('Polling error:', error);
+                }
+            }, 5000);
+        }
+
+        async function saveProfile() {
+            const displayName = document.getElementById('displayName').value.trim();
+            const currency = document.getElementById('currency').value;
+            const timezone = document.getElementById('timezone').value;
+            const monthlyBudget = document.getElementById('monthlyBudget').value;
+
+            userData.profile = {
+                display_name: displayName,
+                timezone: timezone
+            };
+
+            try {
+                await fetch('/onboarding/profile', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify(userData.profile)
+                });
+            } catch (error) {
+                console.error('Error saving profile:', error);
+            }
+        }
+
+        async function saveCategories() {
+            updateSelectedCategories();
+
+            try {
+                await fetch('/onboarding/step', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({ current_step: 'review' })
+                });
+            } catch (error) {
+                console.error('Error saving categories step:', error);
+            }
+        }
+
+        function populateReview() {
+            document.getElementById('reviewName').textContent =
+                document.getElementById('displayName').value || 'Nao informado';
+            document.getElementById('reviewCurrency').textContent =
+                document.getElementById('currency').value;
+            document.getElementById('reviewTimezone').textContent =
+                document.getElementById('timezone').value;
+
+            const budget = document.getElementById('monthlyBudget').value;
+            document.getElementById('reviewBudget').textContent =
+                budget ? `R$ ${parseFloat(budget).toLocaleString('pt-BR')}` : 'Nao definida';
+
+            // APIs
+            const apisContainer = document.getElementById('reviewApis');
+            const configuredApis = [];
+            if (document.getElementById('geminiKey').value) configuredApis.push('Gemini');
+            if (document.getElementById('groqKey').value) configuredApis.push('Groq');
+            if (document.getElementById('wiseKey').value) configuredApis.push('Wise');
+            if (document.getElementById('exchangeRateKey').value) configuredApis.push('ExchangeRate');
+
+            if (configuredApis.length > 0) {
+                apisContainer.innerHTML = configuredApis.map(api =>
+                    `<span class="review-tag">${api}</span>`
+                ).join('');
+            } else {
+                apisContainer.innerHTML = '<span class="review-tag">Nenhuma configurada</span>';
+            }
+
+            // Categories
+            updateSelectedCategories();
+            const categoriesContainer = document.getElementById('reviewCategories');
+            if (userData.categories.length > 0) {
+                const displayCats = userData.categories.slice(0, 10);
+                const remaining = userData.categories.length - 10;
+                categoriesContainer.innerHTML = displayCats.map(cat =>
+                    `<span class="review-tag">${cat.name}</span>`
+                ).join('') + (remaining > 0 ? `<span class="review-tag">+${remaining} mais</span>` : '');
+            } else {
+                categoriesContainer.innerHTML = '<span class="review-tag">Nenhuma selecionada</span>';
+            }
+        }
+
+        async function completeOnboarding() {
+            try {
+                const response = await fetch('/onboarding/complete', {
+                    method: 'POST',
+                    credentials: 'same-origin'
+                });
+
+                if (response.ok) {
+                    goToStep(7);
+                } else {
+                    const error = await response.json();
+                    showStatus(error.detail || 'Erro ao finalizar configuracao.', 'error');
+                }
+            } catch (error) {
+                console.error('Error completing onboarding:', error);
+                showStatus('Erro ao finalizar configuracao.', 'error');
+            }
+        }
+
+        function goToDashboard() {
+            window.location.href = '/web/dashboard';
+        }
+
+        function showStatus(message, type) {
+            const statusEl = document.getElementById('statusMessage');
+            statusEl.textContent = message;
+            statusEl.className = `status-message ${type}`;
+
+            setTimeout(() => {
+                statusEl.className = 'status-message';
+            }, 5000);
+        }
+
+        // Initialize categories as selected
+        updateSelectedCategories();
+    </script>
+</body>
+</html>

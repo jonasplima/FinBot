@@ -1,0 +1,1341 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FinBot - Configuracoes</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --emerald-400: #34d399;
+            --emerald-500: #10b981;
+            --emerald-600: #059669;
+            --navy-900: #0f172a;
+            --navy-800: #1e293b;
+            --navy-700: #334155;
+            --navy-600: #475569;
+            --slate-300: #cbd5e1;
+            --slate-400: #94a3b8;
+            --slate-500: #64748b;
+            --white: #ffffff;
+            --glass-bg: rgba(30, 41, 59, 0.7);
+            --glass-border: rgba(52, 211, 153, 0.2);
+            --shadow-emerald: 0 0 40px rgba(52, 211, 153, 0.15);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: var(--navy-900);
+            min-height: 100vh;
+            color: var(--white);
+            overflow-x: hidden;
+        }
+
+        /* Animated Background */
+        .bg-mesh {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            overflow: hidden;
+        }
+
+        .mesh-gradient {
+            position: absolute;
+            width: 600px;
+            height: 600px;
+            border-radius: 50%;
+            filter: blur(80px);
+            opacity: 0.4;
+            animation: meshFloat 20s ease-in-out infinite;
+        }
+
+        .mesh-1 {
+            background: linear-gradient(135deg, var(--emerald-600), var(--emerald-400));
+            top: -200px;
+            left: -100px;
+            animation-delay: 0s;
+        }
+
+        .mesh-2 {
+            background: linear-gradient(135deg, #0ea5e9, #06b6d4);
+            bottom: -200px;
+            right: -100px;
+            animation-delay: -7s;
+            opacity: 0.2;
+        }
+
+        @keyframes meshFloat {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            25% { transform: translate(30px, -30px) scale(1.05); }
+            50% { transform: translate(-20px, 20px) scale(0.95); }
+            75% { transform: translate(-30px, -20px) scale(1.02); }
+        }
+
+        .noise-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            opacity: 0.03;
+            pointer-events: none;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+        }
+
+        /* Container */
+        .container {
+            position: relative;
+            z-index: 2;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        /* Header */
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 40px;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+
+        .logo-container {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo {
+            width: 48px;
+            height: 48px;
+        }
+
+        .brand-name {
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--emerald-400), var(--emerald-600));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 12px;
+        }
+
+        /* Navigation */
+        .nav-tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 32px;
+            overflow-x: auto;
+            padding-bottom: 8px;
+        }
+
+        .nav-tab {
+            padding: 12px 20px;
+            background: var(--navy-800);
+            border: 1px solid var(--navy-600);
+            border-radius: 10px;
+            color: var(--slate-400);
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            white-space: nowrap;
+        }
+
+        .nav-tab:hover {
+            border-color: var(--emerald-400);
+            color: var(--white);
+        }
+
+        .nav-tab.active {
+            background: linear-gradient(135deg, var(--emerald-400), var(--emerald-600));
+            border-color: var(--emerald-400);
+            color: var(--navy-900);
+        }
+
+        /* Cards Grid */
+        .cards-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 24px;
+        }
+
+        /* Card */
+        .card {
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            padding: 28px;
+            box-shadow: var(--shadow-emerald);
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .card-icon {
+            width: 44px;
+            height: 44px;
+            background: linear-gradient(135deg, var(--emerald-400), var(--emerald-600));
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .card-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+
+        .card-description {
+            color: var(--slate-400);
+            font-size: 0.875rem;
+            margin-bottom: 20px;
+            line-height: 1.6;
+        }
+
+        /* Form Styles */
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: var(--slate-300);
+            margin-bottom: 8px;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 12px 14px;
+            background: var(--navy-800);
+            border: 1px solid var(--navy-600);
+            border-radius: 10px;
+            color: var(--white);
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.9375rem;
+            transition: all 0.3s ease;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: var(--emerald-400);
+            box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.15);
+        }
+
+        .form-input::placeholder {
+            color: var(--slate-500);
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+
+        /* Toggle Switch */
+        .toggle-group {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px;
+            background: var(--navy-800);
+            border: 1px solid var(--navy-700);
+            border-radius: 10px;
+            margin-bottom: 12px;
+        }
+
+        .toggle-label {
+            font-size: 0.9375rem;
+            color: var(--slate-300);
+        }
+
+        .toggle-switch {
+            position: relative;
+            width: 48px;
+            height: 26px;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--navy-600);
+            border-radius: 26px;
+            transition: 0.3s;
+        }
+
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 20px;
+            width: 20px;
+            left: 3px;
+            bottom: 3px;
+            background: var(--white);
+            border-radius: 50%;
+            transition: 0.3s;
+        }
+
+        input:checked + .toggle-slider {
+            background: linear-gradient(135deg, var(--emerald-400), var(--emerald-600));
+        }
+
+        input:checked + .toggle-slider:before {
+            transform: translateX(22px);
+        }
+
+        /* Buttons */
+        .btn {
+            padding: 12px 20px;
+            border-radius: 10px;
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.9375rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            border: none;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--emerald-400), var(--emerald-600));
+            color: var(--navy-900);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(52, 211, 153, 0.3);
+        }
+
+        .btn-secondary {
+            background: var(--navy-800);
+            border: 1px solid var(--navy-600);
+            color: var(--white);
+        }
+
+        .btn-secondary:hover {
+            border-color: var(--slate-500);
+        }
+
+        .btn-danger {
+            background: rgba(239, 68, 68, 0.2);
+            color: #f87171;
+        }
+
+        .btn-danger:hover {
+            background: rgba(239, 68, 68, 0.3);
+        }
+
+        .btn-full {
+            width: 100%;
+        }
+
+        /* Lists */
+        .list-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px;
+            background: var(--navy-800);
+            border: 1px solid var(--navy-700);
+            border-radius: 10px;
+            margin-bottom: 10px;
+        }
+
+        .list-item-info {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .list-item-title {
+            font-weight: 500;
+        }
+
+        .list-item-subtitle {
+            font-size: 0.8125rem;
+            color: var(--slate-500);
+        }
+
+        .list-item-badge {
+            padding: 4px 10px;
+            background: rgba(52, 211, 153, 0.15);
+            border-radius: 20px;
+            font-size: 0.75rem;
+            color: var(--emerald-400);
+        }
+
+        /* API Section */
+        .api-item {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 16px;
+            background: var(--navy-800);
+            border: 1px solid var(--navy-700);
+            border-radius: 12px;
+            margin-bottom: 12px;
+        }
+
+        .api-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .api-info {
+            flex: 1;
+        }
+
+        .api-name {
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .api-status {
+            font-size: 0.8125rem;
+            color: var(--slate-500);
+        }
+
+        .api-status.configured {
+            color: var(--emerald-400);
+        }
+
+        /* Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 32px;
+        }
+
+        .stat-card {
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--emerald-400);
+            margin-bottom: 4px;
+        }
+
+        .stat-label {
+            font-size: 0.8125rem;
+            color: var(--slate-500);
+        }
+
+        /* Status Message */
+        .status-message {
+            padding: 12px 16px;
+            border-radius: 10px;
+            margin-top: 16px;
+            display: none;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.875rem;
+        }
+
+        .status-message.error {
+            display: flex;
+            background: rgba(239, 68, 68, 0.15);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #f87171;
+        }
+
+        .status-message.success {
+            display: flex;
+            background: rgba(52, 211, 153, 0.15);
+            border: 1px solid rgba(52, 211, 153, 0.3);
+            color: var(--emerald-400);
+        }
+
+        /* Section Content */
+        .section-content {
+            display: none;
+        }
+
+        .section-content.active {
+            display: block;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Responsive */
+        @media (max-width: 900px) {
+            .cards-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 600px) {
+            .header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-mesh">
+        <div class="mesh-gradient mesh-1"></div>
+        <div class="mesh-gradient mesh-2"></div>
+    </div>
+    <div class="noise-overlay"></div>
+
+    <div class="container">
+        <header class="header">
+            <div class="logo-container">
+                <svg class="logo" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+                    <defs>
+                        <linearGradient id="primary" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="#34d399"/>
+                            <stop offset="100%" stop-color="#059669"/>
+                        </linearGradient>
+                    </defs>
+                    <rect width="200" height="200" rx="48" fill="#0f172a"/>
+                    <g transform="translate(50, 50)">
+                        <rect x="10" y="20" width="80" height="60" rx="16" fill="url(#primary)"/>
+                        <rect x="0" y="40" width="10" height="20" rx="4" fill="#34d399"/>
+                        <rect x="90" y="40" width="10" height="20" rx="4" fill="#34d399"/>
+                        <path d="M50 20 L50 8" stroke="#34d399" stroke-width="4" stroke-linecap="round"/>
+                        <circle cx="50" cy="4" r="4" fill="#34d399"/>
+                        <rect x="20" y="32" width="60" height="36" rx="8" fill="#020617"/>
+                        <circle cx="36" cy="50" r="5" fill="#34d399" opacity="0.9">
+                            <animate attributeName="opacity" values="0.9;0.2;0.9" dur="4s" repeatCount="indefinite"/>
+                        </circle>
+                        <circle cx="64" cy="50" r="5" fill="#34d399" opacity="0.9">
+                            <animate attributeName="opacity" values="0.9;0.2;0.9" dur="4s" repeatCount="indefinite"/>
+                        </circle>
+                    </g>
+                </svg>
+                <span class="brand-name">FinBot</span>
+            </div>
+            <div class="header-actions">
+                <button class="btn btn-secondary" onclick="goToDashboard()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="7" height="9"/>
+                        <rect x="14" y="3" width="7" height="5"/>
+                        <rect x="14" y="12" width="7" height="9"/>
+                        <rect x="3" y="16" width="7" height="5"/>
+                    </svg>
+                    Dashboard
+                </button>
+                <button class="btn btn-secondary" onclick="logout()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
+                        <polyline points="16 17 21 12 16 7"/>
+                        <line x1="21" y1="12" x2="9" y2="12"/>
+                    </svg>
+                    Sair
+                </button>
+            </div>
+        </header>
+
+        <!-- Stats -->
+        <div class="stats-grid" id="statsGrid">
+            <div class="stat-card">
+                <div class="stat-value" id="statPhone">-</div>
+                <div class="stat-label">Telefone</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="statTextUsage">0/0</div>
+                <div class="stat-label">Texto hoje</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="statMediaUsage">0/0</div>
+                <div class="stat-label">Midia hoje</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="statAiUsage">0/0</div>
+                <div class="stat-label">IA hoje</div>
+            </div>
+        </div>
+
+        <!-- Navigation -->
+        <nav class="nav-tabs">
+            <button class="nav-tab active" data-section="profile">Perfil</button>
+            <button class="nav-tab" data-section="apis">Chaves de API</button>
+            <button class="nav-tab" data-section="notifications">Notificacoes</button>
+            <button class="nav-tab" data-section="limits">Limites</button>
+            <button class="nav-tab" data-section="phones">Telefones</button>
+            <button class="nav-tab" data-section="backup">Backup</button>
+        </nav>
+
+        <!-- Profile Section -->
+        <div class="section-content active" id="section-profile">
+            <div class="cards-grid">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon">
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--navy-900)" stroke-width="2">
+                                <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
+                                <circle cx="12" cy="7" r="4"/>
+                            </svg>
+                        </div>
+                        <h3 class="card-title">Dados do Perfil</h3>
+                    </div>
+                    <p class="card-description">Atualize suas informacoes pessoais e preferencias de exibicao.</p>
+
+                    <form id="profileForm">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">Nome</label>
+                                <input type="text" class="form-input" name="name" id="profileName" required>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Nome de exibicao</label>
+                                <input type="text" class="form-input" name="display_name" id="profileDisplayName">
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Email</label>
+                            <input type="email" class="form-input" name="email" id="profileEmail" placeholder="seu@email.com">
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">Timezone</label>
+                                <select class="form-input" name="timezone" id="profileTimezone">
+                                    <option value="America/Sao_Paulo">America/Sao_Paulo</option>
+                                    <option value="America/New_York">America/New_York</option>
+                                    <option value="Europe/London">Europe/London</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Moeda base</label>
+                                <select class="form-input" name="base_currency" id="profileCurrency">
+                                    <option value="BRL">BRL - Real</option>
+                                    <option value="USD">USD - Dolar</option>
+                                    <option value="EUR">EUR - Euro</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">Separador decimal</label>
+                                <select class="form-input" name="decimal_separator" id="profileDecimal">
+                                    <option value=",">Virgula (,)</option>
+                                    <option value=".">Ponto (.)</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Separador de milhar</label>
+                                <select class="form-input" name="thousands_separator" id="profileThousands">
+                                    <option value=".">Ponto (.)</option>
+                                    <option value=",">Virgula (,)</option>
+                                    <option value=" ">Espaco</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary btn-full">Salvar Perfil</button>
+                    </form>
+                    <div class="status-message" id="profileStatus"></div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon" style="background: linear-gradient(135deg, #8b5cf6, #7c3aed);">
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+                                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                                <polyline points="14 2 14 8 20 8"/>
+                                <line x1="16" y1="13" x2="8" y2="13"/>
+                                <line x1="16" y1="17" x2="8" y2="17"/>
+                            </svg>
+                        </div>
+                        <h3 class="card-title">Termos de Uso</h3>
+                    </div>
+                    <p class="card-description">Status dos termos aceitos durante o onboarding.</p>
+
+                    <div class="list-item">
+                        <div class="list-item-info">
+                            <span class="list-item-title">Versao dos termos</span>
+                            <span class="list-item-subtitle" id="termsVersion">-</span>
+                        </div>
+                        <span class="list-item-badge" id="termsStatus">Pendente</span>
+                    </div>
+
+                    <div class="list-item">
+                        <div class="list-item-info">
+                            <span class="list-item-title">Data de aceite</span>
+                            <span class="list-item-subtitle" id="termsDate">-</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- APIs Section -->
+        <div class="section-content" id="section-apis">
+            <div class="cards-grid">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon">
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--navy-900)" stroke-width="2">
+                                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                                <path d="M7 11V7a5 5 0 0110 0v4"/>
+                            </svg>
+                        </div>
+                        <h3 class="card-title">Chaves de API</h3>
+                    </div>
+                    <p class="card-description">Gerencie suas chaves de API para os servicos integrados.</p>
+
+                    <div class="api-item">
+                        <div class="api-icon" style="background: linear-gradient(135deg, var(--emerald-400), var(--emerald-600));">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
+                                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                            </svg>
+                        </div>
+                        <div class="api-info">
+                            <div class="api-name">Google Gemini</div>
+                            <div class="api-status" id="geminiStatus">Nao configurada</div>
+                        </div>
+                    </div>
+
+                    <div class="api-item">
+                        <div class="api-icon" style="background: linear-gradient(135deg, #f97316, #ea580c);">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
+                                <path d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                            </svg>
+                        </div>
+                        <div class="api-info">
+                            <div class="api-name">Groq</div>
+                            <div class="api-status" id="groqStatus">Nao configurada</div>
+                        </div>
+                    </div>
+
+                    <div class="api-item">
+                        <div class="api-icon" style="background: linear-gradient(135deg, #0ea5e9, #0284c7);">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
+                                <circle cx="12" cy="12" r="10"/>
+                                <path d="M2 12h20M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z" fill="none" stroke="white" stroke-width="1.5"/>
+                            </svg>
+                        </div>
+                        <div class="api-info">
+                            <div class="api-name">Wise API</div>
+                            <div class="api-status" id="wiseStatus">Nao configurada</div>
+                        </div>
+                    </div>
+
+                    <div class="api-item">
+                        <div class="api-icon" style="background: linear-gradient(135deg, #8b5cf6, #7c3aed);">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
+                                <path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/>
+                            </svg>
+                        </div>
+                        <div class="api-info">
+                            <div class="api-name">ExchangeRate API</div>
+                            <div class="api-status" id="exchangeRateStatus">Nao configurada</div>
+                        </div>
+                    </div>
+
+                    <form id="apiKeyForm" style="margin-top: 20px;">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">Provedor</label>
+                                <select class="form-input" name="provider" id="apiProvider">
+                                    <option value="gemini">Google Gemini</option>
+                                    <option value="groq">Groq</option>
+                                    <option value="wise">Wise</option>
+                                    <option value="exchange_rate">ExchangeRate API</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Chave API</label>
+                                <input type="password" class="form-input" name="api_key" id="apiKey" placeholder="Cole sua chave aqui">
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-full">Salvar Chave</button>
+                    </form>
+                    <div class="status-message" id="apiStatus"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Notifications Section -->
+        <div class="section-content" id="section-notifications">
+            <div class="cards-grid">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon" style="background: linear-gradient(135deg, #f59e0b, #d97706);">
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+                                <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                                <path d="M13.73 21a2 2 0 01-3.46 0"/>
+                            </svg>
+                        </div>
+                        <h3 class="card-title">Notificacoes</h3>
+                    </div>
+                    <p class="card-description">Configure quais notificacoes voce deseja receber.</p>
+
+                    <form id="notificationsForm">
+                        <div class="toggle-group">
+                            <span class="toggle-label">Alertas de orcamento</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" name="budget_alerts" id="notifBudget">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="toggle-group">
+                            <span class="toggle-label">Lembretes de recorrencia</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" name="recurring_reminders" id="notifRecurring">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="toggle-group">
+                            <span class="toggle-label">Atualizacoes de metas</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" name="goal_updates" id="notifGoals">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary btn-full" style="margin-top: 8px;">Salvar Preferencias</button>
+                    </form>
+                    <div class="status-message" id="notificationsStatus"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Limits Section -->
+        <div class="section-content" id="section-limits">
+            <div class="cards-grid">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon" style="background: linear-gradient(135deg, #ec4899, #db2777);">
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+                                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                            </svg>
+                        </div>
+                        <h3 class="card-title">Limites Diarios</h3>
+                    </div>
+                    <p class="card-description">Configure os limites de uso diario para controlar gastos.</p>
+
+                    <form id="limitsForm">
+                        <div class="toggle-group">
+                            <span class="toggle-label">Limites habilitados</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" name="limits_enabled" id="limitsEnabled">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Mensagens de texto por dia</label>
+                            <input type="number" class="form-input" name="daily_text_limit" id="limitText" min="0">
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Midias e documentos por dia</label>
+                            <input type="number" class="form-input" name="daily_media_limit" id="limitMedia" min="0">
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Chamadas de IA por dia</label>
+                            <input type="number" class="form-input" name="daily_ai_limit" id="limitAi" min="0">
+                        </div>
+
+                        <button type="submit" class="btn btn-primary btn-full">Salvar Limites</button>
+                    </form>
+                    <div class="status-message" id="limitsStatus"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Phones Section -->
+        <div class="section-content" id="section-phones">
+            <div class="cards-grid">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon" style="background: linear-gradient(135deg, #06b6d4, #0891b2);">
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+                                <rect x="5" y="2" width="14" height="20" rx="2" ry="2"/>
+                                <line x1="12" y1="18" x2="12.01" y2="18"/>
+                            </svg>
+                        </div>
+                        <h3 class="card-title">Telefones Autorizados</h3>
+                    </div>
+                    <p class="card-description">Gerencie os numeros de WhatsApp autorizados a usar esta conta.</p>
+
+                    <div id="phonesList"></div>
+
+                    <form id="addPhoneForm" style="margin-top: 16px;">
+                        <div class="form-group">
+                            <label class="form-label">Novo numero autorizado</label>
+                            <input type="text" class="form-input" name="phone" placeholder="5511999999999" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-full">Adicionar Numero</button>
+                    </form>
+                    <div class="status-message" id="phonesStatus"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Backup Section -->
+        <div class="section-content" id="section-backup">
+            <div class="cards-grid">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon" style="background: linear-gradient(135deg, #64748b, #475569);">
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                                <polyline points="7 10 12 15 17 10"/>
+                                <line x1="12" y1="15" x2="12" y2="3"/>
+                            </svg>
+                        </div>
+                        <h3 class="card-title">Backup e Restauracao</h3>
+                    </div>
+                    <p class="card-description">Exporte seus dados ou restaure a partir de um backup anterior.</p>
+
+                    <div class="list-item" style="margin-bottom: 20px;">
+                        <div class="list-item-info">
+                            <span class="list-item-title">ID do Backup</span>
+                            <span class="list-item-subtitle" id="backupOwnerId">-</span>
+                        </div>
+                    </div>
+
+                    <button class="btn btn-primary btn-full" onclick="exportBackup()" style="margin-bottom: 20px;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                            <polyline points="17 8 12 3 7 8"/>
+                            <line x1="12" y1="3" x2="12" y2="15"/>
+                        </svg>
+                        Exportar Backup
+                    </button>
+
+                    <form id="importBackupForm">
+                        <div class="form-group">
+                            <label class="form-label">Arquivo de backup JSON</label>
+                            <input type="file" class="form-input" name="backup_file" accept=".json" required>
+                        </div>
+                        <button type="submit" class="btn btn-secondary btn-full">Analisar Backup</button>
+                    </form>
+
+                    <div id="backupPreview" style="display: none; margin-top: 16px; padding: 16px; background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.3); border-radius: 10px; color: #fbbf24;"></div>
+
+                    <div id="migrationConfirm" style="display: none; margin-top: 16px;">
+                        <div class="toggle-group">
+                            <span class="toggle-label">Confirmo a migracao de outro numero</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="migrationCheckbox">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <button class="btn btn-danger btn-full" id="applyBackupBtn" onclick="applyBackup()" disabled style="margin-top: 16px; display: none;">
+                        Aplicar Backup
+                    </button>
+
+                    <div class="status-message" id="backupStatus"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let state = {
+            backupRef: null,
+            requiresMigration: false
+        };
+
+        // Navigation
+        document.querySelectorAll('.nav-tab').forEach(tab => {
+            tab.addEventListener('click', function() {
+                document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.section-content').forEach(s => s.classList.remove('active'));
+
+                this.classList.add('active');
+                document.getElementById(`section-${this.dataset.section}`).classList.add('active');
+            });
+        });
+
+        // Load state
+        async function loadState() {
+            try {
+                const response = await fetch('/settings/state', { credentials: 'same-origin' });
+                const data = await response.json();
+                renderState(data);
+            } catch (error) {
+                console.error('Error loading state:', error);
+            }
+        }
+
+        function renderState(data) {
+            // Stats
+            document.getElementById('statPhone').textContent = data.user?.phone || '-';
+            document.getElementById('statTextUsage').textContent =
+                `${data.limits?.usage?.daily_text_limit?.used || 0}/${data.limits?.daily_text_limit || 0}`;
+            document.getElementById('statMediaUsage').textContent =
+                `${data.limits?.usage?.daily_media_limit?.used || 0}/${data.limits?.daily_media_limit || 0}`;
+            document.getElementById('statAiUsage').textContent =
+                `${data.limits?.usage?.daily_ai_limit?.used || 0}/${data.limits?.daily_ai_limit || 0}`;
+
+            // Profile
+            document.getElementById('profileName').value = data.user?.name || '';
+            document.getElementById('profileDisplayName').value = data.user?.display_name || '';
+            document.getElementById('profileEmail').value = data.user?.email || '';
+            document.getElementById('profileTimezone').value = data.user?.timezone || 'America/Sao_Paulo';
+            document.getElementById('profileCurrency').value = data.user?.base_currency || 'BRL';
+            document.getElementById('profileDecimal').value = data.user?.decimal_separator || ',';
+            document.getElementById('profileThousands').value = data.user?.thousands_separator || '.';
+
+            // Terms
+            document.getElementById('termsVersion').textContent = data.user?.terms_version || '-';
+            document.getElementById('termsStatus').textContent = data.user?.accepted_terms ? 'Aceito' : 'Pendente';
+            document.getElementById('termsDate').textContent = data.user?.accepted_terms_at || '-';
+
+            // Notifications
+            document.getElementById('notifBudget').checked = data.notifications?.budget_alerts || false;
+            document.getElementById('notifRecurring').checked = data.notifications?.recurring_reminders || false;
+            document.getElementById('notifGoals').checked = data.notifications?.goal_updates || false;
+
+            // Limits
+            document.getElementById('limitsEnabled').checked = data.limits?.limits_enabled || false;
+            document.getElementById('limitText').value = data.limits?.daily_text_limit || 0;
+            document.getElementById('limitMedia').value = data.limits?.daily_media_limit || 0;
+            document.getElementById('limitAi').value = data.limits?.daily_ai_limit || 0;
+
+            // Backup
+            document.getElementById('backupOwnerId').textContent = data.backup?.backup_owner_id || '-';
+
+            // Phones
+            renderPhones(data.authorized_phones || []);
+
+            // API Status (would need separate endpoint)
+            updateApiStatus(data.credentials || {});
+        }
+
+        function updateApiStatus(credentials) {
+            const providers = ['gemini', 'groq', 'wise', 'exchange_rate'];
+            providers.forEach(p => {
+                const statusEl = document.getElementById(`${p === 'exchange_rate' ? 'exchangeRate' : p}Status`);
+                if (statusEl && credentials[p]) {
+                    statusEl.textContent = credentials[p].configured ? `Configurada (${credentials[p].last4 || '****'})` : 'Nao configurada';
+                    statusEl.classList.toggle('configured', credentials[p].configured);
+                }
+            });
+        }
+
+        function renderPhones(phones) {
+            const container = document.getElementById('phonesList');
+            container.innerHTML = phones.map(p => `
+                <div class="list-item">
+                    <div class="list-item-info">
+                        <span class="list-item-title">${p.phone}</span>
+                        <span class="list-item-subtitle">${p.is_primary ? 'Numero principal' : 'Numero adicional'}</span>
+                    </div>
+                    ${p.is_primary ? '<span class="list-item-badge">Principal</span>' :
+                        `<button class="btn btn-danger" onclick="removePhone('${p.phone}')">Remover</button>`}
+                </div>
+            `).join('');
+        }
+
+        // Form submissions
+        document.getElementById('profileForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData);
+
+            try {
+                const response = await fetch('/settings/profile', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify(data)
+                });
+                const result = await response.json();
+                renderState(result);
+                showStatus('profileStatus', 'Perfil atualizado com sucesso!', 'success');
+            } catch (error) {
+                showStatus('profileStatus', 'Erro ao salvar perfil.', 'error');
+            }
+        });
+
+        document.getElementById('apiKeyForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const provider = document.getElementById('apiProvider').value;
+            const apiKey = document.getElementById('apiKey').value;
+
+            try {
+                await fetch('/settings/credentials', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({ provider, api_key: apiKey })
+                });
+                document.getElementById('apiKey').value = '';
+                showStatus('apiStatus', 'Chave salva com sucesso!', 'success');
+                loadState();
+            } catch (error) {
+                showStatus('apiStatus', 'Erro ao salvar chave.', 'error');
+            }
+        });
+
+        document.getElementById('notificationsForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const data = {
+                budget_alerts: document.getElementById('notifBudget').checked,
+                recurring_reminders: document.getElementById('notifRecurring').checked,
+                goal_updates: document.getElementById('notifGoals').checked
+            };
+
+            try {
+                const response = await fetch('/settings/notifications', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify(data)
+                });
+                const result = await response.json();
+                renderState(result);
+                showStatus('notificationsStatus', 'Preferencias salvas!', 'success');
+            } catch (error) {
+                showStatus('notificationsStatus', 'Erro ao salvar.', 'error');
+            }
+        });
+
+        document.getElementById('limitsForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const data = {
+                limits_enabled: document.getElementById('limitsEnabled').checked,
+                daily_text_limit: parseInt(document.getElementById('limitText').value),
+                daily_media_limit: parseInt(document.getElementById('limitMedia').value),
+                daily_ai_limit: parseInt(document.getElementById('limitAi').value)
+            };
+
+            try {
+                const response = await fetch('/settings/limits', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify(data)
+                });
+                const result = await response.json();
+                renderState(result);
+                showStatus('limitsStatus', 'Limites atualizados!', 'success');
+            } catch (error) {
+                showStatus('limitsStatus', 'Erro ao salvar limites.', 'error');
+            }
+        });
+
+        document.getElementById('addPhoneForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const phone = e.target.querySelector('input[name="phone"]').value;
+
+            try {
+                const response = await fetch('/settings/authorized-phones', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({ phone })
+                });
+                const result = await response.json();
+                renderState(result);
+                e.target.reset();
+                showStatus('phonesStatus', 'Numero adicionado!', 'success');
+            } catch (error) {
+                showStatus('phonesStatus', 'Erro ao adicionar numero.', 'error');
+            }
+        });
+
+        async function removePhone(phone) {
+            try {
+                const response = await fetch('/settings/authorized-phones', {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({ phone })
+                });
+                const result = await response.json();
+                renderState(result);
+                showStatus('phonesStatus', 'Numero removido!', 'success');
+            } catch (error) {
+                showStatus('phonesStatus', 'Erro ao remover numero.', 'error');
+            }
+        }
+
+        async function exportBackup() {
+            try {
+                const response = await fetch('/settings/backup/export', {
+                    method: 'POST',
+                    credentials: 'same-origin'
+                });
+                const data = await response.json();
+                const blob = new Blob([data.backup_json], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = data.filename;
+                a.click();
+                URL.revokeObjectURL(url);
+                showStatus('backupStatus', 'Backup exportado!', 'success');
+            } catch (error) {
+                showStatus('backupStatus', 'Erro ao exportar backup.', 'error');
+            }
+        }
+
+        document.getElementById('importBackupForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const file = e.target.querySelector('input[name="backup_file"]').files[0];
+            if (!file) return;
+
+            const backupJson = await file.text();
+
+            try {
+                const response = await fetch('/settings/backup/import/preview', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({ backup_json: backupJson })
+                });
+                const data = await response.json();
+
+                state.backupRef = data.backup_ref;
+                state.requiresMigration = data.requires_migration_confirmation;
+
+                const preview = document.getElementById('backupPreview');
+                preview.style.display = 'block';
+                preview.innerHTML = `
+                    <strong>Backup analisado</strong><br>
+                    Origem: ${data.summary.source_phone || 'desconhecido'}<br>
+                    Despesas: ${data.summary.expenses}<br>
+                    Orcamentos: ${data.summary.budgets}<br>
+                    Metas: ${data.summary.goals}
+                `;
+
+                document.getElementById('migrationConfirm').style.display =
+                    data.requires_migration_confirmation ? 'block' : 'none';
+                document.getElementById('applyBackupBtn').style.display = 'block';
+                document.getElementById('applyBackupBtn').disabled = data.requires_migration_confirmation;
+
+                showStatus('backupStatus', 'Backup analisado!', 'success');
+            } catch (error) {
+                showStatus('backupStatus', 'Erro ao analisar backup.', 'error');
+            }
+        });
+
+        document.getElementById('migrationCheckbox').addEventListener('change', (e) => {
+            document.getElementById('applyBackupBtn').disabled = !e.target.checked;
+        });
+
+        async function applyBackup() {
+            if (!state.backupRef) return;
+
+            try {
+                const response = await fetch('/settings/backup/import/apply', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({
+                        backup_ref: state.backupRef,
+                        explicit_migration_confirmation: document.getElementById('migrationCheckbox').checked
+                    })
+                });
+                const data = await response.json();
+
+                document.getElementById('backupPreview').style.display = 'none';
+                document.getElementById('migrationConfirm').style.display = 'none';
+                document.getElementById('applyBackupBtn').style.display = 'none';
+                document.getElementById('importBackupForm').reset();
+                state.backupRef = null;
+
+                showStatus('backupStatus', `Backup restaurado: ${data.restored.expenses} despesas, ${data.restored.budgets} orcamentos, ${data.restored.goals} metas.`, 'success');
+                loadState();
+            } catch (error) {
+                showStatus('backupStatus', 'Erro ao aplicar backup.', 'error');
+            }
+        }
+
+        function showStatus(elementId, message, type) {
+            const el = document.getElementById(elementId);
+            el.textContent = message;
+            el.className = `status-message ${type}`;
+            setTimeout(() => {
+                el.className = 'status-message';
+            }, 5000);
+        }
+
+        function goToDashboard() {
+            window.location.href = '/web/dashboard';
+        }
+
+        async function logout() {
+            await fetch('/auth/logout', { method: 'POST', credentials: 'same-origin' });
+            window.location.href = '/web/login';
+        }
+
+        // Initialize
+        loadState();
+    </script>
+</body>
+</html>

@@ -1,0 +1,1415 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FinBot - Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --emerald-400: #34d399;
+            --emerald-500: #10b981;
+            --emerald-600: #059669;
+            --navy-900: #0f172a;
+            --navy-800: #1e293b;
+            --navy-700: #334155;
+            --navy-600: #475569;
+            --slate-300: #cbd5e1;
+            --slate-400: #94a3b8;
+            --slate-500: #64748b;
+            --white: #ffffff;
+            --glass-bg: rgba(30, 41, 59, 0.7);
+            --glass-border: rgba(52, 211, 153, 0.2);
+            --shadow-emerald: 0 0 40px rgba(52, 211, 153, 0.15);
+            --red-400: #f87171;
+            --red-500: #ef4444;
+            --amber-400: #fbbf24;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: var(--navy-900);
+            min-height: 100vh;
+            color: var(--white);
+            overflow-x: hidden;
+        }
+
+        /* Animated Background */
+        .bg-mesh {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            overflow: hidden;
+        }
+
+        .mesh-gradient {
+            position: absolute;
+            width: 600px;
+            height: 600px;
+            border-radius: 50%;
+            filter: blur(80px);
+            opacity: 0.4;
+            animation: meshFloat 20s ease-in-out infinite;
+        }
+
+        .mesh-1 {
+            background: linear-gradient(135deg, var(--emerald-600), var(--emerald-400));
+            top: -200px;
+            right: -100px;
+            animation-delay: 0s;
+        }
+
+        .mesh-2 {
+            background: linear-gradient(135deg, #0ea5e9, #06b6d4);
+            bottom: -200px;
+            left: -100px;
+            animation-delay: -7s;
+            opacity: 0.2;
+        }
+
+        @keyframes meshFloat {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            25% { transform: translate(30px, -30px) scale(1.05); }
+            50% { transform: translate(-20px, 20px) scale(0.95); }
+            75% { transform: translate(-30px, -20px) scale(1.02); }
+        }
+
+        .noise-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            opacity: 0.03;
+            pointer-events: none;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+        }
+
+        /* Container */
+        .container {
+            position: relative;
+            z-index: 2;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 32px 20px;
+        }
+
+        /* Header */
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 32px;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+
+        .logo-container {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo {
+            width: 44px;
+            height: 44px;
+        }
+
+        .brand-name {
+            font-size: 1.375rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--emerald-400), var(--emerald-600));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .quick-nav {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .quick-nav-btn {
+            padding: 8px 16px;
+            background: var(--navy-800);
+            border: 1px solid var(--navy-600);
+            border-radius: 8px;
+            color: var(--slate-400);
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.8125rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .quick-nav-btn:hover {
+            border-color: var(--emerald-400);
+            color: var(--white);
+        }
+
+        /* Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .stat-card {
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            padding: 20px;
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            color: var(--slate-500);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 8px;
+        }
+
+        .stat-value {
+            font-size: 1.75rem;
+            font-weight: 700;
+        }
+
+        .stat-value.positive {
+            color: var(--emerald-400);
+        }
+
+        .stat-value.negative {
+            color: var(--red-400);
+        }
+
+        .stat-change {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 0.8125rem;
+            margin-top: 8px;
+        }
+
+        .stat-change.up {
+            color: var(--emerald-400);
+        }
+
+        .stat-change.down {
+            color: var(--red-400);
+        }
+
+        /* Main Grid */
+        .main-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 24px;
+        }
+
+        /* Card */
+        .card {
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            padding: 24px;
+            box-shadow: var(--shadow-emerald);
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+
+        .card-title {
+            font-size: 1.125rem;
+            font-weight: 600;
+        }
+
+        .card-subtitle {
+            font-size: 0.8125rem;
+            color: var(--slate-500);
+        }
+
+        /* Buttons */
+        .btn {
+            padding: 10px 16px;
+            border-radius: 10px;
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.875rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            border: none;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--emerald-400), var(--emerald-600));
+            color: var(--navy-900);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(52, 211, 153, 0.3);
+        }
+
+        .btn-secondary {
+            background: var(--navy-800);
+            border: 1px solid var(--navy-600);
+            color: var(--white);
+        }
+
+        .btn-secondary:hover {
+            border-color: var(--slate-500);
+        }
+
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: 0.8125rem;
+        }
+
+        /* Expense List */
+        .expense-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .expense-list::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .expense-list::-webkit-scrollbar-track {
+            background: var(--navy-800);
+            border-radius: 3px;
+        }
+
+        .expense-list::-webkit-scrollbar-thumb {
+            background: var(--navy-600);
+            border-radius: 3px;
+        }
+
+        .expense-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px;
+            background: var(--navy-800);
+            border: 1px solid var(--navy-700);
+            border-radius: 12px;
+            transition: all 0.2s ease;
+        }
+
+        .expense-item:hover {
+            border-color: var(--emerald-400);
+        }
+
+        .expense-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .expense-icon {
+            width: 40px;
+            height: 40px;
+            background: var(--navy-700);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+        }
+
+        .expense-details {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .expense-description {
+            font-weight: 500;
+        }
+
+        .expense-meta {
+            font-size: 0.8125rem;
+            color: var(--slate-500);
+        }
+
+        .expense-amount {
+            font-weight: 600;
+            font-size: 1rem;
+        }
+
+        .expense-amount.expense {
+            color: var(--red-400);
+        }
+
+        .expense-amount.income {
+            color: var(--emerald-400);
+        }
+
+        /* Form Styles */
+        .form-group {
+            margin-bottom: 14px;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 0.8125rem;
+            font-weight: 500;
+            color: var(--slate-400);
+            margin-bottom: 6px;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 12px 14px;
+            background: var(--navy-800);
+            border: 1px solid var(--navy-600);
+            border-radius: 10px;
+            color: var(--white);
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.9375rem;
+            transition: all 0.3s ease;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: var(--emerald-400);
+            box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.15);
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        /* Goals Section */
+        .goal-item {
+            padding: 16px;
+            background: var(--navy-800);
+            border: 1px solid var(--navy-700);
+            border-radius: 12px;
+            margin-bottom: 12px;
+        }
+
+        .goal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 12px;
+        }
+
+        .goal-title {
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .goal-target {
+            font-size: 0.8125rem;
+            color: var(--slate-500);
+        }
+
+        .goal-progress-bar {
+            height: 8px;
+            background: var(--navy-700);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 8px;
+        }
+
+        .goal-progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--emerald-400), var(--emerald-600));
+            border-radius: 4px;
+            transition: width 0.5s ease;
+        }
+
+        .goal-stats {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.8125rem;
+            color: var(--slate-400);
+        }
+
+        /* Budget Section */
+        .budget-item {
+            padding: 14px;
+            background: var(--navy-800);
+            border: 1px solid var(--navy-700);
+            border-radius: 12px;
+            margin-bottom: 10px;
+        }
+
+        .budget-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .budget-category {
+            font-weight: 500;
+        }
+
+        .budget-amount {
+            font-size: 0.875rem;
+            color: var(--slate-400);
+        }
+
+        .budget-bar {
+            height: 6px;
+            background: var(--navy-700);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .budget-fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.5s ease;
+        }
+
+        .budget-fill.safe {
+            background: var(--emerald-400);
+        }
+
+        .budget-fill.warning {
+            background: var(--amber-400);
+        }
+
+        .budget-fill.danger {
+            background: var(--red-400);
+        }
+
+        /* Weekly Summary */
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+        }
+
+        .summary-item {
+            padding: 14px;
+            background: var(--navy-800);
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .summary-value {
+            font-size: 1.25rem;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .summary-label {
+            font-size: 0.75rem;
+            color: var(--slate-500);
+        }
+
+        /* Audit History */
+        .audit-list {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .audit-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 0;
+            border-bottom: 1px solid var(--navy-700);
+        }
+
+        .audit-item:last-child {
+            border-bottom: none;
+        }
+
+        .audit-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.875rem;
+        }
+
+        .audit-icon.add {
+            background: rgba(52, 211, 153, 0.2);
+            color: var(--emerald-400);
+        }
+
+        .audit-icon.edit {
+            background: rgba(251, 191, 36, 0.2);
+            color: var(--amber-400);
+        }
+
+        .audit-icon.delete {
+            background: rgba(248, 113, 113, 0.2);
+            color: var(--red-400);
+        }
+
+        .audit-info {
+            flex: 1;
+        }
+
+        .audit-action {
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+
+        .audit-time {
+            font-size: 0.75rem;
+            color: var(--slate-500);
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--slate-500);
+        }
+
+        .empty-state-icon {
+            font-size: 3rem;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        /* Status Message */
+        .status-message {
+            padding: 12px 16px;
+            border-radius: 10px;
+            margin-top: 12px;
+            display: none;
+            font-size: 0.875rem;
+        }
+
+        .status-message.error {
+            display: block;
+            background: rgba(239, 68, 68, 0.15);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #f87171;
+        }
+
+        .status-message.success {
+            display: block;
+            background: rgba(52, 211, 153, 0.15);
+            border: 1px solid rgba(52, 211, 153, 0.3);
+            color: var(--emerald-400);
+        }
+
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(15, 23, 42, 0.8);
+            backdrop-filter: blur(4px);
+            z-index: 100;
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal {
+            background: var(--navy-800);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            padding: 28px;
+            width: 90%;
+            max-width: 500px;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .modal-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            color: var(--slate-400);
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 4px;
+        }
+
+        .modal-close:hover {
+            color: var(--white);
+        }
+
+        /* Responsive */
+        @media (max-width: 1100px) {
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+
+            .header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .summary-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-mesh">
+        <div class="mesh-gradient mesh-1"></div>
+        <div class="mesh-gradient mesh-2"></div>
+    </div>
+    <div class="noise-overlay"></div>
+
+    <div class="container">
+        <header class="header">
+            <div class="logo-container">
+                <svg class="logo" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+                    <defs>
+                        <linearGradient id="primary" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="#34d399"/>
+                            <stop offset="100%" stop-color="#059669"/>
+                        </linearGradient>
+                    </defs>
+                    <rect width="200" height="200" rx="48" fill="#0f172a"/>
+                    <g transform="translate(50, 50)">
+                        <rect x="10" y="20" width="80" height="60" rx="16" fill="url(#primary)"/>
+                        <rect x="0" y="40" width="10" height="20" rx="4" fill="#34d399"/>
+                        <rect x="90" y="40" width="10" height="20" rx="4" fill="#34d399"/>
+                        <path d="M50 20 L50 8" stroke="#34d399" stroke-width="4" stroke-linecap="round"/>
+                        <circle cx="50" cy="4" r="4" fill="#34d399"/>
+                        <rect x="20" y="32" width="60" height="36" rx="8" fill="#020617"/>
+                        <circle cx="36" cy="50" r="5" fill="#34d399" opacity="0.9">
+                            <animate attributeName="opacity" values="0.9;0.2;0.9" dur="4s" repeatCount="indefinite"/>
+                        </circle>
+                        <circle cx="64" cy="50" r="5" fill="#34d399" opacity="0.9">
+                            <animate attributeName="opacity" values="0.9;0.2;0.9" dur="4s" repeatCount="indefinite"/>
+                        </circle>
+                    </g>
+                </svg>
+                <span class="brand-name">FinBot</span>
+            </div>
+
+            <div class="quick-nav">
+                <button class="quick-nav-btn" onclick="scrollToSection('expenses')">Despesas</button>
+                <button class="quick-nav-btn" onclick="scrollToSection('goals')">Metas</button>
+                <button class="quick-nav-btn" onclick="scrollToSection('budgets')">Orcamentos</button>
+            </div>
+
+            <div class="header-actions">
+                <button class="btn btn-secondary" onclick="goToSettings()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
+                    </svg>
+                    Configuracoes
+                </button>
+                <button class="btn btn-secondary" onclick="logout()">Sair</button>
+            </div>
+        </header>
+
+        <!-- Stats -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">Saldo do Mes</div>
+                <div class="stat-value positive" id="statBalance">R$ 0,00</div>
+                <div class="stat-change up" id="statBalanceChange">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
+                    </svg>
+                    <span>vs mes anterior</span>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Receitas</div>
+                <div class="stat-value positive" id="statIncome">R$ 0,00</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Despesas</div>
+                <div class="stat-value negative" id="statExpenses">R$ 0,00</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Meta do Mes</div>
+                <div class="stat-value" id="statBudget">R$ 0,00</div>
+                <div class="stat-change" id="statBudgetUsage">0% utilizado</div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-grid">
+            <!-- Left Column -->
+            <div class="stack">
+                <!-- Recent Expenses -->
+                <section class="card" id="expenses">
+                    <div class="card-header">
+                        <div>
+                            <h2 class="card-title">Transacoes Recentes</h2>
+                            <p class="card-subtitle">Ultimas movimentacoes financeiras</p>
+                        </div>
+                        <button class="btn btn-primary btn-sm" onclick="openAddExpenseModal()">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="12" y1="5" x2="12" y2="19"/>
+                                <line x1="5" y1="12" x2="19" y2="12"/>
+                            </svg>
+                            Adicionar
+                        </button>
+                    </div>
+                    <div class="expense-list" id="expenseList">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">&#128176;</div>
+                            <p>Nenhuma transacao encontrada</p>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Budgets -->
+                <section class="card" id="budgets">
+                    <div class="card-header">
+                        <div>
+                            <h2 class="card-title">Orcamentos</h2>
+                            <p class="card-subtitle">Controle de gastos por categoria</p>
+                        </div>
+                        <button class="btn btn-secondary btn-sm" onclick="openAddBudgetModal()">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="12" y1="5" x2="12" y2="19"/>
+                                <line x1="5" y1="12" x2="19" y2="12"/>
+                            </svg>
+                            Novo
+                        </button>
+                    </div>
+                    <div id="budgetList">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">&#128202;</div>
+                            <p>Nenhum orcamento definido</p>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <!-- Right Column -->
+            <div class="stack">
+                <!-- Goals -->
+                <section class="card" id="goals">
+                    <div class="card-header">
+                        <div>
+                            <h2 class="card-title">Metas Financeiras</h2>
+                            <p class="card-subtitle">Acompanhe seu progresso</p>
+                        </div>
+                        <button class="btn btn-secondary btn-sm" onclick="openAddGoalModal()">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="12" y1="5" x2="12" y2="19"/>
+                                <line x1="5" y1="12" x2="19" y2="12"/>
+                            </svg>
+                            Nova
+                        </button>
+                    </div>
+                    <div id="goalList">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">&#127919;</div>
+                            <p>Nenhuma meta definida</p>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Weekly Summary -->
+                <section class="card">
+                    <div class="card-header">
+                        <div>
+                            <h2 class="card-title">Resumo Semanal</h2>
+                            <p class="card-subtitle">Ultimos 7 dias</p>
+                        </div>
+                    </div>
+                    <div class="summary-grid">
+                        <div class="summary-item">
+                            <div class="summary-value positive" id="weeklyIncome">R$ 0</div>
+                            <div class="summary-label">Receitas</div>
+                        </div>
+                        <div class="summary-item">
+                            <div class="summary-value negative" id="weeklyExpenses">R$ 0</div>
+                            <div class="summary-label">Despesas</div>
+                        </div>
+                        <div class="summary-item">
+                            <div class="summary-value" id="weeklyTransactions">0</div>
+                            <div class="summary-label">Transacoes</div>
+                        </div>
+                        <div class="summary-item">
+                            <div class="summary-value" id="weeklyAverage">R$ 0</div>
+                            <div class="summary-label">Media/dia</div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Audit History -->
+                <section class="card">
+                    <div class="card-header">
+                        <div>
+                            <h2 class="card-title">Historico</h2>
+                            <p class="card-subtitle">Atividades recentes</p>
+                        </div>
+                    </div>
+                    <div class="audit-list" id="auditList">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">&#128221;</div>
+                            <p>Nenhuma atividade</p>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Expense Modal -->
+    <div class="modal-overlay" id="expenseModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title">Nova Transacao</h3>
+                <button class="modal-close" onclick="closeModal('expenseModal')">&times;</button>
+            </div>
+            <form id="expenseForm">
+                <div class="form-group">
+                    <label class="form-label">Descricao</label>
+                    <input type="text" class="form-input" name="description" required placeholder="Ex: Almoco no restaurante">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Valor</label>
+                        <input type="number" step="0.01" class="form-input" name="amount" required placeholder="0,00">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Tipo</label>
+                        <select class="form-input" name="type" id="expenseType">
+                            <option value="expense">Despesa</option>
+                            <option value="income">Receita</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Categoria</label>
+                        <select class="form-input" name="category" id="expenseCategory">
+                            <!-- Will be populated by JS -->
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Pagamento</label>
+                        <select class="form-input" name="payment_method">
+                            <option value="Cartao de Credito">Cartao de Credito</option>
+                            <option value="Cartao de Debito">Cartao de Debito</option>
+                            <option value="Dinheiro">Dinheiro</option>
+                            <option value="Pix">Pix</option>
+                            <option value="Vale Alimentacao">Vale Alimentacao</option>
+                            <option value="Vale Refeicao">Vale Refeicao</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Data</label>
+                    <input type="date" class="form-input" name="date" required>
+                </div>
+                <button type="submit" class="btn btn-primary" style="width: 100%;">Salvar Transacao</button>
+            </form>
+            <div class="status-message" id="expenseStatus"></div>
+        </div>
+    </div>
+
+    <!-- Add Goal Modal -->
+    <div class="modal-overlay" id="goalModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title">Nova Meta</h3>
+                <button class="modal-close" onclick="closeModal('goalModal')">&times;</button>
+            </div>
+            <form id="goalForm">
+                <div class="form-group">
+                    <label class="form-label">Nome da meta</label>
+                    <input type="text" class="form-input" name="name" required placeholder="Ex: Viagem de ferias">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Valor alvo</label>
+                        <input type="number" step="0.01" class="form-input" name="target_amount" required placeholder="0,00">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Valor atual</label>
+                        <input type="number" step="0.01" class="form-input" name="current_amount" value="0" placeholder="0,00">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Data limite</label>
+                    <input type="date" class="form-input" name="deadline">
+                </div>
+                <button type="submit" class="btn btn-primary" style="width: 100%;">Criar Meta</button>
+            </form>
+            <div class="status-message" id="goalStatus"></div>
+        </div>
+    </div>
+
+    <!-- Add Budget Modal -->
+    <div class="modal-overlay" id="budgetModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title">Novo Orcamento</h3>
+                <button class="modal-close" onclick="closeModal('budgetModal')">&times;</button>
+            </div>
+            <form id="budgetForm">
+                <div class="form-group">
+                    <label class="form-label">Categoria</label>
+                    <select class="form-input" name="category" id="budgetCategory">
+                        <!-- Will be populated by JS -->
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Limite mensal</label>
+                    <input type="number" step="0.01" class="form-input" name="monthly_limit" required placeholder="0,00">
+                </div>
+                <button type="submit" class="btn btn-primary" style="width: 100%;">Criar Orcamento</button>
+            </form>
+            <div class="status-message" id="budgetStatus"></div>
+        </div>
+    </div>
+
+    <script>
+        // Categories
+        const expenseCategories = [
+            'Alimentacao', 'Transporte', 'Moradia', 'Saude', 'Educacao', 'Lazer',
+            'Compras', 'Contas', 'Assinaturas', 'Pets', 'Vestuario', 'Beleza',
+            'Impostos', 'Seguros', 'Presentes', 'Viagens', 'Manutencao', 'Doacoes',
+            'Emergencia', 'Taxas Bancarias', 'Outros Gastos'
+        ];
+
+        const incomeCategories = [
+            'Salario', 'Freelance', 'Investimentos', 'Vendas', 'Aluguel',
+            'Reembolso', 'Bonus', 'Presente Recebido', 'Outras Receitas'
+        ];
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            loadDashboardData();
+            setupForms();
+            populateCategories();
+
+            // Set default date to today
+            document.querySelector('#expenseForm input[name="date"]').valueAsDate = new Date();
+        });
+
+        function populateCategories() {
+            const expenseCategorySelect = document.getElementById('expenseCategory');
+            const budgetCategorySelect = document.getElementById('budgetCategory');
+
+            expenseCategories.forEach(cat => {
+                expenseCategorySelect.innerHTML += `<option value="${cat}">${cat}</option>`;
+                budgetCategorySelect.innerHTML += `<option value="${cat}">${cat}</option>`;
+            });
+
+            // Update categories based on type
+            document.getElementById('expenseType').addEventListener('change', function() {
+                const categories = this.value === 'income' ? incomeCategories : expenseCategories;
+                expenseCategorySelect.innerHTML = categories.map(c => `<option value="${c}">${c}</option>`).join('');
+            });
+        }
+
+        async function loadDashboardData() {
+            try {
+                const response = await fetch('/dashboard/state', { credentials: 'same-origin' });
+                if (response.ok) {
+                    const data = await response.json();
+                    renderDashboard(data);
+                }
+            } catch (error) {
+                console.error('Error loading dashboard:', error);
+            }
+        }
+
+        function renderDashboard(data) {
+            // Stats
+            const summary = data.summary || {};
+            document.getElementById('statBalance').textContent = formatCurrency(summary.balance || 0);
+            document.getElementById('statIncome').textContent = formatCurrency(summary.total_income || 0);
+            document.getElementById('statExpenses').textContent = formatCurrency(summary.total_expenses || 0);
+
+            if (summary.monthly_budget) {
+                document.getElementById('statBudget').textContent = formatCurrency(summary.monthly_budget);
+                const usage = summary.total_expenses / summary.monthly_budget * 100;
+                document.getElementById('statBudgetUsage').textContent = `${usage.toFixed(0)}% utilizado`;
+            }
+
+            // Expenses
+            renderExpenses(data.expenses || []);
+
+            // Goals
+            renderGoals(data.goals || []);
+
+            // Budgets
+            renderBudgets(data.budgets || []);
+
+            // Weekly Summary
+            const weekly = data.weekly_summary || {};
+            document.getElementById('weeklyIncome').textContent = formatCurrency(weekly.income || 0);
+            document.getElementById('weeklyExpenses').textContent = formatCurrency(weekly.expenses || 0);
+            document.getElementById('weeklyTransactions').textContent = weekly.transactions || 0;
+            document.getElementById('weeklyAverage').textContent = formatCurrency(weekly.daily_average || 0);
+
+            // Audit
+            renderAudit(data.audit || []);
+        }
+
+        function renderExpenses(expenses) {
+            const container = document.getElementById('expenseList');
+            if (!expenses.length) {
+                container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">&#128176;</div><p>Nenhuma transacao encontrada</p></div>';
+                return;
+            }
+
+            container.innerHTML = expenses.slice(0, 10).map(e => `
+                <div class="expense-item">
+                    <div class="expense-info">
+                        <div class="expense-icon">${getCategoryIcon(e.category)}</div>
+                        <div class="expense-details">
+                            <span class="expense-description">${e.description}</span>
+                            <span class="expense-meta">${e.category} - ${formatDate(e.date)}</span>
+                        </div>
+                    </div>
+                    <span class="expense-amount ${e.type === 'income' ? 'income' : 'expense'}">
+                        ${e.type === 'income' ? '+' : '-'} ${formatCurrency(e.amount)}
+                    </span>
+                </div>
+            `).join('');
+        }
+
+        function renderGoals(goals) {
+            const container = document.getElementById('goalList');
+            if (!goals.length) {
+                container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">&#127919;</div><p>Nenhuma meta definida</p></div>';
+                return;
+            }
+
+            container.innerHTML = goals.map(g => {
+                const progress = (g.current_amount / g.target_amount * 100).toFixed(0);
+                return `
+                    <div class="goal-item">
+                        <div class="goal-header">
+                            <div>
+                                <div class="goal-title">${g.name}</div>
+                                <div class="goal-target">Meta: ${formatCurrency(g.target_amount)}</div>
+                            </div>
+                            <span style="color: var(--emerald-400); font-weight: 600;">${progress}%</span>
+                        </div>
+                        <div class="goal-progress-bar">
+                            <div class="goal-progress-fill" style="width: ${Math.min(progress, 100)}%"></div>
+                        </div>
+                        <div class="goal-stats">
+                            <span>Atual: ${formatCurrency(g.current_amount)}</span>
+                            <span>Falta: ${formatCurrency(g.target_amount - g.current_amount)}</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function renderBudgets(budgets) {
+            const container = document.getElementById('budgetList');
+            if (!budgets.length) {
+                container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">&#128202;</div><p>Nenhum orcamento definido</p></div>';
+                return;
+            }
+
+            container.innerHTML = budgets.map(b => {
+                const usage = (b.spent / b.monthly_limit * 100).toFixed(0);
+                const statusClass = usage > 100 ? 'danger' : usage > 80 ? 'warning' : 'safe';
+                return `
+                    <div class="budget-item">
+                        <div class="budget-header">
+                            <span class="budget-category">${b.category}</span>
+                            <span class="budget-amount">${formatCurrency(b.spent)} / ${formatCurrency(b.monthly_limit)}</span>
+                        </div>
+                        <div class="budget-bar">
+                            <div class="budget-fill ${statusClass}" style="width: ${Math.min(usage, 100)}%"></div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function renderAudit(audit) {
+            const container = document.getElementById('auditList');
+            if (!audit.length) {
+                container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">&#128221;</div><p>Nenhuma atividade</p></div>';
+                return;
+            }
+
+            container.innerHTML = audit.slice(0, 5).map(a => {
+                const iconClass = a.action.includes('add') ? 'add' : a.action.includes('edit') ? 'edit' : 'delete';
+                const icons = { add: '+', edit: '&#9998;', delete: '&#128465;' };
+                return `
+                    <div class="audit-item">
+                        <div class="audit-icon ${iconClass}">${icons[iconClass]}</div>
+                        <div class="audit-info">
+                            <div class="audit-action">${a.description}</div>
+                            <div class="audit-time">${formatDateTime(a.timestamp)}</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function setupForms() {
+            // Expense Form
+            document.getElementById('expenseForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const formData = new FormData(e.target);
+                const data = Object.fromEntries(formData);
+                data.amount = parseFloat(data.amount);
+
+                try {
+                    const response = await fetch('/dashboard/expenses', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'same-origin',
+                        body: JSON.stringify(data)
+                    });
+
+                    if (response.ok) {
+                        showStatus('expenseStatus', 'Transacao adicionada!', 'success');
+                        e.target.reset();
+                        document.querySelector('#expenseForm input[name="date"]').valueAsDate = new Date();
+                        loadDashboardData();
+                        setTimeout(() => closeModal('expenseModal'), 1500);
+                    } else {
+                        const error = await response.json();
+                        showStatus('expenseStatus', error.detail || 'Erro ao salvar', 'error');
+                    }
+                } catch (error) {
+                    showStatus('expenseStatus', 'Erro ao salvar transacao', 'error');
+                }
+            });
+
+            // Goal Form
+            document.getElementById('goalForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const formData = new FormData(e.target);
+                const data = Object.fromEntries(formData);
+                data.target_amount = parseFloat(data.target_amount);
+                data.current_amount = parseFloat(data.current_amount) || 0;
+
+                try {
+                    const response = await fetch('/dashboard/goals', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'same-origin',
+                        body: JSON.stringify(data)
+                    });
+
+                    if (response.ok) {
+                        showStatus('goalStatus', 'Meta criada!', 'success');
+                        e.target.reset();
+                        loadDashboardData();
+                        setTimeout(() => closeModal('goalModal'), 1500);
+                    } else {
+                        const error = await response.json();
+                        showStatus('goalStatus', error.detail || 'Erro ao criar', 'error');
+                    }
+                } catch (error) {
+                    showStatus('goalStatus', 'Erro ao criar meta', 'error');
+                }
+            });
+
+            // Budget Form
+            document.getElementById('budgetForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const formData = new FormData(e.target);
+                const data = Object.fromEntries(formData);
+                data.monthly_limit = parseFloat(data.monthly_limit);
+
+                try {
+                    const response = await fetch('/dashboard/budgets', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'same-origin',
+                        body: JSON.stringify(data)
+                    });
+
+                    if (response.ok) {
+                        showStatus('budgetStatus', 'Orcamento criado!', 'success');
+                        e.target.reset();
+                        loadDashboardData();
+                        setTimeout(() => closeModal('budgetModal'), 1500);
+                    } else {
+                        const error = await response.json();
+                        showStatus('budgetStatus', error.detail || 'Erro ao criar', 'error');
+                    }
+                } catch (error) {
+                    showStatus('budgetStatus', 'Erro ao criar orcamento', 'error');
+                }
+            });
+        }
+
+        // Modal functions
+        function openAddExpenseModal() {
+            document.getElementById('expenseModal').classList.add('active');
+        }
+
+        function openAddGoalModal() {
+            document.getElementById('goalModal').classList.add('active');
+        }
+
+        function openAddBudgetModal() {
+            document.getElementById('budgetModal').classList.add('active');
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('active');
+        }
+
+        // Click outside to close modal
+        document.querySelectorAll('.modal-overlay').forEach(overlay => {
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) {
+                    overlay.classList.remove('active');
+                }
+            });
+        });
+
+        // Utility functions
+        function formatCurrency(value) {
+            return new Intl.NumberFormat('pt-BR', {
+                style: 'currency',
+                currency: 'BRL'
+            }).format(value);
+        }
+
+        function formatDate(dateStr) {
+            return new Date(dateStr).toLocaleDateString('pt-BR');
+        }
+
+        function formatDateTime(dateStr) {
+            return new Date(dateStr).toLocaleString('pt-BR', {
+                day: '2-digit',
+                month: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        function getCategoryIcon(category) {
+            const icons = {
+                'Alimentacao': '&#127869;',
+                'Transporte': '&#128663;',
+                'Moradia': '&#127968;',
+                'Saude': '&#128138;',
+                'Educacao': '&#128218;',
+                'Lazer': '&#127918;',
+                'Compras': '&#128717;',
+                'Contas': '&#128196;',
+                'Assinaturas': '&#128250;',
+                'Pets': '&#128062;',
+                'Vestuario': '&#128085;',
+                'Beleza': '&#128133;',
+                'Impostos': '&#127963;',
+                'Seguros': '&#128737;',
+                'Presentes': '&#127873;',
+                'Viagens': '&#9992;',
+                'Manutencao': '&#128295;',
+                'Doacoes': '&#10084;',
+                'Emergencia': '&#128680;',
+                'Taxas Bancarias': '&#127974;',
+                'Outros Gastos': '&#128230;',
+                'Salario': '&#128181;',
+                'Freelance': '&#128187;',
+                'Investimentos': '&#128200;',
+                'Vendas': '&#127991;',
+                'Aluguel': '&#127960;',
+                'Reembolso': '&#128260;',
+                'Bonus': '&#127919;',
+                'Presente Recebido': '&#127872;',
+                'Outras Receitas': '&#10024;'
+            };
+            return icons[category] || '&#128176;';
+        }
+
+        function showStatus(elementId, message, type) {
+            const el = document.getElementById(elementId);
+            el.textContent = message;
+            el.className = `status-message ${type}`;
+            setTimeout(() => {
+                el.className = 'status-message';
+            }, 5000);
+        }
+
+        function scrollToSection(sectionId) {
+            document.getElementById(sectionId).scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function goToSettings() {
+            window.location.href = '/web/settings';
+        }
+
+        async function logout() {
+            await fetch('/auth/logout', { method: 'POST', credentials: 'same-origin' });
+            window.location.href = '/web/login';
+        }
+    </script>
+</body>
+</html>

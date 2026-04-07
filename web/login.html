@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FinBot - Gestao Financeira via WhatsApp</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-deep: #020617;
+      --bg-navy: #0f172a;
+      --bg-slate: #1e293b;
+      --emerald-400: #34d399;
+      --emerald-500: #10b981;
+      --emerald-600: #059669;
+      --text-primary: #f8fafc;
+      --text-secondary: #e2e8f0;
+      --text-muted: #94a3b8;
+      --glass-bg: rgba(15, 23, 42, 0.7);
+      --glass-border: rgba(52, 211, 153, 0.15);
+      --danger: #f87171;
+      --success: #34d399;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Outfit', sans-serif;
+      background: var(--bg-deep);
+      min-height: 100vh;
+      color: var(--text-primary);
+      overflow-x: hidden;
+    }
+
+    /* Animated Background */
+    .bg-mesh {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      overflow: hidden;
+    }
+
+    .bg-mesh::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background:
+        radial-gradient(ellipse at 20% 20%, rgba(52, 211, 153, 0.15) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 80%, rgba(5, 150, 105, 0.1) 0%, transparent 50%),
+        radial-gradient(ellipse at 40% 60%, rgba(16, 185, 129, 0.08) 0%, transparent 40%);
+      animation: meshFloat 20s ease-in-out infinite;
+    }
+
+    @keyframes meshFloat {
+      0%, 100% { transform: translate(0, 0) rotate(0deg); }
+      33% { transform: translate(2%, 2%) rotate(1deg); }
+      66% { transform: translate(-1%, 1%) rotate(-1deg); }
+    }
+
+    .noise-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      opacity: 0.03;
+      pointer-events: none;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    }
+
+    /* Layout */
+    .container {
+      position: relative;
+      z-index: 2;
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2rem;
+      padding: 2rem;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    /* Hero Section */
+    .hero {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 3rem;
+    }
+
+    .logo-container {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+
+    .logo-svg {
+      width: 72px;
+      height: 72px;
+      filter: drop-shadow(0 8px 24px rgba(52, 211, 153, 0.3));
+    }
+
+    .brand-name {
+      font-size: 2.5rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, var(--emerald-400), var(--emerald-600));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero h1 {
+      font-size: clamp(2rem, 4vw, 3rem);
+      font-weight: 800;
+      line-height: 1.1;
+      margin-bottom: 1.5rem;
+      color: var(--text-primary);
+    }
+
+    .hero h1 span {
+      background: linear-gradient(135deg, var(--emerald-400), var(--emerald-500));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero-description {
+      font-size: 1.125rem;
+      color: var(--text-muted);
+      line-height: 1.7;
+      margin-bottom: 3rem;
+      max-width: 480px;
+    }
+
+    /* Features */
+    .features {
+      display: grid;
+      gap: 1rem;
+    }
+
+    .feature {
+      display: flex;
+      align-items: flex-start;
+      gap: 1rem;
+      padding: 1.25rem;
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+      border-radius: 16px;
+      backdrop-filter: blur(12px);
+      transition: all 0.3s ease;
+    }
+
+    .feature:hover {
+      border-color: rgba(52, 211, 153, 0.3);
+      transform: translateX(4px);
+    }
+
+    .feature-icon {
+      width: 44px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, rgba(52, 211, 153, 0.2), rgba(5, 150, 105, 0.1));
+      border-radius: 12px;
+      font-size: 1.25rem;
+      flex-shrink: 0;
+    }
+
+    .feature-content h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 0.25rem;
+      color: var(--text-primary);
+    }
+
+    .feature-content p {
+      font-size: 0.875rem;
+      color: var(--text-muted);
+    }
+
+    /* Auth Panel */
+    .auth-panel {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+    }
+
+    .auth-card {
+      width: 100%;
+      max-width: 420px;
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+      border-radius: 24px;
+      backdrop-filter: blur(20px);
+      padding: 2.5rem;
+      box-shadow:
+        0 24px 48px rgba(0, 0, 0, 0.4),
+        0 0 0 1px rgba(52, 211, 153, 0.1) inset;
+    }
+
+    /* Tabs */
+    .tabs {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 2rem;
+      padding: 0.25rem;
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 12px;
+    }
+
+    .tab {
+      flex: 1;
+      padding: 0.875rem 1rem;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      font-family: inherit;
+      font-size: 0.9rem;
+      font-weight: 600;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .tab.active {
+      background: linear-gradient(135deg, var(--emerald-500), var(--emerald-600));
+      color: var(--text-primary);
+      box-shadow: 0 4px 12px rgba(52, 211, 153, 0.3);
+    }
+
+    .tab:hover:not(.active) {
+      color: var(--text-secondary);
+    }
+
+    /* Forms */
+    .form {
+      display: none;
+    }
+
+    .form.active {
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+      animation: fadeIn 0.3s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .input-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .input-group label {
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--text-muted);
+    }
+
+    .input-group input {
+      padding: 0.875rem 1rem;
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid rgba(100, 116, 139, 0.2);
+      border-radius: 12px;
+      color: var(--text-primary);
+      font-family: inherit;
+      font-size: 0.95rem;
+      transition: all 0.2s ease;
+    }
+
+    .input-group input:focus {
+      outline: none;
+      border-color: var(--emerald-500);
+      box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.1);
+    }
+
+    .input-group input::placeholder {
+      color: var(--text-muted);
+      opacity: 0.6;
+    }
+
+    .btn {
+      padding: 1rem 1.5rem;
+      border: none;
+      border-radius: 12px;
+      font-family: inherit;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      margin-top: 0.5rem;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--emerald-500), var(--emerald-600));
+      color: var(--text-primary);
+      box-shadow: 0 4px 16px rgba(52, 211, 153, 0.3);
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(52, 211, 153, 0.4);
+    }
+
+    .btn-primary:active {
+      transform: translateY(0);
+    }
+
+    /* Status */
+    .status {
+      padding: 0.875rem 1rem;
+      border-radius: 10px;
+      font-size: 0.875rem;
+      text-align: center;
+      display: none;
+    }
+
+    .status.show {
+      display: block;
+      animation: fadeIn 0.3s ease;
+    }
+
+    .status.error {
+      background: rgba(248, 113, 113, 0.1);
+      border: 1px solid rgba(248, 113, 113, 0.3);
+      color: var(--danger);
+    }
+
+    .status.success {
+      background: rgba(52, 211, 153, 0.1);
+      border: 1px solid rgba(52, 211, 153, 0.3);
+      color: var(--success);
+    }
+
+    /* Footer text */
+    .auth-footer {
+      margin-top: 1.5rem;
+      text-align: center;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    /* Responsive */
+    @media (max-width: 900px) {
+      .container {
+        grid-template-columns: 1fr;
+        padding: 1.5rem;
+      }
+
+      .hero {
+        padding: 2rem 1rem;
+        text-align: center;
+        align-items: center;
+      }
+
+      .hero-description {
+        max-width: 100%;
+      }
+
+      .features {
+        max-width: 480px;
+        margin: 0 auto;
+      }
+
+      .auth-panel {
+        padding: 1rem;
+      }
+
+      .auth-card {
+        padding: 2rem;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .logo-container {
+        flex-direction: column;
+        text-align: center;
+      }
+
+      .brand-name {
+        font-size: 2rem;
+      }
+
+      .hero h1 {
+        font-size: 1.75rem;
+      }
+
+      .auth-card {
+        padding: 1.5rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-mesh"></div>
+  <div class="noise-overlay"></div>
+
+  <div class="container">
+    <!-- Hero Section -->
+    <section class="hero">
+      <div class="logo-container">
+        <svg class="logo-svg" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="primary" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#34d399"/>
+              <stop offset="100%" stop-color="#059669"/>
+            </linearGradient>
+            <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+              <feDropShadow dx="0" dy="8" stdDeviation="6" flood-color="#059669" flood-opacity="0.3"/>
+            </filter>
+          </defs>
+          <rect width="200" height="200" rx="48" fill="#0f172a"/>
+          <g transform="translate(50, 50)" filter="url(#shadow)">
+            <rect x="10" y="20" width="80" height="60" rx="16" fill="url(#primary)"/>
+            <rect x="0" y="40" width="10" height="20" rx="4" fill="#34d399"/>
+            <rect x="90" y="40" width="10" height="20" rx="4" fill="#34d399"/>
+            <path d="M50 20 L50 8" stroke="#34d399" stroke-width="4" stroke-linecap="round"/>
+            <circle cx="50" cy="4" r="4" fill="#34d399"/>
+            <rect x="20" y="32" width="60" height="36" rx="8" fill="#020617"/>
+            <circle cx="36" cy="50" r="5" fill="#34d399" opacity="0.9">
+              <animate attributeName="opacity" values="0.9;0.2;0.9" dur="4s" repeatCount="indefinite"/>
+            </circle>
+            <circle cx="64" cy="50" r="5" fill="#34d399" opacity="0.9">
+              <animate attributeName="opacity" values="0.9;0.2;0.9" dur="4s" repeatCount="indefinite"/>
+            </circle>
+          </g>
+        </svg>
+        <span class="brand-name">FinBot</span>
+      </div>
+
+      <h1>Gerencie suas financas <span>pelo WhatsApp</span></h1>
+      <p class="hero-description">
+        Controle despesas, acompanhe metas e converta moedas com mensagens simples.
+        Seu assistente financeiro pessoal, sempre disponivel no seu celular.
+      </p>
+
+      <div class="features">
+        <div class="feature">
+          <div class="feature-icon">📊</div>
+          <div class="feature-content">
+            <h3>Controle de Despesas</h3>
+            <p>Registre gastos rapidamente via mensagem de texto ou foto de recibo</p>
+          </div>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">🎯</div>
+          <div class="feature-content">
+            <h3>Metas Financeiras</h3>
+            <p>Defina objetivos e acompanhe seu progresso em tempo real</p>
+          </div>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">💱</div>
+          <div class="feature-content">
+            <h3>Conversao de Moedas</h3>
+            <p>Taxas atualizadas automaticamente via Wise e ExchangeRate API</p>
+          </div>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">📈</div>
+          <div class="feature-content">
+            <h3>Orcamentos Inteligentes</h3>
+            <p>Alertas automaticos quando voce se aproxima dos limites</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Auth Panel -->
+    <section class="auth-panel">
+      <div class="auth-card">
+        <div class="tabs">
+          <button class="tab active" data-tab="register">Criar conta</button>
+          <button class="tab" data-tab="login">Entrar</button>
+        </div>
+
+        <!-- Register Form -->
+        <form class="form active" id="register-form">
+          <div class="input-group">
+            <label for="reg-name">Nome</label>
+            <input type="text" id="reg-name" name="name" placeholder="Como podemos te chamar?" required>
+          </div>
+          <div class="input-group">
+            <label for="reg-email">Email</label>
+            <input type="email" id="reg-email" name="email" placeholder="seu@email.com" required>
+          </div>
+          <div class="input-group">
+            <label for="reg-password">Senha</label>
+            <input type="password" id="reg-password" name="password" placeholder="Minimo 8 caracteres" required minlength="8">
+          </div>
+          <div class="input-group">
+            <label for="reg-phone">WhatsApp</label>
+            <input type="tel" id="reg-phone" name="phone" placeholder="5511999999999" required>
+          </div>
+          <button type="submit" class="btn btn-primary">Criar minha conta</button>
+        </form>
+
+        <!-- Login Form -->
+        <form class="form" id="login-form">
+          <div class="input-group">
+            <label for="login-email">Email</label>
+            <input type="email" id="login-email" name="email" placeholder="seu@email.com" required>
+          </div>
+          <div class="input-group">
+            <label for="login-password">Senha</label>
+            <input type="password" id="login-password" name="password" placeholder="Sua senha" required>
+          </div>
+          <button type="submit" class="btn btn-primary">Entrar</button>
+        </form>
+
+        <div class="status" id="status-message"></div>
+
+        <p class="auth-footer">
+          Ao criar sua conta, voce concorda com nossos termos de uso
+        </p>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    // Tab switching
+    const tabs = document.querySelectorAll('.tab');
+    const forms = document.querySelectorAll('.form');
+
+    tabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        const target = tab.dataset.tab;
+
+        tabs.forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+
+        forms.forEach(form => {
+          form.classList.remove('active');
+          if (form.id === `${target}-form`) {
+            form.classList.add('active');
+          }
+        });
+
+        hideStatus();
+      });
+    });
+
+    // Status message functions
+    function showStatus(message, type = 'error') {
+      const status = document.getElementById('status-message');
+      status.textContent = message;
+      status.className = `status show ${type}`;
+    }
+
+    function hideStatus() {
+      const status = document.getElementById('status-message');
+      status.className = 'status';
+    }
+
+    // Form submissions
+    document.getElementById('register-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const formData = new FormData(e.target);
+      const data = Object.fromEntries(formData.entries());
+
+      try {
+        showStatus('Criando sua conta...', 'success');
+
+        const response = await fetch('/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+          credentials: 'same-origin'
+        });
+
+        const result = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(result.detail || result.message || 'Erro ao criar conta');
+        }
+
+        showStatus('Conta criada! Redirecionando...', 'success');
+        setTimeout(() => {
+          window.location.href = '/web/onboarding';
+        }, 1000);
+
+      } catch (error) {
+        showStatus(error.message, 'error');
+      }
+    });
+
+    document.getElementById('login-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const formData = new FormData(e.target);
+      const data = Object.fromEntries(formData.entries());
+
+      try {
+        showStatus('Verificando...', 'success');
+
+        const response = await fetch('/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+          credentials: 'same-origin'
+        });
+
+        const result = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(result.detail || result.message || 'Email ou senha incorretos');
+        }
+
+        showStatus('Login realizado! Redirecionando...', 'success');
+        setTimeout(() => {
+          window.location.href = '/web/onboarding';
+        }, 1000);
+
+      } catch (error) {
+        showStatus(error.message, 'error');
+      }
+    });
+  </script>
+</body>
+</html>
